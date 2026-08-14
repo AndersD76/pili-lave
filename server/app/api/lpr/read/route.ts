@@ -58,11 +58,18 @@ export async function POST(req: NextRequest) {
   });
   const saldoOk = !!vehicle && !!menor && vehicle.user.walletCents >= menor.precoCents;
 
+  // Sinalização luminosa da máquina:
+  //  sem cadastro       -> vermelha contínua
+  //  cadastro sem saldo -> verde+vermelha piscando
+  //  cadastro com saldo -> verde contínua
+  const light = !vehicle ? "RED_SOLID" : saldoOk ? "GREEN_SOLID" : "RED_GREEN_BLINK";
+
   return NextResponse.json({
     arrivalId: arrival.id,
     status: arrival.status,          // WAITING_DRIVER | NO_MATCH
     match: !!vehicle,
     clientName: vehicle?.user.name ?? null,
     saldoOk,                          // tem saldo p/ pelo menos a lavagem mais barata
+    light,                            // RED_SOLID | RED_GREEN_BLINK | GREEN_SOLID
   });
 }

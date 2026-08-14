@@ -56,14 +56,23 @@ if SERIAL_PORT:
         print(f"[serial] indisponível ({e}) — seguindo só com log")
 
 
+def luz(comando: str) -> None:
+    """Sinalização luminosa via serial (adapte p/ GPIO do RPi se preferir):
+       GREEN = verde contínua | RED = vermelha contínua
+       BLINK = verde+vermelha piscando | OFF = apaga"""
+    print(f"[luz] {comando}")
+    if _serial:
+        _serial.write(f"LIGHT {comando}\n".encode())
+
+
 def luz_verde(program_id: int, plate: str) -> None:
-    """Aciona a saída física. Adapte aqui p/ GPIO do RPi se preferir."""
+    """Liberação paga: luz verde contínua + partida. Ciclo/tempos = IoT da máquina."""
     print(f"\n===== LUZ VERDE ===== lavagem {program_id} liberada p/ {plate}\n")
+    luz("GREEN")
     if _serial:
         _serial.write(f"START {program_id}\n".encode())
     time.sleep(GREEN_HOLD_S)
-    if _serial:
-        _serial.write(b"STOP\n")
+    luz("OFF")
 
 
 def reconhecer_placa(frame) -> str | None:
@@ -98,12 +107,16 @@ def enviar_placa(plate: str) -> None:
             return
         if d.get("dedup"):
             return
+        # campo "light" vem da nuvem: RED_SOLID | RED_GREEN_BLINK | GREEN_SOLID
         if d.get("status") == "NO_MATCH":
+            luz("RED")     # vermelha contínua
             print(f"[tela] {plate} NÃO CADASTRADA → 'Baixe o app, cadastre-se e insira saldo'")
         elif d.get("saldoOk"):
+            luz("GREEN")   # verde contínua
             nome = d.get("clientName") or "cliente"
             print(f"[tela] Olá {nome}! ({plate}) → 'Abra o app e toque em Solicitar lavagem'")
         else:
+            luz("BLINK")   # verde+vermelha piscando
             print(f"[tela] {plate} SEM SALDO → 'Adicione saldo no app para liberar'")
     except Exception as e:  # noqa: BLE001
         print(f"[nuvem] falha: {e}")

@@ -162,48 +162,70 @@ export default function CameraMaquina() {
       </div>
     );
 
+  const fullscreen = (bg: string, cls: string, children: React.ReactNode) => (
+    <div className={cls} style={{ minHeight: "100dvh", background: bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 24, textAlign: "center" }}>
+      <style>{`
+        @keyframes pl-blink { 0%,49% { background: var(--ok); } 50%,100% { background: var(--erro); } }
+        .pl-blink { animation: pl-blink 1s step-end infinite; }
+        @media (prefers-reduced-motion: reduce) { .pl-blink { animation: none; background: var(--atencao) !important; } }
+      `}</style>
+      {children}
+    </div>
+  );
+  const big = (t: string, color: string) => (
+    <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 36, color }}>{t}</div>
+  );
+  const sub2 = (t: string, color: string) => (
+    <div style={{ fontSize: 18, color, maxWidth: 420 }}>{t}</div>
+  );
+
+  /* LUZ VERDE contínua — lavagem paga e liberada */
   if (panel.kind === "green")
-    return (
-      <div style={{ minHeight: "100dvh", background: "var(--ok)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 20, textAlign: "center" }}>
-        <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 46, color: "#06251733" }}>●</div>
-        <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 40, color: "#052e1c" }}>LUZ VERDE</div>
+    return fullscreen("var(--ok)", "", (
+      <>
+        {big("LUZ VERDE", "#052e1c")}
         <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 24, color: "#052e1c" }}>
           Lavagem {panel.job.programId} · {panel.job.programa}
         </div>
         <div style={{ fontSize: 20, letterSpacing: 4, color: "#052e1c", fontWeight: 600 }}>{panel.job.plate}</div>
-        <div style={{ fontSize: 16, color: "#052e1c" }}>Pode entrar. Boa lavagem!</div>
-      </div>
-    );
+        {sub2("Pode entrar. Boa lavagem!", "#052e1c")}
+      </>
+    ));
 
+  /* LUZ VERMELHA contínua — placa sem cadastro */
+  if (panel.kind === "unknown")
+    return fullscreen("var(--erro)", "", (
+      <>
+        {big("LUZ VERMELHA", "#3d0705")}
+        <div style={{ fontSize: 20, letterSpacing: 4, color: "#3d0705", fontWeight: 600 }}>{panel.plate}</div>
+        {sub2("Você ainda não é cadastrado — baixe o app PILI LAVE, cadastre seu carro e insira saldo.", "#3d0705")}
+      </>
+    ));
+
+  /* VERDE+VERMELHA piscando — cadastrado sem saldo */
+  if (panel.kind === "hello" && !panel.saldoOk)
+    return fullscreen("var(--erro)", "pl-blink", (
+      <>
+        {big("SALDO INSUFICIENTE", "#0b1418")}
+        <div style={{ fontSize: 20, letterSpacing: 4, color: "#0b1418", fontWeight: 600 }}>{panel.plate}</div>
+        {sub2("Abra o app e adicione saldo para liberar a lavagem.", "#0b1418")}
+      </>
+    ));
+
+  /* VERDE contínua — reconhecido com saldo, aguardando o motorista pedir */
+  if (panel.kind === "hello")
+    return fullscreen("var(--ok)", "", (
+      <>
+        {big(`Olá${panel.name ? `, ${panel.name.split(" ")[0]}` : ""}!`, "#052e1c")}
+        <div style={{ fontSize: 20, letterSpacing: 4, color: "#052e1c", fontWeight: 600 }}>{panel.plate}</div>
+        {sub2("Abra o app PILI LAVE e toque em Solicitar lavagem.", "#052e1c")}
+      </>
+    ));
+
+  /* estado ocioso: câmera + entrada manual */
   return (
     <div className="pw">
       <div className="pw-logo">PILI LAVE<span>.</span> Câmera da máquina</div>
-
-      {panel.kind === "hello" && (
-        <div className="card" style={{ borderColor: panel.saldoOk ? "var(--jato)" : "var(--atencao)", borderWidth: 2 }}>
-          <div className="lab" style={{ color: panel.saldoOk ? "var(--jato)" : "var(--atencao)" }}>
-            {panel.plate} reconhecida
-          </div>
-          {panel.saldoOk ? (
-            <>
-              <h1>Olá{panel.name ? `, ${panel.name.split(" ")[0]}` : ""}!</h1>
-              <p className="sub">Abra o app PILI LAVE e toque em <b>Solicitar lavagem</b>.</p>
-            </>
-          ) : (
-            <>
-              <h1>Saldo insuficiente</h1>
-              <p className="sub">Abra o app e <b>adicione saldo</b> para liberar a lavagem.</p>
-            </>
-          )}
-        </div>
-      )}
-      {panel.kind === "unknown" && (
-        <div className="card" style={{ borderColor: "var(--erro)", borderWidth: 2 }}>
-          <div className="lab" style={{ color: "var(--erro)" }}>{panel.plate} não cadastrada</div>
-          <h1>Você ainda não é cadastrado</h1>
-          <p className="sub">Baixe o app PILI LAVE, cadastre seu carro e insira saldo — leva 2 minutos.</p>
-        </div>
-      )}
 
       {ocrOn ? (
         <>
