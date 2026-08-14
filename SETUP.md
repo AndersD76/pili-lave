@@ -107,6 +107,24 @@ Para desenvolver e testar. Build de loja é a parte 7.
 
 ---
 
+## PARTE 4B — Câmera de placa + luz verde (FLUXO PRINCIPAL) · teste com 2 celulares
+
+O fluxo principal agora é: **câmera lê a placa → nuvem identifica o usuário e
+o saldo → motorista toca "Solicitar lavagem" no app → luz verde libera**.
+
+1. **Celular 1 = câmera da máquina**: abra `SUA_URL/camera`, cole a
+   `DEVICE_KEY` (está no `server/.env`), toque **Ligar câmera (OCR)** e aponte
+   para uma placa — ou use a **digitação manual** para testar sem carro.
+   A tela mostra as mensagens do motorista: *"Olá, fulano — abra o app"*,
+   *"Saldo insuficiente — adicione saldo"* ou *"Não cadastrado — baixe o app"*.
+2. **Celular 2 = motorista**: com o app aberto (`SUA_URL/app`), em ~4 s
+   aparece **"Seu carro chegou!"** → toque → escolha a lavagem → **Liberar**.
+3. O celular 1 vira a **LUZ VERDE** (tela verde com o tipo de lavagem) e
+   confirma sozinho para a nuvem. Débito na carteira, tudo registrado no /admin.
+4. Equipamento definitivo depois: `camera/pili_camera.py` (mini-PC/RPi +
+   webcam/RTSP + Plate Recognizer free + relé serial). Os tempos de ciclo são
+   do IoT da máquina — a nuvem só manda "libera lavagem tipo N".
+
 ## PARTE 5 — SMS de verdade (produção) · ~15 min
 
 Em dev o código sai no log (`console`). Para SMS real:

@@ -1,0 +1,99 @@
+/* PILI LAVE — PWA mobile (tokens em globals.css) */
+.pw {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  padding: 18px 18px 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.pw-logo { font-family: var(--font-display); font-weight: 800; font-size: 26px; }
+.pw-logo span { color: var(--pili); }
+.pw h1 { font-family: var(--font-display); font-weight: 800; font-size: 26px; letter-spacing: -0.3px; }
+.pw .sub { color: var(--aco-d); font-size: 15px; }
+.pw .lab { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aco-d); margin-bottom: 8px; }
+
+.pw .card {
+  background: linear-gradient(180deg, var(--verniz3) 0%, var(--verniz2) 26%);
+  border: 1px solid var(--linha);
+  border-radius: 20px;
+  padding: 18px;
+}
+.pw .money { font-family: var(--font-display); font-weight: 800; font-size: 38px; font-variant-numeric: tabular-nums; }
+.pw .money .cur { font-size: 0.55em; color: var(--aco-d); margin-right: 3px; }
+
+.pw .btn {
+  appearance: none; border: 0; width: 100%; height: 56px; border-radius: 999px;
+  background: var(--jato); color: var(--verniz);
+  font-family: var(--font-body); font-weight: 600; font-size: 17px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; text-decoration: none;
+}
+.pw .btn:active { filter: brightness(0.88); }
+.pw .btn:focus-visible { outline: 3px solid var(--cromo); outline-offset: 2px; }
+.pw .btn.ghost { background: transparent; border: 1px solid var(--linha); color: var(--cromo); }
+.pw .btn.danger { background: var(--erro); color: var(--espuma); }
+.pw .btn[disabled] { opacity: 0.45; }
+
+.pw .field {
+  width: 100%; background: var(--verniz2); border: 1px solid var(--linha); border-radius: 14px;
+  color: var(--cromo); font-family: var(--font-body); font-size: 17px; padding: 15px 16px;
+}
+.pw .field:focus { outline: 2px solid var(--jato); border-color: transparent; }
+.pw .field.big { font-family: var(--font-display); font-size: 26px; letter-spacing: 8px; text-align: center; }
+
+.pw .err { color: var(--erro); font-size: 14px; }
+.pw .okmsg { color: var(--ok); font-size: 14px; font-weight: 600; }
+
+.pw .item {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  background: var(--verniz2); border: 1px solid var(--linha); border-radius: 16px; padding: 15px 16px;
+  color: var(--cromo); text-decoration: none;
+}
+.pw .placa { font-weight: 600; font-size: 19px; letter-spacing: 4px; }
+.pw .item .meta { color: var(--aco-d); font-size: 13px; }
+
+.pw .opt {
+  display: flex; justify-content: space-between; align-items: center;
+  border: 1.5px solid var(--linha); background: var(--verniz2);
+  border-radius: 18px; padding: 17px 16px; cursor: pointer; width: 100%;
+  color: var(--cromo); font-family: var(--font-body);
+}
+.pw .opt.sel { border-color: var(--jato); background: rgba(37, 207, 222, 0.1); }
+.pw .opt .nome { font-family: var(--font-display); font-weight: 700; font-size: 17px; }
+.pw .opt .preco { font-family: var(--font-display); font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums; }
+.pw .opt.sel .preco { color: var(--jato); }
+
+.pw .chip { display: inline-block; border-radius: 99px; padding: 4px 12px; font-size: 12px; font-weight: 600; }
+.pw .chip.ok { background: rgba(47, 191, 113, 0.14); color: var(--ok); }
+.pw .chip.at { background: rgba(233, 162, 59, 0.14); color: var(--atencao); }
+.pw .chip.off { background: rgba(143, 163, 169, 0.14); color: var(--aco-d); }
+
+.pw .qrcard {
+  background: var(--espuma); border-radius: 24px; padding: 22px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.pw .qrcard.voucher { border: 2px dashed rgba(11, 124, 137, 0.35); }
+.pw .qrcard img { width: 240px; height: 240px; }
+.pw .qrcard .tipo { font-family: var(--font-display); font-weight: 700; font-size: 18px; color: #10181b; }
+
+.pw .successbig {
+  width: 110px; height: 110px; border-radius: 999px; background: var(--ok);
+  display: flex; align-items: center; justify-content: center; margin: 30px auto 0;
+  font-family: var(--font-display); font-weight: 800; font-size: 28px; color: var(--espuma);
+}
+
+.pw .nav {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: var(--verniz2); border-top: 1px solid var(--linha);
+  display: flex; justify-content: space-around; padding: 10px 6px calc(10px + env(safe-area-inset-bottom));
+}
+.pw .nav a { color: var(--aco); text-decoration: none; font-size: 12px; font-weight: 600; text-align: center; }
+.pw .nav a.on { color: var(--jato); }
+.pw .nav a .ic { font-size: 20px; display: block; line-height: 1.2; font-family: var(--font-display); }
+
+.pw video.cam { width: 100%; border-radius: 20px; background: #000; aspect-ratio: 3 / 4; object-fit: cover; }
+.pw .center { text-align: center; }
+.pw .row { display: flex; gap: 10px; }
+.pw .row > * { flex: 1; }
+.pw a.plain { color: var(--jato); text-decoration: none; font-weight: 600; }
