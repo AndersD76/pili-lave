@@ -1,0 +1,9 @@
+{
+  "name": "pili-lave",
+  "private": true,
+  "description": "Monorepo PILI LAVE — o servidor real vive em server/ (este arquivo só direciona o build do Railway/Railpack quando o Root Directory não está configurado)",
+  "scripts": {
+    "build": "npm --prefix server ci && npm --prefix server run build",
+    "start": "npm --prefix server run start"
+  }
+}
