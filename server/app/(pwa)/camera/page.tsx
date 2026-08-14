@@ -45,7 +45,7 @@ export default function CameraMaquina() {
 
   useEffect(() => {
     const k = localStorage.getItem("pl_devkey");
-    if (k) { setKey(k); setKeySaved(true); }
+    if (k !== null) { setKey(k); setKeySaved(true); }   // "" = modo sem chave
   }, []);
 
   const devFetch = useCallback(async (path: string, body?: unknown) => {
@@ -158,6 +158,10 @@ export default function CameraMaquina() {
         <button className="btn" disabled={key.length < 10}
           onClick={() => { localStorage.setItem("pl_devkey", key.trim()); setKeySaved(true); }}>
           Salvar e iniciar
+        </button>
+        <button className="btn ghost"
+          onClick={() => { localStorage.setItem("pl_devkey", ""); setKeySaved(true); }}>
+          Entrar sem chave (modo teste)
         </button>
       </div>
     );

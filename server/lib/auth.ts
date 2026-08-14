@@ -2,7 +2,8 @@ import { SignJWT, jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "./prisma";
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+/* Fallback de teste: sem JWT_SECRET no ambiente, usa um fixo (trocar em produção). */
+const secret = new TextEncoder().encode(process.env.JWT_SECRET ?? "pililave-teste-8512eff13d539f76");
 
 export type SessionUser = { id: string; phone: string; role: "CLIENT" | "LAVADOR" | "ADMIN" };
 

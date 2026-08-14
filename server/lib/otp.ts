@@ -36,6 +36,11 @@ export async function verifyOtp(phone: string, code: string): Promise<boolean> {
   const master = process.env.OTP_MASTER_CODE;
   if (master && master.length === 6 && code === master) return true;
 
+  // FASE DE TESTE: sem provedor de SMS configurado (modo console), qualquer
+  // código de 6 dígitos entra. Configure SMS_PROVIDER=brasilsms em produção.
+  const provider = process.env.SMS_PROVIDER ?? "console";
+  if (provider === "console" && /^\d{6}$/.test(code)) return true;
+
   const otp = await prisma.otp.findFirst({
     where: { phone, consumedAt: null, expiresAt: { gte: new Date() } },
     orderBy: { createdAt: "desc" },

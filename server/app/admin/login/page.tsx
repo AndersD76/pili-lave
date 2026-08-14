@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import { ADMIN_COOKIE, createAdminCookie } from "@/lib/admin";
+import { ADMIN_COOKIE, adminOpen, createAdminCookie } from "@/lib/admin";
 
 async function login(formData: FormData) {
   "use server";
@@ -23,6 +23,7 @@ export default async function AdminLogin({
 }: {
   searchParams: Promise<{ erro?: string }>;
 }) {
+  if (adminOpen()) redirect("/admin");   // fase de teste: painel aberto
   const { erro } = await searchParams;
   return (
     <main>
