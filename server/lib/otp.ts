@@ -31,6 +31,11 @@ export async function requestOtp(phone: string): Promise<{ ok: true } | { ok: fa
 }
 
 export async function verifyOtp(phone: string, code: string): Promise<boolean> {
+  // Código mestre p/ testes (evita SMS). Defina OTP_MASTER_CODE no env;
+  // deixe vazio em produção de verdade.
+  const master = process.env.OTP_MASTER_CODE;
+  if (master && master.length === 6 && code === master) return true;
+
   const otp = await prisma.otp.findFirst({
     where: { phone, consumedAt: null, expiresAt: { gte: new Date() } },
     orderBy: { createdAt: "desc" },
