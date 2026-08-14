@@ -1,0 +1,22 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- PILI LAVE — gota flat com onda interna -->
+  <rect width="1024" height="1024" fill="#0B1418"/>
+  <!-- gota: ponta no topo, corpo circular embaixo -->
+  <path d="M 512 168
+           C 512 168, 268 452, 268 622
+           A 244 244 0 0 0 756 622
+           C 756 452, 512 168, 512 168 Z"
+        fill="#25CFDE"/>
+  <!-- onda interna: recorte na cor do fundo cortando o corpo da gota -->
+  <path d="M 268 640
+           Q 390 560, 512 640
+           T 756 640
+           L 756 700
+           A 244 244 0 0 1 268 700 Z"
+        fill="#0B1418" opacity="0.28"/>
+  <!-- brilho lateral: crescente claro dentro da gota -->
+  <circle cx="600" cy="620" r="150" fill="#7FE6F0"/>
+  <circle cx="548" cy="590" r="150" fill="#25CFDE"/>
+  <!-- assinatura PILI -->
+  <circle cx="712" cy="256" r="38" fill="#E23D2E"/>
+</svg>

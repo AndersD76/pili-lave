@@ -27,13 +27,14 @@ export async function getSession(req: NextRequest): Promise<SessionUser | null> 
   }
 }
 
-/** Sessão obrigatória; opcionalmente restrita a um papel. */
+/** Sessão obrigatória; opcionalmente restrita a um papel (checado no banco,
+ *  para promoções via admin valerem sem o usuário precisar relogar). */
 export async function requireUser(req: NextRequest, role?: "LAVADOR" | "ADMIN") {
   const session = await getSession(req);
   if (!session) return { error: NextResponse.json({ error: "Não autenticado" }, { status: 401 }) };
-  if (role && session.role !== role && session.role !== "ADMIN")
-    return { error: NextResponse.json({ error: "Sem permissão" }, { status: 403 }) };
   const user = await prisma.user.findUnique({ where: { id: session.id } });
   if (!user) return { error: NextResponse.json({ error: "Usuário não existe" }, { status: 401 }) };
+  if (role && user.role !== role && user.role !== "ADMIN")
+    return { error: NextResponse.json({ error: "Sem permissão" }, { status: 403 }) };
   return { user };
 }
