@@ -1,0 +1,79 @@
+/* PILI LAVE — tokens da marca (design/BRAND.md) */
+:root {
+  --verniz: #0b1418;
+  --verniz2: #122029;
+  --verniz3: #182b35;
+  --cromo: #eaf4f6;
+  --jato: #25cfde;
+  --jato-ink: #0b7c89;
+  --pili: #e23d2e;
+  --aco: #54666c;
+  --aco-d: #8fa3a9;
+  --espuma: #f4f9fa;
+  --linha: rgba(37, 207, 222, 0.14);
+  --ok: #2fbf71;
+  --atencao: #e9a23b;
+  --erro: #c9403c;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--verniz);
+  color: var(--cromo);
+  font-family: var(--font-body, ui-sans-serif, system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.6;
+}
+
+a { color: var(--jato); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+h1, h2, h3 { font-family: var(--font-display, inherit); letter-spacing: -0.01em; }
+
+.admin-wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 80px; }
+.admin-nav { display: flex; align-items: center; gap: 22px; padding: 14px 0; border-bottom: 1px solid var(--linha); margin-bottom: 30px; }
+.admin-nav .logo { font-family: var(--font-display, inherit); font-weight: 800; font-size: 18px; }
+.admin-nav .logo span { color: var(--pili); }
+.admin-nav a { color: var(--aco-d); font-size: 14px; font-weight: 600; }
+.admin-nav a:hover { color: var(--cromo); text-decoration: none; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+.stat {
+  background: linear-gradient(180deg, var(--verniz3) 0%, var(--verniz2) 26%);
+  border: 1px solid var(--linha);
+  border-radius: 16px;
+  padding: 18px 20px;
+}
+.stat .lab { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aco-d); }
+.stat .val { font-family: var(--font-display, inherit); font-weight: 800; font-size: 30px; font-variant-numeric: tabular-nums; margin-top: 4px; }
+.stat .sub { font-size: 13px; color: var(--aco-d); margin-top: 2px; }
+.stat.alerta .val { color: var(--atencao); }
+
+.section-title { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aco-d); margin: 34px 0 12px; }
+
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--linha); border-radius: 14px; }
+table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tbl th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aco-d); padding: 12px 14px; border-bottom: 1px solid var(--linha); }
+.tbl td { padding: 11px 14px; border-bottom: 1px solid rgba(37, 207, 222, 0.06); font-variant-numeric: tabular-nums; }
+.tbl tr:last-child td { border-bottom: 0; }
+
+.chip { display: inline-block; border-radius: 99px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+.chip.ok { background: rgba(47, 191, 113, 0.14); color: var(--ok); }
+.chip.at { background: rgba(233, 162, 59, 0.14); color: var(--atencao); }
+.chip.off { background: rgba(143, 163, 169, 0.14); color: var(--aco-d); }
+.chip.err { background: rgba(201, 64, 60, 0.14); color: var(--erro); }
+
+.btn {
+  appearance: none; border: 0; border-radius: 99px; height: 44px; padding: 0 26px;
+  background: var(--jato); color: var(--verniz); font-weight: 600; font-size: 15px; cursor: pointer;
+}
+.btn:hover { filter: brightness(0.92); }
+.btn:focus-visible { outline: 3px solid var(--cromo); outline-offset: 2px; }
+.btn.ghost { background: transparent; border: 1px solid var(--linha); color: var(--cromo); height: 36px; padding: 0 16px; font-size: 13px; }
+
+.field { display: block; width: 100%; background: var(--verniz2); border: 1px solid var(--linha); border-radius: 12px; color: var(--cromo); font-size: 16px; padding: 13px 16px; }
+.field:focus { outline: 2px solid var(--jato); outline-offset: 0; border-color: transparent; }
+
+.login-card { max-width: 380px; margin: 12vh auto 0; background: linear-gradient(180deg, var(--verniz3) 0%, var(--verniz2) 26%); border: 1px solid var(--linha); border-radius: 20px; padding: 30px; display: grid; gap: 14px; }
+.err-msg { color: var(--erro); font-size: 14px; }

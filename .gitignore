@@ -16,3 +16,7 @@ build/
 credentials*.json
 service-account*.json
 .DS_Store
+
+# fotos de referência (contêm dados pessoais) e artefatos gerados
+WhatsApp Image*.jpeg
+firmware/pili_lave_totem.zip

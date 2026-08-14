@@ -1,0 +1,156 @@
+// PILI LAVE — schema (Postgres/Neon)
+// DATABASE_URL = string POOLED do Neon (…-pooler…)  → runtime
+// DIRECT_URL   = string DIRETA (sem -pooler)        → migrations
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  CLIENT
+  LAVADOR
+  ADMIN
+}
+
+enum TopupStatus {
+  PENDING
+  PAID
+  CANCELED
+}
+
+enum OrderStatus {
+  PAID      // voucher emitido, aguardando resgate
+  REDEEMED  // lavador escaneou e liberou
+  CANCELED  // estorno p/ carteira
+}
+
+enum WalletTxKind {
+  TOPUP  // recarga confirmada (+)
+  WASH   // compra de lavagem (-)
+  REFUND // estorno (+)
+  ADJUST // ajuste manual admin (+/-)
+}
+
+model User {
+  id              String   @id @default(cuid())
+  phone           String   @unique // E.164: +5554999999999
+  name            String?
+  cpf             String?
+  role            Role     @default(CLIENT)
+  asaasCustomerId String?
+  walletCents     Int      @default(0) // cache; fonte da verdade = WalletTx
+  createdAt       DateTime @default(now())
+
+  vehicles    Vehicle[]
+  topups      Topup[]
+  orders      Order[]
+  walletTxs   WalletTx[]
+  redemptions Order[]    @relation("redeemedBy")
+}
+
+model Otp {
+  id         String    @id @default(cuid())
+  phone      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, createdAt])
+}
+
+model Vehicle {
+  id               String   @id @default(cuid())
+  userId           String
+  plate            String // normalizada: ABC1D23 / ABC1234 (sem hífen)
+  brand            String?
+  model            String?
+  color            String?
+  year             String?
+  defaultProgramId Int?
+  createdAt        DateTime @default(now())
+
+  user           User     @relation(fields: [userId], references: [id])
+  defaultProgram Program? @relation(fields: [defaultProgramId], references: [id])
+  orders         Order[]
+
+  @@unique([userId, plate])
+}
+
+model Program {
+  id         Int    @id // 1..4 (mesmos ids do totem)
+  nome       String
+  precoCents Int
+  ordem      Int    @default(0)
+  ativo      Boolean @default(true)
+
+  vehicles Vehicle[]
+  orders   Order[]
+}
+
+model Topup {
+  id             String      @id @default(cuid())
+  userId         String
+  amountCents    Int
+  method         String // PIX | CARD
+  status         TopupStatus @default(PENDING)
+  asaasPaymentId String?     @unique
+  pixPayload     String? // copia-e-cola (vira QR no app)
+  invoiceUrl     String? // checkout p/ cartão
+  createdAt      DateTime    @default(now())
+  paidAt         DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Order {
+  id               String      @id @default(cuid())
+  userId           String
+  vehicleId        String?
+  programId        Int
+  amountCents      Int // preço no momento da compra
+  status           OrderStatus @default(PAID)
+  voucherCode      String      @unique // conteúdo do QR: PILILAVE:<code>
+  voucherExpiresAt DateTime?
+  createdAt        DateTime    @default(now())
+  redeemedAt       DateTime?
+  redeemedById     String?
+
+  user       User     @relation(fields: [userId], references: [id])
+  vehicle    Vehicle? @relation(fields: [vehicleId], references: [id])
+  program    Program  @relation(fields: [programId], references: [id])
+  redeemedBy User?    @relation("redeemedBy", fields: [redeemedById], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model WalletTx {
+  id          String       @id @default(cuid())
+  userId      String
+  amountCents Int // positivo credita, negativo debita
+  kind        WalletTxKind
+  refId       String? // Topup.id ou Order.id
+  note        String?
+  createdAt   DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+// Log de eventos p/ contagens e auditoria (lavagens, recargas, resgates…)
+model Event {
+  id        String   @id @default(cuid())
+  type      String // otp_sent, user_created, topup_paid, order_created, order_redeemed…
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  @@index([type, createdAt])
+}
