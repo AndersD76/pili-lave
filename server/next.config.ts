@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   // package.json raiz); isto fixa o root correto e cala o aviso de
   // "multiple lockfiles".
   outputFileTracingRoot: __dirname,
+  turbopack: { root: __dirname },
 };
 
 export default nextConfig;
