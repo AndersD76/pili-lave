@@ -20,5 +20,5 @@ RUN npm run build
 
 ENV NODE_ENV=production
 EXPOSE 8080
-# Railway injeta PORT; shell form para expandir a variável
-CMD npx next start -p ${PORT:-8080}
+# Railway injeta a variável PORT e o `next start` a lê sozinho — sem shell, sem -p
+CMD ["npm", "start"]
