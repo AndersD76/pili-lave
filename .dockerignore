@@ -1,0 +1,12 @@
+.git
+node_modules
+**/node_modules
+mobile
+firmware
+backend
+frontend
+design
+camera
+server/.next
+server/.env
+*.jpeg
