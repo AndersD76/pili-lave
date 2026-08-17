@@ -1,52 +1,122 @@
-import { router } from "expo-router";
-import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
-import { api, type Order, type Program, type Vehicle } from "@/lib/api";
-import { useSession } from "@/lib/session";
-import { Btn, ErrText, Label, Screen, Sub } from "@/ui";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
+import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { api, ApiError, type Program, type Vehicle, type WalletResp } from "@/lib/api";
+import { Btn, Card, ErrText, Label, Screen, Sub } from "@/ui";
 import { C, F, fmtPlate, money } from "@/theme";
 
 export default function NovaLavagem() {
-  const { me, refresh } = useSession();
   const [programs, setPrograms] = useState<Program[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
+  const [available, setAvailable] = useState<number | null>(null);
   const [programId, setProgramId] = useState<number | null>(null);
   const [vehicleId, setVehicleId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  /** availableCents retornado pelo 402 (saldo disponível insuficiente). */
+  const [insufficient, setInsufficient] = useState<number | null>(null);
 
+  useFocusEffect(
+    useCallback(() => {
+      api<Program[]>("/api/programs", { auth: false }).then(setPrograms).catch(() => {});
+      api<Vehicle[]>("/api/vehicles")
+        .then((v) => {
+          setVehicles(v);
+          setVehicleId((cur) => {
+            if (cur && v.some((x) => x.id === cur)) return cur;
+            return v.length === 1 ? v[0].id : null;
+          });
+        })
+        .catch(() => setVehicles((cur) => cur ?? []));
+      api<WalletResp>("/api/wallet").then((w) => setAvailable(w.availableCents)).catch(() => {});
+    }, [])
+  );
+
+  // Pré-seleciona a lavagem padrão do veículo quando nenhum programa foi escolhido ainda.
   useEffect(() => {
-    api<Program[]>("/api/programs", { auth: false }).then(setPrograms).catch(() => {});
-    api<Vehicle[]>("/api/vehicles").then((v) => {
-      setVehicles(v);
-      if (v.length === 1) setVehicleId(v[0].id);
-    }).catch(() => {});
-  }, []);
+    if (programId != null) return;
+    const v = vehicles?.find((x) => x.id === vehicleId);
+    if (v?.defaultProgramId != null) setProgramId(v.defaultProgramId);
+  }, [programId, vehicleId, vehicles]);
 
   const selected = programs.find((p) => p.id === programId);
-  const saldo = me?.walletCents ?? 0;
-  const falta = selected ? selected.precoCents - saldo : 0;
 
-  async function comprar() {
-    if (!selected) return;
+  function pickVehicle(v: Vehicle) {
+    setVehicleId(v.id);
+    if (v.defaultProgramId != null) setProgramId(v.defaultProgramId);
+  }
+
+  async function reservar() {
+    if (!selected || !vehicleId) return;
     setError("");
+    setInsufficient(null);
     setLoading(true);
     try {
-      const order = await api<Order>("/api/orders", {
-        body: { programId: selected.id, vehicleId: vehicleId ?? undefined },
-      });
-      await refresh();
-      router.replace({ pathname: "/voucher/[id]", params: { id: order.id } });
+      await api("/api/reservations", { body: { programId: selected.id, vehicleId } });
+      Alert.alert(
+        "Reserva feita!",
+        "Válida por 1 hora. Aproxime o carro da câmera e entre no verde.",
+        [{ text: "OK", onPress: () => router.replace("/(tabs)") }]
+      );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Não foi possível concluir");
+      if (e instanceof ApiError && e.status === 402) {
+        const d = e.data as { availableCents?: number } | null;
+        setInsufficient(d?.availableCents ?? available ?? 0);
+      } else if (e instanceof ApiError && e.status === 409) {
+        setError("Este veículo já tem reserva ativa.");
+      } else {
+        setError(e instanceof Error ? e.message : "Não foi possível reservar");
+      }
     } finally {
       setLoading(false);
     }
   }
 
+  const semVeiculo = vehicles !== null && vehicles.length === 0;
+
   return (
     <Screen>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 20, gap: 20 }}>
+        {semVeiculo && (
+          <Card>
+            <Text style={{ fontFamily: F.display, fontSize: 18, color: C.cromo }}>
+              Cadastre seu veículo
+            </Text>
+            <Text style={{ fontFamily: F.body, fontSize: 14, color: C.acoD, marginTop: 6 }}>
+              A reserva é por placa — precisamos saber qual carro vai entrar.
+            </Text>
+            <View style={{ marginTop: 14 }}>
+              <Btn title="Adicionar veículo" onPress={() => router.push("/veiculo-novo")} />
+            </View>
+          </Card>
+        )}
+
+        {!semVeiculo && vehicles !== null && (
+          <View>
+            <Label>Veículo</Label>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {vehicles.map((v) => {
+                const sel = vehicleId === v.id;
+                return (
+                  <Pressable
+                    key={v.id}
+                    onPress={() => pickVehicle(v)}
+                    style={{
+                      borderWidth: 1.5, borderColor: sel ? C.jato : C.linha,
+                      backgroundColor: sel ? "rgba(37,207,222,0.12)" : "transparent",
+                      borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9,
+                    }}
+                  >
+                    <Text style={{ fontFamily: F.bodyBold, fontSize: 14, color: C.cromo, letterSpacing: 2 }}>
+                      {fmtPlate(v.plate)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
         <View>
           <Label>Tipo de lavagem</Label>
           <View style={{ gap: 10 }}>
@@ -75,48 +145,27 @@ export default function NovaLavagem() {
           </View>
         </View>
 
-        {vehicles.length > 0 && (
-          <View>
-            <Label>Veículo (opcional)</Label>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-              {vehicles.map((v) => {
-                const sel = vehicleId === v.id;
-                return (
-                  <Pressable
-                    key={v.id}
-                    onPress={() => setVehicleId(sel ? null : v.id)}
-                    style={{
-                      borderWidth: 1.5, borderColor: sel ? C.jato : C.linha,
-                      backgroundColor: sel ? "rgba(37,207,222,0.12)" : "transparent",
-                      borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9,
-                    }}
-                  >
-                    <Text style={{ fontFamily: F.bodyBold, fontSize: 14, color: C.cromo, letterSpacing: 2 }}>
-                      {fmtPlate(v.plate)}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-        )}
-
         <View style={{ gap: 10 }}>
-          <Sub>Saldo: {money(saldo)}</Sub>
-          {selected && falta > 0 ? (
+          {available != null && <Sub>Saldo disponível: {money(available)}</Sub>}
+          {insufficient != null ? (
             <>
-              <ErrText>Saldo insuficiente — faltam {money(falta)}.</ErrText>
+              <ErrText>Saldo disponível insuficiente ({money(insufficient)}).</ErrText>
               <Btn title="Adicionar saldo" onPress={() => router.push("/recarga")} />
             </>
           ) : (
             <Btn
-              title={selected ? `Pagar ${money(selected.precoCents)} com saldo` : "Escolha o tipo"}
-              onPress={comprar}
+              title={
+                !selected ? "Escolha o tipo"
+                : !vehicleId ? "Escolha o veículo"
+                : `Reservar por ${money(selected.precoCents)}`
+              }
+              onPress={reservar}
               loading={loading}
-              disabled={!selected}
+              disabled={!selected || !vehicleId}
             />
           )}
           <ErrText>{error}</ErrText>
+          <Sub>O valor fica reservado e só é cobrado quando a lavagem acontece.</Sub>
         </View>
       </ScrollView>
     </Screen>

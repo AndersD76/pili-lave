@@ -18,6 +18,8 @@ const PLATE_RE = /[A-Z]{3}[0-9](?:[A-Z][0-9]{2}|[0-9]{3})/g;
 type LprResp = {
   arrivalId: string; status: string; match?: boolean;
   clientName?: string | null; saldoOk?: boolean; dedup?: boolean;
+  light?: "OFF" | "GREEN_SOLID" | "GREEN_BLINK" | "RED_SOLID" | "RED_BLINK" | "RED_GREEN_ALT";
+  reservation?: { id: string; status: string; programId: number; programa: string } | null;
 };
 type Job = { arrivalId: string; plate: string; programId: number; programa: string };
 
@@ -25,7 +27,10 @@ type Panel =
   | { kind: "idle" }
   | { kind: "hello"; plate: string; name: string | null; saldoOk: boolean }
   | { kind: "unknown"; plate: string }
-  | { kind: "green"; job: Job };
+  | { kind: "green"; job: Job }
+  | { kind: "go"; plate: string; programa: string }     // reserva ok + máquina livre
+  | { kind: "wait"; plate: string }                     // reserva ok, máquina ocupada
+  | { kind: "down"; plate: string };                    // máquina indisponível
 
 export default function CameraMaquina() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -67,9 +72,17 @@ export default function CameraMaquina() {
     setErr("");
     try {
       const r = (await devFetch("/api/lpr/read", { plate })) as LprResp;
-      if (r.status === "NO_MATCH") setPanel({ kind: "unknown", plate });
+      // fluxo de reserva: o campo `light` espelha a lâmpada física
+      if (r.light === "GREEN_SOLID" && r.reservation)
+        setPanel({ kind: "go", plate, programa: r.reservation.programa });
+      else if (r.light === "GREEN_BLINK") setPanel({ kind: "wait", plate });
+      else if (r.light === "RED_BLINK") setPanel({ kind: "down", plate });
+      else if (r.status === "NO_MATCH" || r.light === "RED_SOLID") setPanel({ kind: "unknown", plate });
       else setPanel({ kind: "hello", plate, name: r.clientName ?? null, saldoOk: r.saldoOk ?? false });
-      setTimeout(() => { if (panelRef.current.kind !== "green") setPanel({ kind: "idle" }); }, 20_000);
+      setTimeout(() => {
+        const k = panelRef.current.kind;
+        if (k !== "green" && k !== "go") setPanel({ kind: "idle" });
+      }, 20_000);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Falha ao enviar placa");
     }
@@ -183,6 +196,47 @@ export default function CameraMaquina() {
     <div style={{ fontSize: 18, color, maxWidth: 420 }}>{t}</div>
   );
 
+  /* LUZ VERDE contínua — reserva reconhecida + máquina livre (fluxo novo) */
+  if (panel.kind === "go")
+    return fullscreen("var(--ok)", "", (
+      <>
+        {big("LUZ VERDE", "#052e1c")}
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 24, color: "#052e1c" }}>
+          {panel.programa}
+        </div>
+        <div style={{ fontSize: 20, letterSpacing: 4, color: "#052e1c", fontWeight: 600 }}>{panel.plate}</div>
+        {sub2("Reserva confirmada. Pode entrar!", "#052e1c")}
+      </>
+    ));
+
+  /* VERDE piscando — reserva ok, máquina ocupada (aguarde na fila) */
+  if (panel.kind === "wait")
+    return fullscreen("var(--ok)", "pl-blink-g", (
+      <>
+        <style>{`
+          @keyframes pl-blink-g { 0%,49% { background: var(--ok); } 50%,100% { background: #123c2a; } }
+          .pl-blink-g { animation: pl-blink-g 1s step-end infinite; }
+        `}</style>
+        {big("AGUARDE", "#052e1c")}
+        <div style={{ fontSize: 20, letterSpacing: 4, color: "#052e1c", fontWeight: 600 }}>{panel.plate}</div>
+        {sub2("Sua reserva está garantida — a máquina está terminando outra lavagem.", "#052e1c")}
+      </>
+    ));
+
+  /* VERMELHO piscando — máquina indisponível (falha / manutenção / sem sinal) */
+  if (panel.kind === "down")
+    return fullscreen("var(--erro)", "pl-blink-r", (
+      <>
+        <style>{`
+          @keyframes pl-blink-r { 0%,49% { background: var(--erro); } 50%,100% { background: #3d0705; } }
+          .pl-blink-r { animation: pl-blink-r 1s step-end infinite; }
+        `}</style>
+        {big("MÁQUINA INDISPONÍVEL", "#fff")}
+        <div style={{ fontSize: 20, letterSpacing: 4, color: "#fff", fontWeight: 600 }}>{panel.plate}</div>
+        {sub2("Sua reserva continua válida — tente novamente em instantes.", "#fff")}
+      </>
+    ));
+
   /* LUZ VERDE contínua — lavagem paga e liberada */
   if (panel.kind === "green")
     return fullscreen("var(--ok)", "", (
@@ -216,13 +270,13 @@ export default function CameraMaquina() {
       </>
     ));
 
-  /* VERDE contínua — reconhecido com saldo, aguardando o motorista pedir */
+  /* VERDE+VERMELHA alternando — cadastrado, sem reserva ativa */
   if (panel.kind === "hello")
-    return fullscreen("var(--ok)", "", (
+    return fullscreen("var(--ok)", "pl-blink", (
       <>
-        {big(`Olá${panel.name ? `, ${panel.name.split(" ")[0]}` : ""}!`, "#052e1c")}
-        <div style={{ fontSize: 20, letterSpacing: 4, color: "#052e1c", fontWeight: 600 }}>{panel.plate}</div>
-        {sub2("Abra o app PILI LAVE e toque em Solicitar lavagem.", "#052e1c")}
+        {big(`Olá${panel.name ? `, ${panel.name.split(" ")[0]}` : ""}!`, "#0b1418")}
+        <div style={{ fontSize: 20, letterSpacing: 4, color: "#0b1418", fontWeight: 600 }}>{panel.plate}</div>
+        {sub2("Você não tem reserva ativa — abra o app PILI LAVE e reserve sua lavagem.", "#0b1418")}
       </>
     ));
 

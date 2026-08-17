@@ -37,8 +37,11 @@ export default function RootLayout() {
         <Stack.Screen name="otp" options={{ title: "Código" }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="veiculo-novo" options={{ title: "Novo veículo", presentation: "modal" }} />
-        <Stack.Screen name="nova-lavagem" options={{ title: "Nova lavagem" }} />
+        <Stack.Screen name="nova-lavagem" options={{ title: "Reservar lavagem" }} />
         <Stack.Screen name="recarga" options={{ title: "Adicionar saldo" }} />
+        <Stack.Screen name="historico" options={{ title: "Histórico" }} />
+        <Stack.Screen name="meus-dados" options={{ title: "Meus dados" }} />
+        <Stack.Screen name="unidade/[id]" options={{ title: "Unidade" }} />
         <Stack.Screen name="voucher/[id]" options={{ title: "Voucher" }} />
         <Stack.Screen name="scanner" options={{ title: "Escanear voucher" }} />
       </Stack>

@@ -30,6 +30,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="unidades"
+        options={{
+          title: "Unidades",
+          tabBarIcon: ({ color, size }) => <Ionicons name="location" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="carteira"
         options={{
           title: "Carteira",
@@ -37,10 +44,10 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="historico"
+        name="planos"
         options={{
-          title: "Histórico",
-          tabBarIcon: ({ color, size }) => <Ionicons name="time" size={size} color={color} />,
+          title: "Planos",
+          tabBarIcon: ({ color, size }) => <Ionicons name="calendar" size={size} color={color} />,
         }}
       />
       <Tabs.Screen

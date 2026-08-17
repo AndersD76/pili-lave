@@ -14,6 +14,43 @@ export function isValidPlate(plate: string): boolean {
   return /^[A-Z]{3}[0-9]{4}$/.test(plate) || /^[A-Z]{3}[0-9][A-Z][0-9]{2}$/.test(plate);
 }
 
+/* OCR e digitação confundem caracteres parecidos (O↔0, I↔1, B↔8…).
+ * Coerção por posição: cada formato de placa diz se a posição é letra ou
+ * dígito, então convertemos o sósia para o tipo exigido. */
+const TO_LETTER: Record<string, string> = { "0": "O", "1": "I", "2": "Z", "5": "S", "6": "G", "8": "B" };
+const TO_DIGIT: Record<string, string> = { O: "0", Q: "0", D: "0", I: "1", L: "1", Z: "2", S: "5", G: "6", B: "8" };
+
+function coerce(raw: string, pattern: ("L" | "D")[]): string | null {
+  if (raw.length !== pattern.length) return null;
+  let out = "";
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (pattern[i] === "L") {
+      if (/[A-Z]/.test(ch)) out += ch;
+      else if (TO_LETTER[ch]) out += TO_LETTER[ch];
+      else return null;
+    } else {
+      if (/[0-9]/.test(ch)) out += ch;
+      else if (TO_DIGIT[ch]) out += TO_DIGIT[ch];
+      else return null;
+    }
+  }
+  return out;
+}
+
+/** Candidatas plausíveis para uma leitura: a própria placa (se válida) +
+ *  correções de sósia nos formatos antigo (LLLDDDD) e Mercosul (LLLDLDD). */
+export function plateCandidates(raw: string): string[] {
+  const plate = normalizePlate(raw);
+  const out = new Set<string>();
+  if (isValidPlate(plate)) out.add(plate);
+  const antigo = coerce(plate, ["L", "L", "L", "D", "D", "D", "D"]);
+  if (antigo) out.add(antigo);
+  const mercosul = coerce(plate, ["L", "L", "L", "D", "L", "D", "D"]);
+  if (mercosul) out.add(mercosul);
+  return [...out];
+}
+
 export type PlateInfo = { brand?: string; model?: string; color?: string; year?: string };
 
 export async function lookupPlate(plate: string): Promise<PlateInfo | null> {

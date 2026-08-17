@@ -26,9 +26,12 @@ export async function setToken(token: string | null): Promise<void> {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** Corpo JSON da resposta de erro (ex.: { error, availableCents }). */
+  data: unknown;
+  constructor(status: number, message: string, data?: unknown) {
     super(message);
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -47,15 +50,46 @@ export async function api<T = unknown>(
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const json = await res.json().catch(() => null);
-  if (!res.ok) throw new ApiError(res.status, json?.error ?? `Erro ${res.status}`);
+  if (!res.ok) throw new ApiError(res.status, json?.error ?? `Erro ${res.status}`, json);
   return json as T;
 }
 
-export type Me = { id: string; phone: string; name: string | null; role: "CLIENT" | "LAVADOR" | "ADMIN"; walletCents: number };
+export type Me = {
+  id: string; phone: string; name: string | null; cpf?: string | null;
+  role: "CLIENT" | "LAVADOR" | "ADMIN"; walletCents: number;
+};
 export type Program = { id: number; nome: string; precoCents: number };
 export type Vehicle = { id: string; plate: string; brand: string | null; model: string | null; defaultProgramId: number | null };
 export type Order = {
   id: string; programId: number; amountCents: number; status: "PAID" | "REDEEMED" | "CANCELED";
   voucherCode: string; createdAt: string; redeemedAt: string | null;
   program: Program; vehicle: Vehicle | null;
+};
+
+export type Machine = {
+  id: string; name: string;
+  status: "FREE" | "WASHING" | "FAULT" | "OFFLINE" | "MAINTENANCE";
+  remainingSec: number;
+};
+
+export type Station = {
+  id: string; name: string; address: string; city: string; state: string;
+  lat: number; lng: number;
+  situacao: "ABERTO" | "OCUPADO" | "MANUTENCAO" | "INATIVO";
+  machines: Machine[];
+};
+
+export type Reservation = {
+  id: string;
+  status: "HELD" | "ACTIVE" | "ENTERED" | "COMPLETED" | "EXPIRED" | "CANCELED" | "FAILED";
+  amountCents: number; expiresAt: string; createdAt: string;
+  program: Program;
+  vehicle: { id: string; plate: string; model: string | null };
+  station: { id: string; name: string } | null;
+};
+
+export type WalletTx = { id: string; amountCents: number; kind: string; createdAt: string; note?: string | null };
+
+export type WalletResp = {
+  walletCents: number; reservedCents: number; availableCents: number; txs: WalletTx[];
 };

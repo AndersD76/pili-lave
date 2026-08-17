@@ -37,6 +37,24 @@ enum WalletTxKind {
   ADJUST // ajuste manual admin (+/-)
 }
 
+enum ReservationStatus {
+  HELD      // saldo bloqueado (não debitado), aguardando uso — validade 1h
+  ACTIVE    // placa reconhecida + máquina livre — verde aceso, aguardando entrar
+  ENTERED   // X14 confirmou o carro dentro — cancelamento bloqueado
+  COMPLETED // AUTO_CONCLUIDO — único ponto de débito
+  EXPIRED   // 1h sem uso — saldo liberado sem estorno
+  CANCELED  // motorista cancelou antes do X14
+  FAILED    // AUTO_ERRO ou timeout de segurança — saldo liberado, sem débito
+}
+
+enum MachineStatus {
+  FREE        // livre, heartbeat ok
+  WASHING     // ciclo em andamento
+  FAULT       // AUTO_ERRO reportado
+  OFFLINE     // sem heartbeat há 60s+
+  MAINTENANCE // parada programada pelo admin
+}
+
 model User {
   id              String   @id @default(cuid())
   phone           String   @unique // E.164: +5554999999999
@@ -47,12 +65,13 @@ model User {
   walletCents     Int      @default(0) // cache; fonte da verdade = WalletTx
   createdAt       DateTime @default(now())
 
-  vehicles    Vehicle[]
-  topups      Topup[]
-  orders      Order[]
-  walletTxs   WalletTx[]
-  redemptions Order[]    @relation("redeemedBy")
-  arrivals    Arrival[]
+  vehicles     Vehicle[]
+  topups       Topup[]
+  orders       Order[]
+  walletTxs    WalletTx[]
+  redemptions  Order[]       @relation("redeemedBy")
+  arrivals     Arrival[]
+  reservations Reservation[]
 }
 
 model Otp {
@@ -82,19 +101,22 @@ model Vehicle {
   defaultProgram Program? @relation(fields: [defaultProgramId], references: [id])
   orders         Order[]
   arrivals       Arrival[]
+  reservations   Reservation[]
 
   @@unique([userId, plate])
 }
 
 model Program {
-  id         Int    @id // 1..4 (mesmos ids do totem)
+  id         Int     @id // 1..4
   nome       String
   precoCents Int
-  ordem      Int    @default(0)
+  duracaoMin Int     @default(30) // duração do ciclo (timeout de segurança = 2x)
+  ordem      Int     @default(0)
   ativo      Boolean @default(true)
 
-  vehicles Vehicle[]
-  orders   Order[]
+  vehicles     Vehicle[]
+  orders       Order[]
+  reservations Reservation[]
 }
 
 model Topup {
@@ -125,11 +147,12 @@ model Order {
   redeemedAt       DateTime?
   redeemedById     String?
 
-  user       User     @relation(fields: [userId], references: [id])
-  vehicle    Vehicle? @relation(fields: [vehicleId], references: [id])
-  program    Program  @relation(fields: [programId], references: [id])
-  redeemedBy User?    @relation("redeemedBy", fields: [redeemedById], references: [id])
-  arrival    Arrival?
+  user        User         @relation(fields: [userId], references: [id])
+  vehicle     Vehicle?     @relation(fields: [vehicleId], references: [id])
+  program     Program      @relation(fields: [programId], references: [id])
+  redeemedBy  User?        @relation("redeemedBy", fields: [redeemedById], references: [id])
+  arrival     Arrival?
+  reservation Reservation?
 
   @@index([userId, createdAt])
 }
@@ -158,22 +181,96 @@ enum ArrivalStatus {
 
 // Chegada de veículo na máquina (leitura da câmera LPR)
 model Arrival {
-  id          String        @id @default(cuid())
-  plate       String        // normalizada
-  vehicleId   String?
-  userId      String?
-  status      ArrivalStatus @default(WAITING_DRIVER)
-  orderId     String?       @unique
-  createdAt   DateTime      @default(now())
-  requestedAt DateTime?
-  startedAt   DateTime?
+  id            String        @id @default(cuid())
+  plate         String        // normalizada
+  vehicleId     String?
+  userId        String?
+  status        ArrivalStatus @default(WAITING_DRIVER)
+  orderId       String?       @unique
+  reservationId String?
+  stationId     String?
+  createdAt     DateTime      @default(now())
+  requestedAt   DateTime?
+  startedAt     DateTime?
 
-  vehicle Vehicle? @relation(fields: [vehicleId], references: [id])
-  user    User?    @relation(fields: [userId], references: [id])
-  order   Order?   @relation(fields: [orderId], references: [id])
+  vehicle     Vehicle?     @relation(fields: [vehicleId], references: [id])
+  user        User?        @relation(fields: [userId], references: [id])
+  order       Order?       @relation(fields: [orderId], references: [id])
+  reservation Reservation? @relation(fields: [reservationId], references: [id])
+  station     WashStation? @relation(fields: [stationId], references: [id])
 
   @@index([status, createdAt])
   @@index([userId, createdAt])
+}
+
+// Unidade de lavagem (endereço + coordenadas p/ geolocalização no app)
+model WashStation {
+  id        String   @id @default(cuid())
+  name      String
+  address   String   @default("")
+  city      String   @default("")
+  state     String   @default("RS")
+  lat       Float?
+  lng       Float?
+  active    Boolean  @default(true)
+  timezone  String   @default("America/Sao_Paulo")
+  createdAt DateTime @default(now())
+
+  machines     Machine[]
+  reservations Reservation[]
+  arrivals     Arrival[]
+}
+
+// Máquina física — um ESP32 (deviceKey próprio) por máquina
+model Machine {
+  id            String        @id @default(cuid())
+  stationId     String
+  name          String        @default("Máquina 1")
+  deviceKey     String        @unique
+  status        MachineStatus @default(FREE)
+  lastHeartbeat DateTime?
+  remainingSec  Int           @default(0)
+  // luz transitória fixada por eventos (placa desconhecida, fim de ciclo…);
+  // fora da janela lightUntil, o heartbeat calcula a luz pelo estado real
+  lightState    String        @default("OFF")
+  lightUntil    DateTime?
+  createdAt     DateTime      @default(now())
+
+  station      WashStation   @relation(fields: [stationId], references: [id])
+  reservations Reservation[]
+
+  @@index([stationId])
+}
+
+// Reserva: segura o valor por 1h; débito só em COMPLETED (AUTO_CONCLUIDO)
+model Reservation {
+  id          String            @id @default(cuid())
+  userId      String
+  vehicleId   String
+  stationId   String?
+  machineId   String?           // alocada quando vira ACTIVE
+  programId   Int
+  amountCents Int               // preço no momento da reserva
+  status      ReservationStatus @default(HELD)
+  expiresAt   DateTime          // createdAt + 1h (congela enquanto espera na fila)
+  activeAt    DateTime?         // placa reconhecida, verde aceso
+  enteredAt   DateTime?         // X14 detectou
+  completedAt DateTime?         // AUTO_CONCLUIDO — débito
+  orderId     String?           @unique // Order criada só no COMPLETED
+  createdAt   DateTime          @default(now())
+
+  user     User         @relation(fields: [userId], references: [id])
+  vehicle  Vehicle      @relation(fields: [vehicleId], references: [id])
+  station  WashStation? @relation(fields: [stationId], references: [id])
+  machine  Machine?     @relation(fields: [machineId], references: [id])
+  program  Program      @relation(fields: [programId], references: [id])
+  order    Order?       @relation(fields: [orderId], references: [id])
+  arrivals Arrival[]
+
+  @@index([userId, status])
+  @@index([vehicleId, status])
+  @@index([status, expiresAt])
+  @@index([machineId, status])
 }
 
 // Log de eventos p/ contagens e auditoria (lavagens, recargas, resgates…)
