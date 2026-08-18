@@ -236,6 +236,17 @@ model Machine {
   lightUntil    DateTime?
   createdAt     DateTime      @default(now())
 
+  // Contadores de lavagem por modelo (espelham NVS do display)
+  totalWashesM1  Int       @default(0)
+  totalWashesM2  Int       @default(0)
+  totalWashesM3  Int       @default(0)
+  totalWashesM4  Int       @default(0)
+  totalWashesAll Int       @default(0)
+
+  // Controle de licença Pili Tecnologia
+  lastPaymentDate    DateTime?
+  lastHeartbeatSuccess DateTime?
+
   station      WashStation   @relation(fields: [stationId], references: [id])
   reservations Reservation[]
 

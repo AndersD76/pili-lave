@@ -75,13 +75,19 @@ export async function POST(req: NextRequest) {
     await tx.walletTx.create({
       data: { userId: reservation.userId, amountCents: -reservation.amountCents, kind: "WASH", refId: order.id },
     });
+    const washCounterField =
+      reservation.programId >= 1 && reservation.programId <= 4
+        ? (`totalWashesM${reservation.programId}` as const)
+        : null;
     await tx.machine.update({
       where: { id: auth.machine.id },
       data: {
         status: "FREE",
         remainingSec: 0,
-        lightState: "GREEN_SOLID", // "pode sair" por alguns segundos
+        lightState: "GREEN_SOLID",
         lightUntil: new Date(Date.now() + DONE_GREEN_S * 1000),
+        totalWashesAll: { increment: 1 },
+        ...(washCounterField ? { [washCounterField]: { increment: 1 } } : {}),
       },
     });
     await tx.event.create({

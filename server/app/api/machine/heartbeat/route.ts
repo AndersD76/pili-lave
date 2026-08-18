@@ -30,10 +30,12 @@ export async function POST(req: NextRequest) {
     auth.machine.status === "MAINTENANCE"
       ? undefined
       : body.state ?? (auth.machine.status === "OFFLINE" ? "FREE" : undefined);
+  const now = new Date();
   const machine = await prisma.machine.update({
     where: { id: auth.machine.id },
     data: {
-      lastHeartbeat: new Date(),
+      lastHeartbeat: now,
+      lastHeartbeatSuccess: now,
       remainingSec: body.restanteSeg ?? 0,
       ...(nextStatus ? { status: nextStatus } : {}),
     },
@@ -51,5 +53,16 @@ export async function POST(req: NextRequest) {
     };
   }
 
-  return NextResponse.json({ lightState: light, start: startPayload });
+  const daysWithoutPayment = machine.lastPaymentDate
+    ? Math.floor((now.getTime() - machine.lastPaymentDate.getTime()) / 86_400_000)
+    : 0;
+
+  return NextResponse.json({
+    lightState: light,
+    start: startPayload,
+    license: {
+      daysWithoutPayment,
+      blocked: daysWithoutPayment >= 50,
+    },
+  });
 }
