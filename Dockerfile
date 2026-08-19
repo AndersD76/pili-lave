@@ -19,6 +19,6 @@ COPY server .
 RUN npm run build
 
 ENV NODE_ENV=production
+ENV PORT=8080
 EXPOSE 8080
-# Railway injeta a variável PORT e o `next start` a lê sozinho — sem shell, sem -p
-CMD ["npm", "start"]
+CMD ["sh", "-c", "npx next start -H 0.0.0.0 -p $PORT"]
