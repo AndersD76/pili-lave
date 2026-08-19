@@ -82,9 +82,9 @@ static bool cameraInit() {
   c.pin_vsync = VSYNC_GPIO; c.pin_href = HREF_GPIO; c.pin_pclk = PCLK_GPIO;
   c.xclk_freq_hz = 20000000;
   c.pixel_format = PIXFORMAT_JPEG;
-  c.frame_size   = psramFound() ? FRAMESIZE_UXGA : FRAMESIZE_SVGA; // 1600x1200 com PSRAM
+  c.frame_size   = FRAMESIZE_SVGA;  // 800x600: nítido o bastante e leve p/ TLS
   c.jpeg_quality = PILI_JPEG_QUALITY;
-  c.fb_count     = psramFound() ? 2 : 1;
+  c.fb_count     = 1;               // buffer único libera heap p/ o HTTPS
   c.grab_mode    = CAMERA_GRAB_LATEST;
   if (esp_camera_init(&c) != ESP_OK) return false;
 
@@ -108,21 +108,35 @@ static bool enviarFrame(camera_fb_t *fb) {
   if (!http.begin(client, String(PILI_API_BASE) + "/api/lpr/frame")) return false;
   http.addHeader("Content-Type", "image/jpeg");
   if (strlen(PILI_DEVICE_KEY)) http.addHeader("x-device-key", PILI_DEVICE_KEY);
-  int code = http.POST(fb->buf, fb->len);
+  Serial.printf("[dbg] heap %u | frame %uKB\n", (unsigned)ESP.getFreeHeap(), (unsigned)(fb->len / 1024));
+  /* o buffer da câmera vive na PSRAM; o TLS às vezes falha escrevendo de lá —
+     copia para a RAM interna antes de enviar */
+  uint8_t *body = (uint8_t *)malloc(fb->len);
+  if (!body) { Serial.println("[lpr] sem RAM p/ copiar frame"); http.end(); return false; }
+  memcpy(body, fb->buf, fb->len);
+  int code = http.POST(body, fb->len);
+  free(body);
   bool ok = (code == 200);
   if (ok) Serial.printf("[lpr] %uKB -> %s\n", (unsigned)(fb->len / 1024), http.getString().substring(0, 140).c_str());
-  else    Serial.printf("[lpr] envio falhou (%d)\n", code);
+  else    Serial.printf("[lpr] envio falhou (%d: %s)\n", code, http.errorToString(code).c_str());
   http.end();
   blink(ok ? 1 : 3);
   return ok;
 }
 
-/* Chegada detectada: manda uma pequena rajada de frames */
+/* Chegada detectada: manda uma pequena rajada de frames (com retry) */
 static void eventoChegada() {
-  Serial.println("[evento] chegada detectada — enviando frames");
+  Serial.printf("[evento] chegada detectada — enviando frames (RSSI %d dBm)\n", WiFi.RSSI());
   for (int i = 0; i < PILI_FOTOS_EVENTO; i++) {
     camera_fb_t *fb = esp_camera_fb_get();
-    if (fb) { enviarFrame(fb); esp_camera_fb_return(fb); }
+    if (fb) {
+      bool ok = false;
+      for (int t = 0; t < 3 && !ok; t++) {       // rede 2.4G oscila: insiste
+        ok = enviarFrame(fb);
+        if (!ok) delay(800);
+      }
+      esp_camera_fb_return(fb);
+    }
     if (i + 1 < PILI_FOTOS_EVENTO) delay(1200);
   }
 }
@@ -148,6 +162,32 @@ void setup() {
   Serial.printf("[wifi] conectando em %s", PILI_WIFI_SSID);
   while (WiFi.status() != WL_CONNECTED) { blink(1, 250); Serial.print("."); delay(250); }
   Serial.printf("\n[wifi] ok: %s\n", WiFi.localIP().toString().c_str());
+
+  /* diagnóstico de rede no boot: DNS -> TCP 443 -> HTTPS */
+  delay(1000);
+  IPAddress ip;
+  const char *host = "pili-lave-production.up.railway.app";
+  Serial.printf("[diag] DNS %s -> %s\n", host,
+                WiFi.hostByName(host, ip) ? ip.toString().c_str() : "FALHOU");
+  Serial.printf("[diag] gateway %s | dns %s\n",
+                WiFi.gatewayIP().toString().c_str(), WiFi.dnsIP().toString().c_str());
+  {
+    WiFiClient tcp;
+    Serial.printf("[diag] TCP %s:443 -> %s\n", ip.toString().c_str(),
+                  tcp.connect(ip, 443, 8000) ? "ok" : "FALHOU");
+    tcp.stop();
+  }
+  {
+    WiFiClientSecure tls; tls.setInsecure();
+    Serial.printf("[diag] TLS %s:443 -> %s\n", host,
+                  tls.connect(host, 443, 15000) ? "ok" : "FALHOU");
+    tls.stop();
+  }
+
+  /* frame de teste no boot: valida câmera+rede sem precisar de movimento */
+  delay(500);
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (fb) { Serial.println("[boot] enviando frame de teste"); enviarFrame(fb); esp_camera_fb_return(fb); }
 }
 
 void loop() {
