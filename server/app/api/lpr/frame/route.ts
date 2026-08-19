@@ -1,48 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireDevice } from "@/lib/device";
-import { normalizePlate, plateCandidates } from "@/lib/placa";
+import { plateCandidates } from "@/lib/placa";
 import { handlePlateRead } from "@/lib/lpr";
+import { recognizePlate } from "@/lib/vision";
+import { prisma } from "@/lib/prisma";
+
+export const maxDuration = 30; // OCR pode levar alguns segundos
 
 /**
  * Câmera dedicada (ESP32-CAM / futura câmera IP): envia o FRAME JPEG cru;
- * o reconhecimento roda aqui na nuvem (Plate Recognizer). Trocar o
- * dispositivo de captura nunca muda o backend — só quem chama este endpoint.
- * Requer PLATE_RECOGNIZER_TOKEN no ambiente.
+ * o reconhecimento roda aqui na nuvem. Trocar o dispositivo de captura
+ * nunca muda o backend — só quem chama este endpoint.
+ *
+ * Reconhecimento (lib/vision): Plate Recognizer com PLATE_RECOGNIZER_TOKEN;
+ * sem token, fallback grátis com tesseract (pré-processado com sharp).
  */
+
+// Cena parada gera JPEGs de tamanho quase idêntico: pula o reconhecimento
+// (economiza OCR/quota; leituras repetidas já são deduplicadas adiante).
+let lastSize = 0;
+let lastAt = 0;
+
 export async function POST(req: NextRequest) {
   const denied = requireDevice(req);
   if (denied) return denied;
 
-  const token = process.env.PLATE_RECOGNIZER_TOKEN;
-  if (!token)
-    return NextResponse.json({ error: "PLATE_RECOGNIZER_TOKEN não configurado" }, { status: 501 });
-
   const jpeg = Buffer.from(await req.arrayBuffer());
   if (jpeg.length < 1000)
     return NextResponse.json({ error: "frame vazio ou pequeno demais" }, { status: 400 });
+  if (jpeg.length > 4 * 1024 * 1024)
+    return NextResponse.json({ error: "frame grande demais (máx 4MB)" }, { status: 413 });
 
-  const form = new FormData();
-  form.append("upload", new Blob([jpeg], { type: "image/jpeg" }), "frame.jpg");
-  form.append("regions", "br");
+  const now = Date.now();
+  const similar = lastSize > 0 && Math.abs(jpeg.length - lastSize) / lastSize < 0.015;
+  const recent = now - lastAt < 60_000;
+  lastSize = jpeg.length;
+  lastAt = now;
+  if (similar && recent) return NextResponse.json({ plate: null, light: null, skipped: "cena parada" });
 
-  const res = await fetch("https://api.platerecognizer.com/v1/plate-reader/", {
-    method: "POST",
-    headers: { Authorization: `Token ${token}` },
-    body: form,
-  });
-  if (!res.ok) {
-    console.error("plate-reader:", res.status, await res.text().catch(() => ""));
-    return NextResponse.json({ error: "reconhecimento indisponível" }, { status: 502 });
-  }
+  const plate = await recognizePlate(jpeg);
+  if (!plate) return NextResponse.json({ plate: null, light: null }); // pátio vazio/sem placa legível
 
-  const data = (await res.json()) as { results?: { plate: string; score: number }[] };
-  const best = data.results?.sort((a, b) => b.score - a.score)[0];
-  if (!best || best.score < 0.7)
-    return NextResponse.json({ plate: null, light: null }); // sem placa confiável no frame
-
-  const plate = normalizePlate(best.plate);
-  if (plateCandidates(plate).length === 0) return NextResponse.json({ plate, light: null });
+  if (plateCandidates(plate).length === 0)
+    return NextResponse.json({ plate, light: null });
 
   const result = await handlePlateRead(plate);
+  await prisma.event.create({
+    data: { type: "lpr_photo", payload: { plate, bytes: jpeg.length, arrivalId: result.arrivalId } },
+  });
   return NextResponse.json({ plate, ...result });
 }

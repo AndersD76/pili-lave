@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   // "multiple lockfiles".
   outputFileTracingRoot: __dirname,
   turbopack: { root: __dirname },
+  serverExternalPackages: ["tesseract.js", "sharp"],
 };
 
 export default nextConfig;

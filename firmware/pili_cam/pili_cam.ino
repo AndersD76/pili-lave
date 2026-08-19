@@ -1,15 +1,19 @@
 /************************************************************
  * PILI LAVE — Firmware da CÂMERA (ESP32-CAM → nuvem)
  * ----------------------------------------------------------
- * Captura JPEG e envia o frame cru para POST /api/lpr/frame.
- * O LPR (Plate Recognizer) roda na NUVEM; a resposta traz
- * {plate, light} — apenas logada aqui: quem aciona a lâmpada
- * é o ESP32 da máquina, via heartbeat.
+ * "Burra de propósito": captura JPEG e envia o frame cru para
+ * POST /api/lpr/frame SOMENTE quando detecta uma chegada
+ * (variação da cena ou sensor físico). O LPR roda na NUVEM;
+ * a resposta {plate, light} é apenas logada — quem aciona a
+ * lâmpada é o ESP32 da máquina, via heartbeat.
  *
  * Posicionamento: altura 1,0–1,5 m, ângulo ≤ 30°, distância
- * 2–3 m (lente fixa). Ver especificação de hardware no PDF v2.
+ * 2–3 m (lente fixa).
  *
- * Bibliotecas: core esp32 (esp_camera, WiFi, HTTPClient).
+ * LED vermelho de status (GPIO33, ativo LOW no AI-Thinker):
+ *   piscando lento = conectando WiFi
+ *   1 piscada      = frame enviado
+ *   3 piscadas     = erro de envio
  ************************************************************/
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -35,6 +39,7 @@
   #define VSYNC_GPIO 25
   #define HREF_GPIO 23
   #define PCLK_GPIO 22
+  #define LED_STATUS 33
 #elif defined(CAMERA_MODEL_XIAO_ESP32S3)
   #define PWDN_GPIO -1
   #define RESET_GPIO -1
@@ -52,12 +57,19 @@
   #define VSYNC_GPIO 38
   #define HREF_GPIO 47
   #define PCLK_GPIO 13
+  #define LED_STATUS 21
 #else
   #error "Escolha a placa em pili_cam_config.h"
 #endif
 
-static uint32_t g_lastSend = 0;
-static size_t   g_lastJpegLen = 0;
+static void blink(int n, int ms = 120) {
+#ifdef LED_STATUS
+  for (int i = 0; i < n; i++) {
+    digitalWrite(LED_STATUS, LOW);  delay(ms);
+    digitalWrite(LED_STATUS, HIGH); delay(ms);
+  }
+#endif
+}
 
 static bool cameraInit() {
   camera_config_t c = {};
@@ -87,60 +99,88 @@ static bool cameraInit() {
 }
 
 /* Envia o frame cru; resposta {plate, light} é apenas logada. */
-static void enviarFrame(camera_fb_t *fb) {
-  if (WiFi.status() != WL_CONNECTED) return;
+static bool enviarFrame(camera_fb_t *fb) {
+  if (WiFi.status() != WL_CONNECTED) return false;
   WiFiClientSecure client;
   client.setInsecure();                       // TODO produção: pinning
   HTTPClient http;
   http.setTimeout(PILI_HTTP_TIMEOUT);
-  if (!http.begin(client, String(PILI_API_BASE) + "/api/lpr/frame")) return;
+  if (!http.begin(client, String(PILI_API_BASE) + "/api/lpr/frame")) return false;
   http.addHeader("Content-Type", "image/jpeg");
-  http.addHeader("x-device-key", PILI_DEVICE_KEY);
+  if (strlen(PILI_DEVICE_KEY)) http.addHeader("x-device-key", PILI_DEVICE_KEY);
   int code = http.POST(fb->buf, fb->len);
-  if (code == 200) {
-    String resp = http.getString();
-    Serial.printf("[lpr] %s\n", resp.c_str()); // {"plate":"ABC1D23","light":"GREEN_SOLID",...}
-  } else {
-    Serial.printf("[lpr] envio falhou (%d)\n", code);
-  }
+  bool ok = (code == 200);
+  if (ok) Serial.printf("[lpr] %uKB -> %s\n", (unsigned)(fb->len / 1024), http.getString().substring(0, 140).c_str());
+  else    Serial.printf("[lpr] envio falhou (%d)\n", code);
   http.end();
+  blink(ok ? 1 : 3);
+  return ok;
+}
+
+/* Chegada detectada: manda uma pequena rajada de frames */
+static void eventoChegada() {
+  Serial.println("[evento] chegada detectada — enviando frames");
+  for (int i = 0; i < PILI_FOTOS_EVENTO; i++) {
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (fb) { enviarFrame(fb); esp_camera_fb_return(fb); }
+    if (i + 1 < PILI_FOTOS_EVENTO) delay(1200);
+  }
 }
 
 void setup() {
   Serial.begin(115200);
+#ifdef LED_STATUS
+  pinMode(LED_STATUS, OUTPUT);
+  digitalWrite(LED_STATUS, HIGH);
+#endif
+#if PILI_MODO_SENSOR
+  pinMode(PILI_PIN_SENSOR, INPUT);
+#endif
+  Serial.println("\nPILI LAVE — Câmera (evento -> frame -> nuvem)");
   if (!cameraInit()) {
-    Serial.println("[cam] falha ao iniciar a câmera — verifique a placa selecionada");
-    while (true) delay(1000);
+    Serial.println("[cam] falha ao iniciar a câmera — verifique a placa em pili_cam_config.h");
+    delay(5000);
+    ESP.restart();
   }
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
   WiFi.begin(PILI_WIFI_SSID, PILI_WIFI_PASS);
-  Serial.println("[wifi] conectando…");
+  Serial.printf("[wifi] conectando em %s", PILI_WIFI_SSID);
+  while (WiFi.status() != WL_CONNECTED) { blink(1, 250); Serial.print("."); delay(250); }
+  Serial.printf("\n[wifi] ok: %s\n", WiFi.localIP().toString().c_str());
 }
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    static uint32_t lastTry = 0;
-    if (millis() - lastTry > 15000) { lastTry = millis(); WiFi.reconnect(); }
-    delay(200);
-    return;
-  }
+  static uint32_t lastCheck = 0, cooldownAte = 0;
+  static float baseline = 0;
 
+  if (millis() - lastCheck < PILI_CHECAGEM_MS) { delay(10); return; }
+  lastCheck = millis();
+  if (WiFi.status() != WL_CONNECTED) { blink(1, 250); return; }
+  if (millis() < cooldownAte) return;
+
+#if PILI_MODO_SENSOR
+  /* sensor físico: nível ALTO = veículo presente */
+  if (digitalRead(PILI_PIN_SENSOR) == HIGH) {
+    eventoChegada();
+    cooldownAte = millis() + PILI_COOLDOWN_MS;
+  }
+#else
+  /* detecção pelo quadro: cena parada gera JPEG de tamanho estável;
+     algo entrando muda o tamanho — só aí os frames são enviados. */
   camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb) { delay(200); return; }
+  if (!fb) return;
+  const float size = (float)fb->len;
+  esp_camera_fb_return(fb);           // frame de checagem é descartado local
 
-  /* movimento barato: variação % do tamanho do JPEG entre frames */
-  bool movimento = false;
-  if (g_lastJpegLen) {
-    size_t diff = (fb->len > g_lastJpegLen) ? fb->len - g_lastJpegLen : g_lastJpegLen - fb->len;
-    movimento = diff * 100 / g_lastJpegLen >= PILI_MOTION_PCT;
-  }
-  g_lastJpegLen = fb->len;
+  if (baseline <= 0) { baseline = size; return; }   // aquecimento
+  const float varPct = fabsf(size - baseline) * 100.0f / baseline;
+  baseline = baseline * 0.9f + size * 0.1f;         // média móvel da cena
 
-  uint32_t intervalo = movimento ? PILI_FRAME_MS : PILI_IDLE_MS;
-  if (millis() - g_lastSend >= intervalo) {
-    g_lastSend = millis();
-    enviarFrame(fb);
+  if (varPct >= PILI_MOTION_PCT) {
+    eventoChegada();
+    cooldownAte = millis() + PILI_COOLDOWN_MS;
+    baseline = 0;                                   // re-aprende a cena
   }
-  esp_camera_fb_return(fb);
-  delay(250);
+#endif
 }
