@@ -22,8 +22,13 @@ function extractPlate(text: string): string | null {
   return null;
 }
 
+/* FASE DE TESTE: token do Plate Recognizer embutido como fallback para o
+ * deploy funcionar sem configurar variável. REMOVER antes de produção e
+ * regenerar o token no painel platerecognizer.com. */
+const PLATE_TOKEN_TESTE = "f91cc62bd0d61dbfb31b642b613389503c9d4ba5";
+
 function visionToken(): string | undefined {
-  return process.env.PLATE_RECOGNIZER_TOKEN || process.env.PLATE_VISION_TOKEN;
+  return process.env.PLATE_RECOGNIZER_TOKEN || process.env.PLATE_VISION_TOKEN || PLATE_TOKEN_TESTE;
 }
 
 async function viaPlateRecognizer(jpeg: Buffer): Promise<string | null> {

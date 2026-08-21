@@ -157,6 +157,7 @@ void setup() {
     ESP.restart();
   }
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);          // sem power-save: evita perda de pacotes no TCP/TLS
   WiFi.setAutoReconnect(true);
   WiFi.begin(PILI_WIFI_SSID, PILI_WIFI_PASS);
   Serial.printf("[wifi] conectando em %s", PILI_WIFI_SSID);
@@ -176,6 +177,11 @@ void setup() {
     Serial.printf("[diag] TCP %s:443 -> %s\n", ip.toString().c_str(),
                   tcp.connect(ip, 443, 8000) ? "ok" : "FALHOU");
     tcp.stop();
+  }
+  {
+    WiFiClient a; Serial.printf("[diag] TCP roteador 192.168.1.1:80 -> %s\n", a.connect(IPAddress(192,168,1,1), 80, 5000) ? "ok" : "FALHOU"); a.stop();
+    WiFiClient b; Serial.printf("[diag] TCP 1.1.1.1:443 -> %s\n", b.connect(IPAddress(1,1,1,1), 443, 8000) ? "ok" : "FALHOU"); b.stop();
+    WiFiClient c; Serial.printf("[diag] TCP 8.8.8.8:53 -> %s\n", c.connect(IPAddress(8,8,8,8), 53, 8000) ? "ok" : "FALHOU"); c.stop();
   }
   {
     WiFiClientSecure tls; tls.setInsecure();
