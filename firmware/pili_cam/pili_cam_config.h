@@ -14,8 +14,8 @@
 // #define CAMERA_MODEL_XIAO_ESP32S3  // Seeed XIAO ESP32-S3 Sense (OV2640/OV5640)
 
 /* ================= WIFI ================= */
-#define PILI_WIFI_SSID  "PILI-ADM"
-#define PILI_WIFI_PASS  "@2019@2020"
+#define PILI_WIFI_SSID  "ANDERS"
+#define PILI_WIFI_PASS  "@2025@2025"
 
 /* ================= BACKEND ================= */
 #define PILI_API_BASE   "https://pili-lave-production.up.railway.app"  // sem barra no final
