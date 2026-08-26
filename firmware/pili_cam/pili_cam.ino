@@ -82,7 +82,7 @@ static bool cameraInit() {
   c.pin_vsync = VSYNC_GPIO; c.pin_href = HREF_GPIO; c.pin_pclk = PCLK_GPIO;
   c.xclk_freq_hz = 20000000;
   c.pixel_format = PIXFORMAT_JPEG;
-  c.frame_size   = FRAMESIZE_SVGA;  // 800x600: nítido o bastante e leve p/ TLS
+  c.frame_size   = FRAMESIZE_XGA;   // 1024x768: mais detalhe na placa (frame ~40-90KB)
   c.jpeg_quality = PILI_JPEG_QUALITY;
   c.fb_count     = 1;               // buffer único libera heap p/ o HTTPS
   c.grab_mode    = CAMERA_GRAB_LATEST;

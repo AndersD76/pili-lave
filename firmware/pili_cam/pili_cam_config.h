@@ -36,7 +36,7 @@
 #define PILI_COOLDOWN_MS     15000UL  // silêncio após um evento
 
 /* ================= CAPTURA ================= */
-#define PILI_JPEG_QUALITY  12       // 0(melhor)..63 — 12 equilibra nitidez/tamanho
+#define PILI_JPEG_QUALITY  10       // 0(melhor)..63 — 12 equilibra nitidez/tamanho
 #define PILI_HTTP_TIMEOUT  20000
 
 #endif // PILI_CAM_CONFIG_H
