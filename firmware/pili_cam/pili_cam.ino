@@ -82,7 +82,7 @@ static bool cameraInit() {
   c.pin_vsync = VSYNC_GPIO; c.pin_href = HREF_GPIO; c.pin_pclk = PCLK_GPIO;
   c.xclk_freq_hz = 20000000;
   c.pixel_format = PIXFORMAT_JPEG;
-  c.frame_size   = FRAMESIZE_XGA;   // 1024x768: mais detalhe na placa (frame ~40-90KB)
+  c.frame_size   = psramFound() ? FRAMESIZE_UXGA : FRAMESIZE_XGA; // 1600x1200: caracteres da placa legíveis
   c.jpeg_quality = PILI_JPEG_QUALITY;
   c.fb_count     = 1;               // buffer único libera heap p/ o HTTPS
   c.grab_mode    = CAMERA_GRAB_LATEST;
@@ -90,10 +90,14 @@ static bool cameraInit() {
 
   sensor_t *s = esp_camera_sensor_get();
   if (s) {                       // placa refletiva: reforça contraste/nitidez
-    s->set_contrast(s, 1);
-    s->set_sharpness(s, 1);
+    s->set_contrast(s, 2);
+    s->set_sharpness(s, 2);
+    s->set_saturation(s, 0);
     s->set_whitebal(s, 1);
     s->set_exposure_ctrl(s, 1);
+    s->set_aec2(s, 1);           // exposição mais estável em contraluz
+    s->set_gainceiling(s, GAINCEILING_4X);
+    s->set_lenc(s, 1);           // correção de lente
   }
   return true;
 }
@@ -109,13 +113,8 @@ static bool enviarFrame(camera_fb_t *fb) {
   http.addHeader("Content-Type", "image/jpeg");
   if (strlen(PILI_DEVICE_KEY)) http.addHeader("x-device-key", PILI_DEVICE_KEY);
   Serial.printf("[dbg] heap %u | frame %uKB\n", (unsigned)ESP.getFreeHeap(), (unsigned)(fb->len / 1024));
-  /* o buffer da câmera vive na PSRAM; o TLS às vezes falha escrevendo de lá —
-     copia para a RAM interna antes de enviar */
-  uint8_t *body = (uint8_t *)malloc(fb->len);
-  if (!body) { Serial.println("[lpr] sem RAM p/ copiar frame"); http.end(); return false; }
-  memcpy(body, fb->buf, fb->len);
-  int code = http.POST(body, fb->len);
-  free(body);
+  /* frame UXGA (~150-250KB) vai direto da PSRAM — a RAM interna não comporta cópia */
+  int code = http.POST(fb->buf, fb->len);
   bool ok = (code == 200);
   if (ok) Serial.printf("[lpr] %uKB -> %s\n", (unsigned)(fb->len / 1024), http.getString().substring(0, 140).c_str());
   else    Serial.printf("[lpr] envio falhou (%d: %s)\n", code, http.errorToString(code).c_str());
