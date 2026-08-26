@@ -80,9 +80,17 @@ async function cropZoom(jpeg: Buffer, box: NonNullable<PrResult["box"]>): Promis
 async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
   const sharp = (await import("sharp")).default;
   const fixed = process.env.LPR_ROTATE ? Number(process.env.LPR_ROTATE) : null;
-  const variants: { rot: number; scale: number }[] = fixed !== null
-    ? [{ rot: fixed, scale: 1 }, { rot: fixed, scale: 2 }]
-    : [{ rot: 0, scale: 1 }, { rot: 0, scale: 2 }, { rot: 90, scale: 2 }, { rot: 270, scale: 2 }, { rot: 180, scale: 2 }];
+  // rot: rotação | scale: ampliação | flop: espelho horizontal (tela/vidro)
+  // enh: realce (normalize + gama) p/ escuridão, contraluz e sol forte
+  type Variant = { rot: number; scale: number; flop?: boolean; enh?: boolean };
+  const variants: Variant[] = fixed !== null
+    ? [{ rot: fixed, scale: 1 }, { rot: fixed, scale: 2 }, { rot: fixed, scale: 2, enh: true }, { rot: fixed, scale: 2, flop: true }]
+    : [
+        { rot: 0, scale: 1 }, { rot: 0, scale: 2 }, { rot: 0, scale: 2, enh: true },
+        { rot: 90, scale: 2 }, { rot: 270, scale: 2 }, { rot: 180, scale: 2 },
+        { rot: 0, scale: 2, flop: true }, { rot: 180, scale: 2, flop: true },
+        { rot: 90, scale: 2, enh: true }, { rot: 270, scale: 2, enh: true }, { rot: 180, scale: 2, enh: true },
+      ];
 
   type Best = { plate: string; score: number; how: string };
   const st: { best: Best | null } = { best: null };
@@ -92,14 +100,17 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
 
   for (const v of variants) {
     let img = jpeg;
-    if (v.rot || v.scale !== 1) {
+    if (v.rot || v.scale !== 1 || v.flop || v.enh) {
       const meta = await sharp(jpeg).metadata();
       let s = sharp(jpeg).rotate(v.rot);
+      if (v.flop) s = s.flop();
       if (v.scale !== 1 && meta.width) s = s.resize({ width: Math.min(2560, meta.width * v.scale), kernel: "lanczos3" });
-      img = await s.sharpen({ sigma: 0.8 }).jpeg({ quality: 92 }).toBuffer();
+      if (v.enh) s = s.grayscale().normalize().gamma(1.6).clahe({ width: 64, height: 64, maxSlope: 3 });
+      img = await s.sharpen({ sigma: v.enh ? 1.4 : 0.8 }).jpeg({ quality: 92 }).toBuffer();
     }
+    const how = `rot=${v.rot} scale=${v.scale}${v.flop ? " espelho" : ""}${v.enh ? " realce" : ""}`;
     const r = await prCall(img).catch(() => null);
-    consider(r, `rot=${v.rot} scale=${v.scale}`);
+    consider(r, how);
     if (st.best && st.best.score >= 0.95) break;
 
     // detectou a placa (longe/pequena) mas leu mal -> recorte ampliado
