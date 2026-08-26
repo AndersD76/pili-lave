@@ -18,18 +18,9 @@ export const maxDuration = 60;
  */
 const VOTE_WINDOW_MS = 30_000;
 let votes: { plate: string; score: number; at: number }[] = [];
-let lastSize = 0;
-let lastAt = 0;
 let chain: Promise<void> = Promise.resolve(); // análises em fila (1 chamada/s no reconhecedor)
 
 async function analisar(id: string, jpeg: Buffer): Promise<void> {
-  const now = Date.now();
-  const similar = lastSize > 0 && Math.abs(jpeg.length - lastSize) / lastSize < 0.01;
-  const recent = now - lastAt < 60_000;
-  lastSize = jpeg.length;
-  lastAt = now;
-  if (similar && recent) { await updateFrame(id, { note: "cena parada (não analisada)" }); return; }
-
   const plate = await recognizePlate(jpeg);
   if (!plate) { await updateFrame(id, { note: "nenhuma placa legível" }); return; }
   const score = lastPlateScore();
