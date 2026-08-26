@@ -18,7 +18,9 @@ export const maxDuration = 60; // varredura + recorte podem levar alguns segundo
  */
 let lastSize = 0;
 let lastAt = 0;
-let pending: { plate: string; at: number } | null = null;
+// votação: leituras dos últimos 30 s (a câmera manda várias fotos por chegada)
+const VOTE_WINDOW_MS = 30_000;
+let votes: { plate: string; score: number; at: number }[] = [];
 
 export async function POST(req: NextRequest) {
   const denied = requireDevice(req);
@@ -54,14 +56,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ plate, light: null });
   }
 
-  const confirmed =
-    score >= 0.9 || (pending !== null && pending.plate === plate && now - pending.at < 20_000);
+  votes = votes.filter((v) => now - v.at < VOTE_WINDOW_MS);
+  votes.push({ plate, score, at: now });
+  const iguais = votes.filter((v) => v.plate === plate).length;
+  const confirmed = score >= 0.9 || iguais >= 2;
   if (!confirmed) {
-    pending = { plate, at: now };
-    updateFrame(meta.id, { plate, score, note: "pendente (aguardando 2ª leitura igual)" });
-    return NextResponse.json({ plate, light: null, pending: true, score });
+    updateFrame(meta.id, { plate, score, note: `pendente (1 de 2 votos; ${Math.round(score * 100)}%)` });
+    return NextResponse.json({ plate, light: null, pending: true, score, votos: iguais });
   }
-  pending = null;
+  votes = votes.filter((v) => v.plate !== plate); // consumiu os votos desta placa
 
   const result = await handlePlateRead(plate);
   updateFrame(meta.id, {
