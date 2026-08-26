@@ -32,10 +32,10 @@
 #define PILI_PIN_SENSOR      13
 #define PILI_CHECAGEM_MS     500UL    // intervalo da checagem local (nada é enviado)
 #define PILI_MOTION_PCT      8        // % de variação do JPEG que indica chegada
-#define PILI_FOTOS_EVENTO    2        // frames enviados por chegada
+#define PILI_FOTOS_EVENTO    4        // frames por chegada (a nuvem vota entre eles)
 #define PILI_COOLDOWN_MS     10000UL  // silêncio após um evento
 #define PILI_ASSENTAR_MS     1500UL   // espera a cena assentar antes da 1ª foto
-#define PILI_ENTRE_FOTOS_MS  2000UL   // intervalo entre as fotos da rajada
+#define PILI_ENTRE_FOTOS_MS  1500UL   // intervalo entre as fotos da rajada
 
 /* ================= CAPTURA ================= */
 #define PILI_JPEG_QUALITY  12       // 0(melhor)..63 — 12 equilibra nitidez/tamanho
