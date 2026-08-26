@@ -115,7 +115,7 @@ static bool enviarFrame(camera_fb_t *fb) {
   Serial.printf("[dbg] heap %u | frame %uKB\n", (unsigned)ESP.getFreeHeap(), (unsigned)(fb->len / 1024));
   /* frame UXGA (~150-250KB) vai direto da PSRAM — a RAM interna não comporta cópia */
   int code = http.POST(fb->buf, fb->len);
-  bool ok = (code == 200);
+  bool ok = (code >= 200 && code < 300);   // 202 = aceito p/ análise em segundo plano
   if (ok) Serial.printf("[lpr] %uKB -> %s\n", (unsigned)(fb->len / 1024), http.getString().substring(0, 140).c_str());
   else    Serial.printf("[lpr] envio falhou (%d: %s)\n", code, http.errorToString(code).c_str());
   http.end();
