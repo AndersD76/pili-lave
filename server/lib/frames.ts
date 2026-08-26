@@ -1,54 +1,52 @@
 /**
- * Últimas capturas da câmera (anel em disco, /tmp) para a página /capturas.
- * Reinicia a cada deploy — é diagnóstico, não histórico.
+ * Capturas da câmera (foto + resultado) guardadas no banco — o histórico
+ * sobrevive a deploys e aparece inteiro em /capturas.
  */
-import { mkdir, readFile, writeFile, unlink } from "fs/promises";
-import path from "path";
+import { prisma } from "./prisma";
 
-const DIR = "/tmp/pili_frames";
-const MAX = 24;
+const KEEP = 300; // mantém as últimas N capturas
 
 export type FrameMeta = {
   id: string;
-  at: string;          // ISO
+  at: string;
   bytes: number;
   plate: string | null;
   score: number | null;
-  status: string | null;   // resultado da chegada (WAITING_DRIVER, NO_MATCH…)
+  status: string | null;
   light: string | null;
-  note: string | null;     // "cena parada", "pendente", "rejeitada"…
+  note: string | null;
   clientName: string | null;
 };
 
-const ring: FrameMeta[] = [];
-
 export async function saveFrame(jpeg: Buffer): Promise<FrameMeta> {
-  await mkdir(DIR, { recursive: true }).catch(() => {});
-  const id = `${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
-  await writeFile(path.join(DIR, `${id}.jpg`), jpeg);
-  const meta: FrameMeta = {
-    id, at: new Date().toISOString(), bytes: jpeg.length,
-    plate: null, score: null, status: null, light: null, note: null, clientName: null,
-  };
-  ring.unshift(meta);
-  while (ring.length > MAX) {
-    const old = ring.pop();
-    if (old) unlink(path.join(DIR, `${old.id}.jpg`)).catch(() => {});
-  }
-  return meta;
+  const c = await prisma.capture.create({
+    data: { bytes: jpeg.length, jpeg: new Uint8Array(jpeg), note: "analisando…" },
+    select: { id: true, at: true, bytes: true },
+  });
+  // poda assíncrona
+  (async () => {
+    const old = await prisma.capture.findMany({ orderBy: { at: "desc" }, skip: KEEP, select: { id: true }, take: 50 });
+    if (old.length) await prisma.capture.deleteMany({ where: { id: { in: old.map((o) => o.id) } } });
+  })().catch(() => {});
+  return { id: c.id, at: c.at.toISOString(), bytes: c.bytes, plate: null, score: null, status: null, light: null, note: "analisando…", clientName: null };
 }
 
-export function updateFrame(id: string, patch: Partial<FrameMeta>): void {
-  const m = ring.find((f) => f.id === id);
-  if (m) Object.assign(m, patch);
+export async function updateFrame(id: string, patch: Partial<Omit<FrameMeta, "id" | "at" | "bytes">>): Promise<void> {
+  await prisma.capture.update({ where: { id }, data: patch }).catch(() => {});
 }
 
-export function listFrames(): FrameMeta[] {
-  return ring;
+export async function listFrames(limit = 120): Promise<FrameMeta[]> {
+  const rows = await prisma.capture.findMany({
+    orderBy: { at: "desc" },
+    take: limit,
+    select: { id: true, at: true, bytes: true, plate: true, score: true, status: true, light: true, note: true, clientName: true },
+  });
+  return rows.map((r) => ({ ...r, at: r.at.toISOString() }));
 }
 
 export async function readFrame(id?: string | null): Promise<Buffer | null> {
-  const meta = id ? ring.find((f) => f.id === id) : ring[0];
-  if (!meta) return null;
-  return readFile(path.join(DIR, `${meta.id}.jpg`)).catch(() => null);
+  const row = id
+    ? await prisma.capture.findUnique({ where: { id }, select: { jpeg: true } })
+    : await prisma.capture.findFirst({ orderBy: { at: "desc" }, select: { jpeg: true } });
+  return row ? Buffer.from(row.jpeg) : null;
 }

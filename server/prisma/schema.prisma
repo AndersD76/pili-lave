@@ -293,3 +293,19 @@ model Event {
 
   @@index([type, createdAt])
 }
+
+// Capturas da câmera LPR (foto + resultado) — histórico visível em /capturas
+model Capture {
+  id         String   @id @default(cuid())
+  at         DateTime @default(now())
+  bytes      Int
+  jpeg       Bytes
+  plate      String?
+  score      Float?
+  status     String?
+  light      String?
+  note       String?
+  clientName String?
+
+  @@index([at])
+}

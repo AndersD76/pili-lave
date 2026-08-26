@@ -14,6 +14,7 @@ const MIN_SCORE = 0.8;   // confiança dos caracteres p/ aceitar
 const MIN_DSCORE = 0.3;  // confiança mínima da DETECÇÃO p/ tentar o recorte
 
 let lastScore = 0;
+let lastGood: string | null = null; // variante que leu por último (aprendizado)
 /** Confiança da última leitura aceita (0..1). */
 export function lastPlateScore(): number { return lastScore; }
 
@@ -83,24 +84,33 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
   // rot: rotação | scale: ampliação | flop: espelho horizontal (tela/vidro)
   // enh: realce (normalize + gama) p/ escuridão, contraluz e sol forte
   type Variant = { rot: number; scale: number; flop?: boolean; enh?: boolean };
-  const variants: Variant[] = fixed !== null
-    ? [{ rot: fixed, scale: 1 }, { rot: fixed, scale: 2 }, { rot: fixed, scale: 2, enh: true }, { rot: fixed, scale: 2, flop: true }]
+  // frames já vêm em UXGA: sem ampliar o quadro inteiro (lento); o recorte
+  // da placa (zoom) é quem amplia quando ela está longe.
+  const base: Variant[] = fixed !== null
+    ? [{ rot: fixed, scale: 1 }, { rot: fixed, scale: 1, flop: true }, { rot: fixed, scale: 1, enh: true }]
     : [
-        { rot: 0, scale: 1 }, { rot: 0, scale: 2 }, { rot: 0, scale: 2, enh: true },
-        { rot: 90, scale: 2 }, { rot: 270, scale: 2 }, { rot: 180, scale: 2 },
-        { rot: 0, scale: 2, flop: true }, { rot: 180, scale: 2, flop: true },
-        { rot: 90, scale: 2, enh: true }, { rot: 270, scale: 2, enh: true }, { rot: 180, scale: 2, enh: true },
+        { rot: 0, scale: 1 }, { rot: 180, scale: 1 },
+        { rot: 180, scale: 1, flop: true }, { rot: 0, scale: 1, flop: true },
+        { rot: 90, scale: 1 }, { rot: 270, scale: 1 },
+        { rot: 0, scale: 1, enh: true }, { rot: 180, scale: 1, enh: true },
       ];
+  // aprende: a variante que funcionou da última vez vai primeiro (1 chamada)
+  const key = (v: Variant) => `${v.rot}|${v.scale}|${v.flop ? 1 : 0}|${v.enh ? 1 : 0}`;
+  const variants = lastGood
+    ? [...base.filter((v) => key(v) === lastGood), ...base.filter((v) => key(v) !== lastGood)]
+    : base;
 
-  type Best = { plate: string; score: number; how: string };
+  type Best = { plate: string; score: number; how: string; k: string };
   const st: { best: Best | null; calls: number } = { best: null, calls: 0 };
-  const MAX_CALLS = 8;      // teto de chamadas ao reconhecedor por foto (cota)
+  const MAX_CALLS = 6;      // teto de chamadas ao reconhecedor por foto (cota, 1/s)
   const SURE = 0.98;        // para cedo só com quase-certeza
   const consider = (r: PrResult | null, how: string) => {
-    if (r && r.score >= MIN_SCORE && (!st.best || r.score > st.best.score)) st.best = { plate: r.plate, score: r.score, how };
+    if (r && r.score >= MIN_SCORE && (!st.best || r.score > st.best.score)) st.best = { plate: r.plate, score: r.score, how, k: curKey };
   };
 
+  let curKey = "";
   for (const v of variants) {
+    curKey = key(v);
     let img = jpeg;
     if (v.rot || v.scale !== 1 || v.flop || v.enh) {
       const meta = await sharp(jpeg).metadata();
@@ -131,6 +141,7 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
   if (!st.best) return null;
   const b = st.best;
   lastScore = b.score;
+  lastGood = b.k;
   console.log(`LPR: ${b.plate} (${b.score.toFixed(2)}) via ${b.how}`);
   return b.plate;
 }

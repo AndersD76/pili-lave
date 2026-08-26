@@ -52,7 +52,7 @@ export default function Capturas() {
           return (
             <div key={f.id} className="card" style={{ padding: 10 }}>
               <img
-                src={`/api/lpr/frame?id=${f.id}&t=${tick}`}
+                src={`/api/lpr/frame?id=${f.id}`}
                 alt={f.plate ?? "sem placa"}
                 style={{ width: "100%", borderRadius: 12, display: "block", background: "#000" }}
               />

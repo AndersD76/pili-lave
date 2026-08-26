@@ -6,5 +6,5 @@ import { listFrames } from "@/lib/frames";
 export async function GET(req: NextRequest) {
   const denied = requireDevice(req);
   if (denied) return denied;
-  return NextResponse.json(listFrames(), { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(await listFrames(120), { headers: { "Cache-Control": "no-store" } });
 }
