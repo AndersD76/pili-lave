@@ -75,7 +75,7 @@ async function cropZoom(jpeg: Buffer, box: NonNullable<PrResult["box"]>): Promis
 /**
  * "Pegar de qualquer jeito": varre orientações/ampliação; para cada variante,
  * se o detector achou a placa mas não leu bem, faz o recorte ampliado.
- * Guarda a melhor leitura e para cedo quando é quase certeza (>= 0.95).
+ * Guarda a melhor leitura e para cedo quando é quase certeza (>= 0.98).
  */
 async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
   const sharp = (await import("sharp")).default;
@@ -93,7 +93,9 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
       ];
 
   type Best = { plate: string; score: number; how: string };
-  const st: { best: Best | null } = { best: null };
+  const st: { best: Best | null; calls: number } = { best: null, calls: 0 };
+  const MAX_CALLS = 8;      // teto de chamadas ao reconhecedor por foto (cota)
+  const SURE = 0.98;        // para cedo só com quase-certeza
   const consider = (r: PrResult | null, how: string) => {
     if (r && r.score >= MIN_SCORE && (!st.best || r.score > st.best.score)) st.best = { plate: r.plate, score: r.score, how };
   };
@@ -109,17 +111,20 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
       img = await s.sharpen({ sigma: v.enh ? 1.4 : 0.8 }).jpeg({ quality: 92 }).toBuffer();
     }
     const how = `rot=${v.rot} scale=${v.scale}${v.flop ? " espelho" : ""}${v.enh ? " realce" : ""}`;
+    if (st.calls >= MAX_CALLS) break;
+    st.calls++;
     const r = await prCall(img).catch(() => null);
     consider(r, how);
-    if (st.best && st.best.score >= 0.95) break;
+    if (st.best && st.best.score >= SURE) break;
 
     // detectou a placa (longe/pequena) mas leu mal -> recorte ampliado
     if (r && r.box && r.dscore >= MIN_DSCORE && r.score < MIN_SCORE) {
       const zoom = await cropZoom(img, r.box).catch(() => null);
-      if (zoom) {
+      if (zoom && st.calls < MAX_CALLS) {
+        st.calls++;
         const rz = await prCall(zoom).catch(() => null);
-        consider(rz, `rot=${v.rot} scale=${v.scale} +zoom`);
-        if (st.best && st.best.score >= 0.95) break;
+        consider(rz, `${how} +zoom`);
+        if (st.best && st.best.score >= SURE) break;
       }
     }
   }

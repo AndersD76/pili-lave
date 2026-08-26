@@ -59,7 +59,8 @@ export async function POST(req: NextRequest) {
   votes = votes.filter((v) => now - v.at < VOTE_WINDOW_MS);
   votes.push({ plate, score, at: now });
   const iguais = votes.filter((v) => v.plate === plate).length;
-  const confirmed = score >= 0.9 || iguais >= 2;
+  // sozinha só com quase-certeza (>= 0.97); senão precisa de 2 fotos concordando
+  const confirmed = score >= 0.97 || iguais >= 2;
   if (!confirmed) {
     updateFrame(meta.id, { plate, score, note: `pendente (1 de 2 votos; ${Math.round(score * 100)}%)` });
     return NextResponse.json({ plate, light: null, pending: true, score, votos: iguais });
