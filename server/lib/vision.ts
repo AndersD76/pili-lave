@@ -98,8 +98,11 @@ async function viaTesseract(jpeg: Buffer): Promise<string | null> {
 /** Devolve a placa normalizada encontrada na foto, ou null. */
 export async function recognizePlate(jpeg: Buffer): Promise<string | null> {
   let plate: string | null = null;
+  lastScore = 0;
   if (visionToken()) {
-    plate = await viaPlateRecognizer(jpeg).catch(() => null);
+    // com Plate Recognizer configurado, NÃO cai no tesseract: o fallback
+    // gera chutes (score 0) que só atrapalham a confirmação
+    return viaPlateRecognizer(jpeg).catch(() => null);
   }
   if (!plate) {
     plate = await viaTesseract(jpeg).catch((e) => {
