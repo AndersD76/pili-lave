@@ -45,9 +45,24 @@ async function viaPlateRecognizer(jpeg: Buffer): Promise<string | null> {
     return null;
   }
   const json = await res.json();
-  const raw = json?.results?.[0]?.plate as string | undefined;
-  return raw ? normalizePlate(raw) : null;
+  type R = { plate: string; score: number; dscore?: number };
+  const results = ((json?.results ?? []) as R[]).sort((a, b) => b.score - a.score);
+  const best = results[0];
+  if (!best) return null;
+  // filtro de confiança: leitura fraca (foco, reflexo, ângulo) é descartada
+  if (best.score < MIN_SCORE || (best.dscore ?? 1) < MIN_DSCORE) {
+    console.warn(`PlateRecognizer: leitura rejeitada ${best.plate} score=${best.score} dscore=${best.dscore}`);
+    return null;
+  }
+  lastScore = best.score;
+  return normalizePlate(best.plate);
 }
+
+const MIN_SCORE = 0.8;   // confiança dos caracteres
+const MIN_DSCORE = 0.6;  // confiança da detecção da placa
+let lastScore = 0;
+/** Confiança da última leitura aceita (0..1). */
+export function lastPlateScore(): number { return lastScore; }
 
 /** Limpeza da imagem ANTES do OCR (tudo no servidor — a CAM manda cru):
  *  cinza -> contraste normalizado -> nitidez -> upscale p/ 1600px. */
