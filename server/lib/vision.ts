@@ -35,6 +35,9 @@ async function viaPlateRecognizer(jpeg: Buffer): Promise<string | null> {
   const form = new FormData();
   form.append("upload", new Blob([new Uint8Array(jpeg)], { type: "image/jpeg" }), "frame.jpg");
   form.append("regions", "br");
+  // limiares baixos de DETECÇÃO (placa pequena/torta ainda é achada);
+  // a confiança dos caracteres continua filtrada por MIN_SCORE aqui.
+  form.append("config", JSON.stringify({ threshold_d: 0.15, threshold_o: 0.4 }));
   const res = await fetch("https://api.platerecognizer.com/v1/plate-reader/", {
     method: "POST",
     headers: { Authorization: `Token ${visionToken()}` },
@@ -59,7 +62,37 @@ async function viaPlateRecognizer(jpeg: Buffer): Promise<string | null> {
 }
 
 const MIN_SCORE = 0.8;   // confiança dos caracteres
-const MIN_DSCORE = 0.6;  // confiança da detecção da placa
+const MIN_DSCORE = 0.5;  // confiança da detecção da placa
+
+/**
+ * "Pegar de qualquer jeito": câmera deitada, de lado, placa pequena.
+ * Varre variantes do frame até achar: original -> ampliado 2x -> girado
+ * 90/270/180 (ampliado). Com LPR_ROTATE fixo (câmera instalada de lado),
+ * usa só essa rotação e economiza chamadas.
+ */
+async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
+  const sharp = (await import("sharp")).default;
+  const fixed = process.env.LPR_ROTATE ? Number(process.env.LPR_ROTATE) : null;
+  const variants: { rot: number; scale: number }[] = fixed !== null
+    ? [{ rot: fixed, scale: 1 }, { rot: fixed, scale: 2 }]
+    : [{ rot: 0, scale: 1 }, { rot: 0, scale: 2 }, { rot: 90, scale: 2 }, { rot: 270, scale: 2 }, { rot: 180, scale: 2 }];
+
+  for (const v of variants) {
+    let img = jpeg;
+    if (v.rot || v.scale !== 1) {
+      const meta = await sharp(jpeg).metadata();
+      let s = sharp(jpeg).rotate(v.rot);
+      if (v.scale !== 1 && meta.width) s = s.resize({ width: Math.min(2560, meta.width * v.scale), kernel: "lanczos3" });
+      img = await s.sharpen({ sigma: 0.8 }).jpeg({ quality: 92 }).toBuffer();
+    }
+    const plate = await viaPlateRecognizer(img).catch(() => null);
+    if (plate) {
+      if (v.rot || v.scale !== 1) console.log(`LPR: placa ${plate} achada com rot=${v.rot} scale=${v.scale}`);
+      return plate;
+    }
+  }
+  return null;
+}
 let lastScore = 0;
 /** Confiança da última leitura aceita (0..1). */
 export function lastPlateScore(): number { return lastScore; }
@@ -102,7 +135,7 @@ export async function recognizePlate(jpeg: Buffer): Promise<string | null> {
   if (visionToken()) {
     // com Plate Recognizer configurado, NÃO cai no tesseract: o fallback
     // gera chutes (score 0) que só atrapalham a confirmação
-    return viaPlateRecognizer(jpeg).catch(() => null);
+    return recognizeAnyOrientation(jpeg);
   }
   if (!plate) {
     plate = await viaTesseract(jpeg).catch((e) => {
