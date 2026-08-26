@@ -84,7 +84,7 @@ static bool cameraInit() {
   c.pixel_format = PIXFORMAT_JPEG;
   c.frame_size   = psramFound() ? FRAMESIZE_UXGA : FRAMESIZE_XGA; // 1600x1200: caracteres da placa legíveis
   c.jpeg_quality = PILI_JPEG_QUALITY;
-  c.fb_count     = 1;               // buffer único libera heap p/ o HTTPS
+  c.fb_count     = psramFound() ? 2 : 1; // 2 buffers na PSRAM evitam FB-OVF em UXGA
   c.grab_mode    = CAMERA_GRAB_LATEST;
   if (esp_camera_init(&c) != ESP_OK) return false;
 
