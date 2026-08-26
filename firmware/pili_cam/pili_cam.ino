@@ -125,7 +125,11 @@ static bool enviarFrame(camera_fb_t *fb) {
 
 /* Chegada detectada: manda uma pequena rajada de frames (com retry) */
 static void eventoChegada() {
-  Serial.printf("[evento] chegada detectada — enviando frames (RSSI %d dBm)\n", WiFi.RSSI());
+  Serial.printf("[evento] chegada detectada — aguardando a cena assentar (RSSI %d dBm)\n", WiFi.RSSI());
+  delay(PILI_ASSENTAR_MS);                       // carro para / placa fica parada
+  /* descarta o frame velho que ficou no buffer e pega um atual */
+  camera_fb_t *velho = esp_camera_fb_get();
+  if (velho) esp_camera_fb_return(velho);
   for (int i = 0; i < PILI_FOTOS_EVENTO; i++) {
     camera_fb_t *fb = esp_camera_fb_get();
     if (fb) {
@@ -136,7 +140,7 @@ static void eventoChegada() {
       }
       esp_camera_fb_return(fb);
     }
-    if (i + 1 < PILI_FOTOS_EVENTO) delay(1200);
+    if (i + 1 < PILI_FOTOS_EVENTO) delay(PILI_ENTRE_FOTOS_MS);
   }
 }
 
