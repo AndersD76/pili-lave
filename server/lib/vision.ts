@@ -77,6 +77,10 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
     ? [{ rot: fixed, scale: 1 }, { rot: fixed, scale: 2 }]
     : [{ rot: 0, scale: 1 }, { rot: 0, scale: 2 }, { rot: 90, scale: 2 }, { rot: 270, scale: 2 }, { rot: 180, scale: 2 }];
 
+  // Placa de cabeça para baixo pode gerar leitura ERRADA com score médio
+  // (ex.: 0.83). Por isso: guarda a melhor leitura entre as variantes e só
+  // para cedo quando a confiança é quase certeza (>= 0.95).
+  let best: { plate: string; score: number; rot: number; scale: number } | null = null;
   for (const v of variants) {
     let img = jpeg;
     if (v.rot || v.scale !== 1) {
@@ -86,12 +90,13 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
       img = await s.sharpen({ sigma: 0.8 }).jpeg({ quality: 92 }).toBuffer();
     }
     const plate = await viaPlateRecognizer(img).catch(() => null);
-    if (plate) {
-      if (v.rot || v.scale !== 1) console.log(`LPR: placa ${plate} achada com rot=${v.rot} scale=${v.scale}`);
-      return plate;
-    }
+    if (plate && (!best || lastScore > best.score)) best = { plate, score: lastScore, rot: v.rot, scale: v.scale };
+    if (best && best.score >= 0.95) break;
   }
-  return null;
+  if (!best) return null;
+  lastScore = best.score;
+  if (best.rot || best.scale !== 1) console.log(`LPR: ${best.plate} (${best.score}) com rot=${best.rot} scale=${best.scale}`);
+  return best.plate;
 }
 let lastScore = 0;
 /** Confiança da última leitura aceita (0..1). */
