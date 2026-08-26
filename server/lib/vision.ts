@@ -84,9 +84,10 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
     ? [{ rot: fixed, scale: 1 }, { rot: fixed, scale: 2 }]
     : [{ rot: 0, scale: 1 }, { rot: 0, scale: 2 }, { rot: 90, scale: 2 }, { rot: 270, scale: 2 }, { rot: 180, scale: 2 }];
 
-  let best: { plate: string; score: number; how: string } | null = null;
+  type Best = { plate: string; score: number; how: string };
+  const st: { best: Best | null } = { best: null };
   const consider = (r: PrResult | null, how: string) => {
-    if (r && r.score >= MIN_SCORE && (!best || r.score > best.score)) best = { plate: r.plate, score: r.score, how };
+    if (r && r.score >= MIN_SCORE && (!st.best || r.score > st.best.score)) st.best = { plate: r.plate, score: r.score, how };
   };
 
   for (const v of variants) {
@@ -99,7 +100,7 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
     }
     const r = await prCall(img).catch(() => null);
     consider(r, `rot=${v.rot} scale=${v.scale}`);
-    if (best && best.score >= 0.95) break;
+    if (st.best && st.best.score >= 0.95) break;
 
     // detectou a placa (longe/pequena) mas leu mal -> recorte ampliado
     if (r && r.box && r.dscore >= MIN_DSCORE && r.score < MIN_SCORE) {
@@ -107,12 +108,12 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
       if (zoom) {
         const rz = await prCall(zoom).catch(() => null);
         consider(rz, `rot=${v.rot} scale=${v.scale} +zoom`);
-        if (best && best.score >= 0.95) break;
+        if (st.best && st.best.score >= 0.95) break;
       }
     }
   }
-  if (!best) return null;
-  const b: { plate: string; score: number; how: string } = best;
+  if (!st.best) return null;
+  const b = st.best;
   lastScore = b.score;
   console.log(`LPR: ${b.plate} (${b.score.toFixed(2)}) via ${b.how}`);
   return b.plate;
