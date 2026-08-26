@@ -2,25 +2,20 @@
  * Reconhecimento de placa a partir de FOTO (roda no servidor — a
  * ESP32-CAM só tira a foto e manda os bytes).
  *
- * Estratégias, na ordem:
- *  1. PLATE_VISION_TOKEN definido -> Plate Recognizer (precisão alta,
- *     free tier ~2500 leituras/mês em platerecognizer.com).
- *  2. Fallback: OCR local com tesseract.js (funciona sem chave nenhuma;
- *     precisão menor — exige foto razoavelmente frontal e nítida).
+ *  1. Plate Recognizer (token em PLATE_RECOGNIZER_TOKEN) com varredura de
+ *     orientação (câmera deitada/de lado) e ampliação.
+ *  2. Placa LONGE: o detector devolve a caixa mesmo sem conseguir ler;
+ *     recortamos a caixa, ampliamos 4x, realçamos e lemos de novo.
+ *  3. Sem token: fallback grátis com tesseract (fraco; só para bancada).
  */
 import { isValidPlate, normalizePlate, plateCandidates } from "./placa";
 
-/** Varre o texto do OCR em janelas de 7 caracteres aceitando sósias
- *  (TZFOF36 -> TZF0F36) — a coerção fica em plateCandidates(). */
-function extractPlate(text: string): string | null {
-  const clean = text.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  for (let i = 0; i + 7 <= clean.length; i++) {
-    const win = clean.slice(i, i + 7);
-    const cands = plateCandidates(win);
-    if (cands.length) return cands[0];
-  }
-  return null;
-}
+const MIN_SCORE = 0.8;   // confiança dos caracteres p/ aceitar
+const MIN_DSCORE = 0.3;  // confiança mínima da DETECÇÃO p/ tentar o recorte
+
+let lastScore = 0;
+/** Confiança da última leitura aceita (0..1). */
+export function lastPlateScore(): number { return lastScore; }
 
 /* FASE DE TESTE: token do Plate Recognizer embutido como fallback para o
  * deploy funcionar sem configurar variável. REMOVER antes de produção e
@@ -31,13 +26,15 @@ function visionToken(): string | undefined {
   return process.env.PLATE_RECOGNIZER_TOKEN || process.env.PLATE_VISION_TOKEN || PLATE_TOKEN_TESTE;
 }
 
-async function viaPlateRecognizer(jpeg: Buffer): Promise<string | null> {
+type PrResult = { plate: string; score: number; dscore: number; box: { xmin: number; ymin: number; xmax: number; ymax: number } | null };
+
+/** Uma chamada crua ao Plate Recognizer: melhor resultado, sem filtrar. */
+async function prCall(jpeg: Buffer): Promise<PrResult | null> {
   const form = new FormData();
   form.append("upload", new Blob([new Uint8Array(jpeg)], { type: "image/jpeg" }), "frame.jpg");
   form.append("regions", "br");
-  // limiares baixos de DETECÇÃO (placa pequena/torta ainda é achada);
-  // a confiança dos caracteres continua filtrada por MIN_SCORE aqui.
-  form.append("config", JSON.stringify({ threshold_d: 0.15, threshold_o: 0.4 }));
+  // limiares baixos de DETECÇÃO: placa pequena/torta ainda é localizada
+  form.append("config", JSON.stringify({ threshold_d: 0.1, threshold_o: 0.3 }));
   const res = await fetch("https://api.platerecognizer.com/v1/plate-reader/", {
     method: "POST",
     headers: { Authorization: `Token ${visionToken()}` },
@@ -48,27 +45,37 @@ async function viaPlateRecognizer(jpeg: Buffer): Promise<string | null> {
     return null;
   }
   const json = await res.json();
-  type R = { plate: string; score: number; dscore?: number };
+  type R = { plate: string; score: number; dscore?: number; box?: PrResult["box"] };
   const results = ((json?.results ?? []) as R[]).sort((a, b) => b.score - a.score);
   const best = results[0];
   if (!best) return null;
-  // filtro de confiança: leitura fraca (foco, reflexo, ângulo) é descartada
-  if (best.score < MIN_SCORE || (best.dscore ?? 1) < MIN_DSCORE) {
-    console.warn(`PlateRecognizer: leitura rejeitada ${best.plate} score=${best.score} dscore=${best.dscore}`);
-    return null;
-  }
-  lastScore = best.score;
-  return normalizePlate(best.plate);
+  return { plate: normalizePlate(best.plate), score: best.score, dscore: best.dscore ?? 1, box: best.box ?? null };
 }
 
-const MIN_SCORE = 0.8;   // confiança dos caracteres
-const MIN_DSCORE = 0.5;  // confiança da detecção da placa
+/** Recorta a caixa da placa com margem, amplia e realça — "zoom digital". */
+async function cropZoom(jpeg: Buffer, box: NonNullable<PrResult["box"]>): Promise<Buffer> {
+  const sharp = (await import("sharp")).default;
+  const meta = await sharp(jpeg).metadata();
+  const W = meta.width ?? 0, H = meta.height ?? 0;
+  const bw = box.xmax - box.xmin, bh = box.ymax - box.ymin;
+  const mx = bw * 0.6, my = bh * 1.0;
+  const left = Math.max(0, Math.floor(box.xmin - mx));
+  const top = Math.max(0, Math.floor(box.ymin - my));
+  const width = Math.min(W - left, Math.ceil(bw + 2 * mx));
+  const height = Math.min(H - top, Math.ceil(bh + 2 * my));
+  return sharp(jpeg)
+    .extract({ left, top, width, height })
+    .resize({ width: Math.max(1200, width * 4), kernel: "lanczos3" })
+    .sharpen({ sigma: 1.2 })
+    .normalize()
+    .jpeg({ quality: 95 })
+    .toBuffer();
+}
 
 /**
- * "Pegar de qualquer jeito": câmera deitada, de lado, placa pequena.
- * Varre variantes do frame até achar: original -> ampliado 2x -> girado
- * 90/270/180 (ampliado). Com LPR_ROTATE fixo (câmera instalada de lado),
- * usa só essa rotação e economiza chamadas.
+ * "Pegar de qualquer jeito": varre orientações/ampliação; para cada variante,
+ * se o detector achou a placa mas não leu bem, faz o recorte ampliado.
+ * Guarda a melhor leitura e para cedo quando é quase certeza (>= 0.95).
  */
 async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
   const sharp = (await import("sharp")).default;
@@ -77,10 +84,11 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
     ? [{ rot: fixed, scale: 1 }, { rot: fixed, scale: 2 }]
     : [{ rot: 0, scale: 1 }, { rot: 0, scale: 2 }, { rot: 90, scale: 2 }, { rot: 270, scale: 2 }, { rot: 180, scale: 2 }];
 
-  // Placa de cabeça para baixo pode gerar leitura ERRADA com score médio
-  // (ex.: 0.83). Por isso: guarda a melhor leitura entre as variantes e só
-  // para cedo quando a confiança é quase certeza (>= 0.95).
-  let best: { plate: string; score: number; rot: number; scale: number } | null = null;
+  let best: { plate: string; score: number; how: string } | null = null;
+  const consider = (r: PrResult | null, how: string) => {
+    if (r && r.score >= MIN_SCORE && (!best || r.score > best.score)) best = { plate: r.plate, score: r.score, how };
+  };
+
   for (const v of variants) {
     let img = jpeg;
     if (v.rot || v.scale !== 1) {
@@ -89,36 +97,45 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
       if (v.scale !== 1 && meta.width) s = s.resize({ width: Math.min(2560, meta.width * v.scale), kernel: "lanczos3" });
       img = await s.sharpen({ sigma: 0.8 }).jpeg({ quality: 92 }).toBuffer();
     }
-    const plate = await viaPlateRecognizer(img).catch(() => null);
-    if (plate && (!best || lastScore > best.score)) best = { plate, score: lastScore, rot: v.rot, scale: v.scale };
+    const r = await prCall(img).catch(() => null);
+    consider(r, `rot=${v.rot} scale=${v.scale}`);
     if (best && best.score >= 0.95) break;
+
+    // detectou a placa (longe/pequena) mas leu mal -> recorte ampliado
+    if (r && r.box && r.dscore >= MIN_DSCORE && r.score < MIN_SCORE) {
+      const zoom = await cropZoom(img, r.box).catch(() => null);
+      if (zoom) {
+        const rz = await prCall(zoom).catch(() => null);
+        consider(rz, `rot=${v.rot} scale=${v.scale} +zoom`);
+        if (best && best.score >= 0.95) break;
+      }
+    }
   }
   if (!best) return null;
-  lastScore = best.score;
-  if (best.rot || best.scale !== 1) console.log(`LPR: ${best.plate} (${best.score}) com rot=${best.rot} scale=${best.scale}`);
-  return best.plate;
+  const b: { plate: string; score: number; how: string } = best;
+  lastScore = b.score;
+  console.log(`LPR: ${b.plate} (${b.score.toFixed(2)}) via ${b.how}`);
+  return b.plate;
 }
-let lastScore = 0;
-/** Confiança da última leitura aceita (0..1). */
-export function lastPlateScore(): number { return lastScore; }
 
-/** Limpeza da imagem ANTES do OCR (tudo no servidor — a CAM manda cru):
- *  cinza -> contraste normalizado -> nitidez -> upscale p/ 1600px. */
+/** Limpeza da imagem ANTES do OCR (fallback tesseract). */
 async function preprocess(jpeg: Buffer): Promise<Buffer> {
   const sharp = (await import("sharp")).default;
-  return sharp(jpeg)
-    .rotate() // respeita EXIF
-    .grayscale()
-    .normalize()
-    .sharpen({ sigma: 1.2 })
-    .resize({ width: 1600, withoutEnlargement: false })
-    .jpeg({ quality: 92 })
-    .toBuffer();
+  return sharp(jpeg).rotate().grayscale().normalize().sharpen({ sigma: 1.2 })
+    .resize({ width: 1600, withoutEnlargement: false }).jpeg({ quality: 92 }).toBuffer();
 }
 
-// worker do tesseract reutilizado entre requisições
-let tessWorker: import("tesseract.js").Worker | null = null;
+/** Varre o texto do OCR em janelas de 7 caracteres aceitando sósias. */
+function extractPlate(text: string): string | null {
+  const clean = text.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  for (let i = 0; i + 7 <= clean.length; i++) {
+    const cands = plateCandidates(clean.slice(i, i + 7));
+    if (cands.length) return cands[0];
+  }
+  return null;
+}
 
+let tessWorker: import("tesseract.js").Worker | null = null;
 async function viaTesseract(jpeg: Buffer): Promise<string | null> {
   const { createWorker } = await import("tesseract.js");
   if (!tessWorker) {
@@ -135,19 +152,9 @@ async function viaTesseract(jpeg: Buffer): Promise<string | null> {
 
 /** Devolve a placa normalizada encontrada na foto, ou null. */
 export async function recognizePlate(jpeg: Buffer): Promise<string | null> {
-  let plate: string | null = null;
   lastScore = 0;
-  if (visionToken()) {
-    // com Plate Recognizer configurado, NÃO cai no tesseract: o fallback
-    // gera chutes (score 0) que só atrapalham a confirmação
-    return recognizeAnyOrientation(jpeg);
-  }
-  if (!plate) {
-    plate = await viaTesseract(jpeg).catch((e) => {
-      console.error("Tesseract falhou:", e);
-      return null;
-    });
-  }
+  if (visionToken()) return recognizeAnyOrientation(jpeg);
+  const plate = await viaTesseract(jpeg).catch((e) => { console.error("Tesseract falhou:", e); return null; });
   if (!plate) return null;
   if (isValidPlate(plate)) return plate;
   return plateCandidates(plate)[0] ?? null;

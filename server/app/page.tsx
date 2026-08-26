@@ -24,6 +24,12 @@ export default function Home() {
           Para o celular fixo na máquina: lê a placa e vira o painel de luz.
         </span>
       </a>
+      <a href="/capturas" style={card}>
+        <b style={{ fontSize: 20, color: "var(--cromo)" }}>Capturas da câmera →</b>
+        <span style={{ display: "block", color: "var(--aco-d)", fontSize: 14, marginTop: 4 }}>
+          As últimas fotos que a ESP32-CAM mandou e o que a nuvem leu (ao vivo).
+        </span>
+      </a>
       <a href="/admin" style={card}>
         <b style={{ fontSize: 20, color: "var(--cromo)" }}>Painel admin →</b>
         <span style={{ display: "block", color: "var(--aco-d)", fontSize: 14, marginTop: 4 }}>
