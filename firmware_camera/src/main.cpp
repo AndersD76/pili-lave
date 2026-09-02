@@ -67,7 +67,8 @@ static void hardResetFase1(const char* nome) {
   }
   Serial.printf("[%s] boot limpo (motivo=%d, hard reset ja feito)\n", nome, (int)r);
 }
-static void hardResetRadio() { esp_now_deinit(); WiFi.persistent(false); WiFi.mode(WIFI_OFF); delay(50); }
+/* (sem esp_now_deinit: antes do Wi-Fi existir ele derruba o chip com LoadProhibited) */
+static void hardResetRadio() { WiFi.persistent(false); WiFi.mode(WIFI_OFF); delay(50); }
 
 /* ===== Mapa de pinos ===== */
 #if defined(CAMERA_MODEL_AI_THINKER)

@@ -69,8 +69,9 @@ static void hard_reset_fase1(const char* nome) {
 }
 
 // Fase 2 — radio do zero: ESP-NOW e Wi-Fi desligados antes de qualquer init.
+// (NAO chamar esp_now_deinit() aqui: antes do Wi-Fi existir ele derruba o chip
+//  com LoadProhibited no core 3.3.x — WIFI_OFF ja derruba o ESP-NOW junto.)
 static void hard_reset_radio() {
-    esp_now_deinit();          // ESP_ERR_ESPNOW_NOT_INIT se nunca iniciou: ok
     WiFi.persistent(false);    // nao grava/le config de AP na NVS do Wi-Fi
     WiFi.mode(WIFI_OFF);
     delay(50);

@@ -41,7 +41,8 @@ static void hard_reset_fase1(const char* nome) {
     }
     Serial.printf("[%s] boot limpo (motivo=%d, hard reset ja feito)\n", nome, (int)r);
 }
-static void hard_reset_radio() { esp_now_deinit(); WiFi.persistent(false); WiFi.mode(WIFI_OFF); delay(50); }
+// (sem esp_now_deinit: antes do Wi-Fi existir ele derruba o chip com LoadProhibited)
+static void hard_reset_radio() { WiFi.persistent(false); WiFi.mode(WIFI_OFF); delay(50); }
 // Recupera o barramento I2C: se o PCA9554 ficou no meio de uma transacao quando o
 // chip resetou, ele segura SDA em LOW e o Wire nao sobe. 9 pulsos em SCL + STOP.
 static void i2c_recupera_barramento(int sda, int scl) {
