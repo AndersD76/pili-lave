@@ -20,3 +20,9 @@ service-account*.json
 # fotos de referência (contêm dados pessoais) e artefatos gerados
 WhatsApp Image*.jpeg
 firmware/pili_lave_totem.zip
+
+# artefatos de build dos firmwares (repasse do colega)
+firmware_camera/.pio/
+firmware_display_waveshares/display/build_out/
+**/.claude/settings.local.json
+~$*.docx

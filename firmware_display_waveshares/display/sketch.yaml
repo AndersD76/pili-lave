@@ -1,0 +1,1 @@
+default_fqbn: esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashMode=qio,FlashSize=8M,PartitionScheme=default_8MB,PSRAM=opi,CPUFreq=240

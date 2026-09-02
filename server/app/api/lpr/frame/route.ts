@@ -20,8 +20,30 @@ const VOTE_WINDOW_MS = 30_000;
 let votes: { plate: string; score: number; at: number }[] = [];
 let chain: Promise<void> = Promise.resolve(); // análises em fila (1 chamada/s no reconhecedor)
 
+/* Guarda de COTA: a câmera manda foto continuamente (1 a cada ~8 s, tenha
+ * carro ou não). Cena parada gera JPEGs de tamanho quase idêntico — se a
+ * última análise não achou placa e nada mudou, pula o reconhecimento
+ * (2.500 leituras/mês no plano grátis). Garantias:
+ *  - mudou o tamanho (carro entrou/saiu) -> analisa;
+ *  - a última análise ACHOU placa -> analisa (votação precisa do 2º frame);
+ *  - no mínimo 1 análise completa por minuto, mesmo parada (deriva de luz). */
+let qSize = 0;
+let qHadPlate = false;
+let qLastFullAt = 0;
+
 async function analisar(id: string, jpeg: Buffer): Promise<void> {
+  const agora = Date.now();
+  const similar = qSize > 0 && Math.abs(jpeg.length - qSize) / qSize < 0.01;
+  const podePular = similar && !qHadPlate && agora - qLastFullAt < 60_000;
+  qSize = jpeg.length;
+  if (podePular) {
+    await updateFrame(id, { note: "cena parada (não analisada)" });
+    return;
+  }
+  qLastFullAt = agora;
+
   const plate = await recognizePlate(jpeg);
+  qHadPlate = !!plate;
   if (!plate) { await updateFrame(id, { note: "nenhuma placa legível" }); return; }
   const score = lastPlateScore();
   if (plateCandidates(plate).length === 0) { await updateFrame(id, { plate, score, note: "formato inválido" }); return; }
