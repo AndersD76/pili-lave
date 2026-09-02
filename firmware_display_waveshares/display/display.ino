@@ -38,6 +38,7 @@
 #include <Arduino.h>
 #include <esp_display_panel.hpp>
 #include <lvgl.h>
+#include "hard_reset.h"    // hard reset no boot disparado pelo firmware (fase 1/2)
 #include "lvgl_v8_port.h"
 #include "comm_espnow.h"
 #include "nvs_manager.h"
@@ -227,6 +228,11 @@ void setup() {
     Serial.begin(115200);
     delay(300);
 
+    // HARD RESET (via firmware): ao energizar, reinicia o chip inteiro uma vez
+    // com a alimentacao ja estavel; depois sobe com o radio zerado.
+    hard_reset_fase1("DISPLAY");
+    hard_reset_radio();
+
     // Inicializa display
     Board* board = new Board();
     board->init();
@@ -247,8 +253,9 @@ void setup() {
     board->begin();
     lvgl_port_init(board->getLcd(), board->getTouch());
 
-    // Inicializa Modbus RS-485
+    // Inicializa Modbus RS-485 (vfd_reset: inversor PARADO e freq zerada) + ESP-NOW
     modbus_init();
+    comm_hard_reset_saidas();   // HARD RESET: todas as saidas das duas waveshares em OFF
 
     // --- App / backend ---
     wifi_init();        // conecta Wi-Fi e sincroniza canal ESP-NOW (apos ESP-NOW pronto)

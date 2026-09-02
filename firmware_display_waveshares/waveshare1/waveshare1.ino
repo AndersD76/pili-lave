@@ -16,6 +16,45 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
+#include <esp_system.h>
+#include <nvs_flash.h>
+
+// ===================== HARD RESET no boot (via firmware) =====================
+// Ao ENERGIZAR, reinicia o chip inteiro UMA vez (CPU + todos os perifericos) com a
+// alimentacao ja estavel; depois sobe com radio zerado, barramento I2C recuperado e
+// TODAS as saidas em OFF. Motivo SW + marca em RTC: nunca entra em loop.
+// HARD_RESET_APAGA_NVS=1 apaga a NVS junto (reset de fabrica) — normal e 0.
+#define HARD_RESET_APAGA_NVS 0
+#define HR_MARCA 0x50494C49UL
+RTC_NOINIT_ATTR static uint32_t g_hr_marca;
+static void hard_reset_fase1(const char* nome) {
+    esp_reset_reason_t r = esp_reset_reason();
+    bool energizou = (r == ESP_RST_POWERON || r == ESP_RST_BROWNOUT || r == ESP_RST_UNKNOWN);
+    if (energizou && g_hr_marca != HR_MARCA) {
+        g_hr_marca = HR_MARCA;
+#if HARD_RESET_APAGA_NVS
+        nvs_flash_erase(); nvs_flash_init();
+#endif
+        Serial.printf("[%s] HARD RESET: motivo=%d -> reiniciando o chip inteiro (uma vez)\n", nome, (int)r);
+        Serial.flush(); delay(100);
+        esp_restart();
+    }
+    Serial.printf("[%s] boot limpo (motivo=%d, hard reset ja feito)\n", nome, (int)r);
+}
+static void hard_reset_radio() { esp_now_deinit(); WiFi.persistent(false); WiFi.mode(WIFI_OFF); delay(50); }
+// Recupera o barramento I2C: se o PCA9554 ficou no meio de uma transacao quando o
+// chip resetou, ele segura SDA em LOW e o Wire nao sobe. 9 pulsos em SCL + STOP.
+static void i2c_recupera_barramento(int sda, int scl) {
+    pinMode(sda, INPUT_PULLUP);
+    pinMode(scl, OUTPUT_OPEN_DRAIN); digitalWrite(scl, HIGH); delayMicroseconds(5);
+    for (uint8_t i = 0; i < 9 && digitalRead(sda) == LOW; i++) {
+        digitalWrite(scl, LOW); delayMicroseconds(5);
+        digitalWrite(scl, HIGH); delayMicroseconds(5);
+    }
+    pinMode(sda, OUTPUT_OPEN_DRAIN); digitalWrite(sda, LOW); delayMicroseconds(5);   // STOP
+    digitalWrite(scl, HIGH); delayMicroseconds(5); digitalWrite(sda, HIGH); delayMicroseconds(5);
+    pinMode(sda, INPUT_PULLUP); pinMode(scl, INPUT_PULLUP);
+}
 
 // ===================== IDENTIDADE / ESP-NOW (igual ao tipos.h do display) =====
 #define ID_MAQUINA 1
@@ -153,10 +192,14 @@ static void envia_heartbeat() {
 
 void setup() {
     Serial.begin(115200);
+    delay(200);
+    hard_reset_fase1("WAVE1");          // HARD RESET via firmware (reinicia 1x ao energizar)
+    hard_reset_radio();                 // radio do zero
     pinMode(RS485_DE_RE, OUTPUT);
     digitalWrite(RS485_DE_RE, LOW);   // transceiver em RX/high-Z: libera o barramento do inversor
+    i2c_recupera_barramento(I2C_SDA, I2C_SCL);
     Wire.begin(I2C_SDA, I2C_SCL);
-    pca_init();
+    pca_init();                         // TODAS as saidas em OFF
     for (uint8_t i=0;i<8;i++) {
         pinMode(DI_PINS[i], INPUT_PULLUP);
         attachInterruptArg(digitalPinToInterrupt(DI_PINS[i]), di_isr, (void*)(uint32_t)i, FALLING);

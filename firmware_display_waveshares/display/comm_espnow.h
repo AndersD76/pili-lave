@@ -381,6 +381,18 @@ void comm_espnow_init() {
     Serial.println("[ESP-NOW] display pronto");
 }
 
+// HARD RESET das saidas: manda OFF para os 8 canais das DUAS waveshares e zera o
+// espelho local. Chamado no boot (depois do comm_espnow_init): mesmo que so o
+// display tenha reiniciado, nenhum contator/solenoide fica ligado "herdado".
+void comm_hard_reset_saidas() {
+    for (uint8_t canal = 0; canal < 8; canal++) {
+        espnow_envia_comando(MAC_WAVE1, canal, 0); delay(5);
+        espnow_envia_comando(MAC_WAVE2, canal, 0); delay(5);
+    }
+    g_io1.do_ = 0; g_io2.do_ = 0;
+    Serial.println("[HARD RESET] saidas das waveshares em OFF");
+}
+
 // Compat: nome antigo usado no display.ino / setup. Inicia os DOIS transportes:
 // ESP-NOW (waveshares) + RS-485 (inversor Delta).
 void modbus_init() {

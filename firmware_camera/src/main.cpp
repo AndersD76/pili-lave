@@ -37,7 +37,37 @@
 #include "esp_camera.h"
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
+#include <esp_system.h>
+#include <nvs_flash.h>
 #include "pili_cam_config.h"
+
+/* ===================== HARD RESET no boot (via firmware) =====================
+ * Ao ENERGIZAR, reinicia o chip inteiro UMA vez (CPU + todos os periféricos) com a
+ * alimentação já estável (a ESP32-CAM é conhecida por subir com o OV2640/PSRAM
+ * em estado inconsistente no boot frio). Depois sobe com o rádio zerado e o
+ * sensor da câmera com ciclo de energia (PWDN). Motivo SW + marca em RTC: nunca
+ * entra em loop. HARD_RESET_APAGA_NVS=1 apaga a NVS junto (credenciais/canal
+ * — reset de fábrica); normal é 0. */
+#ifndef HARD_RESET_APAGA_NVS
+#define HARD_RESET_APAGA_NVS 0
+#endif
+#define HR_MARCA 0x50494C49UL
+RTC_NOINIT_ATTR static uint32_t g_hr_marca;
+static void hardResetFase1(const char* nome) {
+  esp_reset_reason_t r = esp_reset_reason();
+  bool energizou = (r == ESP_RST_POWERON || r == ESP_RST_BROWNOUT || r == ESP_RST_UNKNOWN);
+  if (energizou && g_hr_marca != HR_MARCA) {
+    g_hr_marca = HR_MARCA;
+#if HARD_RESET_APAGA_NVS
+    nvs_flash_erase(); nvs_flash_init();
+#endif
+    Serial.printf("[%s] HARD RESET: motivo=%d -> reiniciando o chip inteiro (uma vez)\n", nome, (int)r);
+    Serial.flush(); delay(100);
+    esp_restart();
+  }
+  Serial.printf("[%s] boot limpo (motivo=%d, hard reset ja feito)\n", nome, (int)r);
+}
+static void hardResetRadio() { esp_now_deinit(); WiFi.persistent(false); WiFi.mode(WIFI_OFF); delay(50); }
 
 /* ===== Mapa de pinos ===== */
 #if defined(CAMERA_MODEL_AI_THINKER)
@@ -477,6 +507,21 @@ static void enviarFotoPeriodica() {
   esp_camera_fb_return(fb);
 }
 
+/* HARD RESET do sensor: ciclo de energia via PWDN (alto = desligado -> baixo) e
+ * pulso em RESET quando o pino existir (AI-Thinker: PWDN=32, RESET nao ligado). */
+static void hardResetSensor() {
+  if (PWDN_GPIO >= 0) {
+    pinMode(PWDN_GPIO, OUTPUT);
+    digitalWrite(PWDN_GPIO, HIGH); delay(100);
+    digitalWrite(PWDN_GPIO, LOW);  delay(100);
+  }
+  if (RESET_GPIO >= 0) {
+    pinMode(RESET_GPIO, OUTPUT);
+    digitalWrite(RESET_GPIO, LOW);  delay(20);
+    digitalWrite(RESET_GPIO, HIGH); delay(20);
+  }
+}
+
 void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   Serial.begin(115200);
@@ -484,6 +529,11 @@ void setup() {
   pinMode(LED_STATUS, OUTPUT); digitalWrite(LED_STATUS, HIGH);
 #endif
   Serial.println("\nPILI LAVE — Camera GATEWAY + LPR (Opcao A, creds do display via NVS)");
+
+  // HARD RESET via firmware: reinicia 1x ao energizar; rádio zerado; sensor com ciclo de energia
+  hardResetFase1("CAM");
+  hardResetRadio();
+  hardResetSensor();
 
   nvsCarregar();
   espnowInit();
