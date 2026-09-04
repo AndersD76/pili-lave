@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { api } from "./client";
+import { api, getToken } from "./client";
 
 type Frame = { id: string; at: string; plate: string | null; clientName: string | null } | null;
 
@@ -8,20 +8,51 @@ type Frame = { id: string; at: string; plate: string | null; clientName: string 
  * Câmera do pátio ao vivo, na parte de baixo da tela, enquanto a lavagem do
  * cliente está em andamento. A ESP32-CAM manda uma foto a cada ~8s: a tela
  * pergunta qual é a última e troca a imagem quando o id muda (não é vídeo).
+ *
+ * A imagem é buscada por fetch com o token e exibida como blob — uma tag
+ * <img src="/api/..."> não envia o cabeçalho Authorization e levaria 401.
  */
 export default function CameraAoVivo({ titulo }: { titulo?: string }) {
-  const [frame, setFrame] = useState<Frame>(null);
+  const [url, setUrl] = useState<string>("");
   const [erro, setErro] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const atual = useRef<string>("");     // id da captura já exibida
+  const urlRef = useRef<string>("");    // blob atual (para liberar depois)
 
   useEffect(() => {
-    const load = () =>
-      api<{ frame: Frame }>("/api/lpr/ao-vivo")
-        .then((r) => { setFrame(r.frame); setErro(false); })
-        .catch(() => setErro(true));
+    let vivo = true;
+
+    const load = async () => {
+      try {
+        const r = await api<{ frame: Frame }>("/api/lpr/ao-vivo");
+        if (!vivo) return;
+        setErro(false);
+        const f = r.frame;
+        if (!f || f.id === atual.current) return;   // nada novo
+
+        const res = await fetch(`/api/lpr/ao-vivo?img=${f.id}`, {
+          headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+        });
+        if (!res.ok || !vivo) return;
+        const blob = await res.blob();
+        if (!vivo) return;
+        const novo = URL.createObjectURL(blob);
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+        urlRef.current = novo;
+        atual.current = f.id;
+        setUrl(novo);
+      } catch {
+        if (vivo) setErro(true);
+      }
+    };
+
     load();
     timer.current = setInterval(load, 4000);
-    return () => { if (timer.current) clearInterval(timer.current); };
+    return () => {
+      vivo = false;
+      if (timer.current) clearInterval(timer.current);
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    };
   }, []);
 
   if (erro) return null;   // sem lavagem em andamento: não mostra nada
@@ -31,12 +62,8 @@ export default function CameraAoVivo({ titulo }: { titulo?: string }) {
       <div className="camviva-cab">
         <span className="ponto" aria-hidden /> {titulo ?? "Câmera da máquina · ao vivo"}
       </div>
-      {frame ? (
-        <img
-          src={`/api/lpr/ao-vivo?img=${frame.id}`}
-          alt="Imagem da câmera da máquina"
-          className="camviva-img"
-        />
+      {url ? (
+        <img src={url} alt="Imagem da câmera da máquina" className="camviva-img" />
       ) : (
         <div className="camviva-vazio">Aguardando imagem da câmera…</div>
       )}
