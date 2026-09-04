@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, fmtPlate, money, type Program } from "../../client";
+import EtapaModal, { type Etapa } from "../../EtapaModal";
 
 type Lavagem = {
   status: string;            // HELD | ACTIVE | ENTERED | COMPLETED | ...
@@ -25,6 +26,17 @@ export default function Chegada() {
   const [sel, setSel] = useState<number | null>(null);
   const [state, setState] = useState<"choose" | "sending" | "green">("choose");
   const [error, setError] = useState("");
+  // avisos em modal: cada etapa aparece UMA vez, na ordem em que acontece
+  const [etapa, setEtapa] = useState<Etapa | null>(null);
+  const [detalhe, setDetalhe] = useState<string | undefined>();
+  const vistas = useRef<Set<Etapa>>(new Set());
+
+  const avisar = useCallback((e: Etapa, txt?: string) => {
+    if (vistas.current.has(e)) return;
+    vistas.current.add(e);
+    setDetalhe(txt);
+    setEtapa(e);
+  }, []);
 
   // Acompanha a lavagem até o fim: a MÁQUINA avisa a nuvem quando o ciclo
   // encerra (wash-complete) e é aqui que o app mostra. Sem esta consulta
@@ -40,27 +52,45 @@ export default function Chegada() {
           setArrival(a);
           if (a.status === "REQUESTED" || a.status === "STARTED") setState("green");
           if (primeira && a.vehicle?.defaultProgramId) setSel(a.vehicle.defaultProgramId);
+
+          // avisa o cliente a cada mudança de etapa da lavagem
+          const st = a.lavagem?.status;
+          if (st === "ACTIVE") avisar("reconhecido", `Placa ${fmtPlate(a.plate)} identificada. Pode entrar na máquina.`);
+          if (st === "ENTERED") avisar("iniciada", `${a.lavagem?.programa} em andamento.`);
+          if (st === "COMPLETED") {
+            avisar("finalizada", `${a.lavagem?.programa} concluída — ${money(a.lavagem!.valorCents)} debitados.`);
+            setTimeout(() => avisar("obrigado"), 4200);
+          }
+
           // enquanto não concluiu, pergunta de novo em 5s
-          if (a.lavagem?.status !== "COMPLETED") timer = setTimeout(() => carregar(false), 5000);
+          if (st !== "COMPLETED") timer = setTimeout(() => carregar(false), 5000);
         })
         .catch(() => { if (primeira) router.replace("/app"); });
 
     carregar(true);
     api<Program[]>("/api/programs", { auth: false }).then(setPrograms).catch(() => {});
     return () => { vivo = false; clearTimeout(timer); };
-  }, [id, router]);
+  }, [id, router, avisar]);
 
   async function liberar() {
     if (!sel) return;
     setError(""); setState("sending");
     try {
+      const prog = programs.find((p) => p.id === sel);
       await api(`/api/arrivals/${id}/request`, { body: { programId: sel } });
       setState("green");
+      avisar("reserva", `${prog?.nome ?? "Lavagem"} reservada para ${fmtPlate(arrival!.plate)}.`);
+      // pagamento é debitado junto com a reserva: avisa logo em seguida
+      setTimeout(() => avisar("pagamento", prog ? `${money(prog.precoCents)} debitados do seu saldo.` : undefined), 4200);
     } catch (e) {
       setState("choose");
       setError(e instanceof Error ? e.message : "Não foi possível liberar");
     }
   }
+
+  const Modal = etapa ? (
+    <EtapaModal etapa={etapa} detalhe={detalhe} onFechar={() => setEtapa(null)} />
+  ) : null;
 
   if (!arrival) return <p className="sub">Carregando…</p>;
 
@@ -77,6 +107,7 @@ export default function Chegada() {
         </p>
         <Link className="btn" href="/app">Voltar ao início</Link>
         <Link className="btn ghost" href="/app/historico">Ver histórico</Link>
+        {Modal}
       </div>
     );
 
@@ -92,6 +123,7 @@ export default function Chegada() {
             : "A luz verde acende em instantes — pode se aproximar."}
         </p>
         <Link className="btn" href="/app">Voltar ao início</Link>
+        {Modal}
       </div>
     );
   }
@@ -114,6 +146,7 @@ export default function Chegada() {
       <button className="btn" onClick={liberar} disabled={!sel || state === "sending"}>
         {state === "sending" ? "Liberando…" : selected ? `Liberar por ${money(selected.precoCents)}` : "Escolha o tipo"}
       </button>
+      {Modal}
     </>
   );
 }

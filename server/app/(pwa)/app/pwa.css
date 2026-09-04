@@ -97,3 +97,33 @@
 .pw .row { display: flex; gap: 10px; }
 .pw .row > * { flex: 1; }
 .pw a.plain { color: var(--jato); text-decoration: none; font-weight: 600; }
+
+/* Modal de etapa da lavagem (reserva → pagamento → carro reconhecido →
+   lavando → concluída). Sobe de baixo, some sozinho e não bloqueia o app. */
+.pw .etapa-fundo {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(6, 12, 14, 0.55); backdrop-filter: blur(3px);
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: 18px; animation: etapa-fade 0.2s ease-out;
+}
+.pw .etapa {
+  width: 100%; max-width: 444px; background: var(--verniz2);
+  border: 1px solid var(--linha); border-radius: 22px;
+  padding: 24px 20px 20px; text-align: center;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  animation: etapa-sobe 0.28s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.pw .etapa .ic {
+  width: 76px; height: 76px; border-radius: 999px; margin: 0 auto 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 800; font-size: 34px;
+  background: var(--jato); color: var(--espuma);
+}
+.pw .etapa .ic.ok { background: var(--ok); }
+.pw .etapa h2 { font-family: var(--font-display); font-weight: 800; font-size: 22px; margin-bottom: 6px; }
+.pw .etapa p { color: var(--aco-d); font-size: 15px; }
+.pw .etapa .passos { display: flex; gap: 6px; justify-content: center; margin: 16px 0 4px; }
+.pw .etapa .passos i { width: 26px; height: 4px; border-radius: 4px; background: var(--linha); }
+.pw .etapa .passos i.on { background: var(--jato); }
+@keyframes etapa-sobe { from { transform: translateY(26px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes etapa-fade { from { opacity: 0; } to { opacity: 1; } }
