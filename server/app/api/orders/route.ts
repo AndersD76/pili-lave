@@ -54,6 +54,25 @@ export async function POST(req: NextRequest) {
 
   const machine = vehicle ? await defaultMachine() : null;
 
+  /* Já tem lavagem paga esperando? NÃO cobra de novo. Antes o débito
+   * acontecia e a reserva não era criada (guarda de duplicidade lá
+   * embaixo), então cada toque a mais no botão sumia com R$ 15. */
+  if (vehicle) {
+    const viva = await prisma.reservation.findFirst({
+      where: { vehicleId: vehicle.id, status: { in: ["HELD", "ACTIVE", "ENTERED"] } },
+      include: { order: true },
+    });
+    if (viva)
+      return NextResponse.json(
+        {
+          error: "Você já tem uma lavagem paga aguardando. Aproxime o carro da câmera.",
+          orderId: viva.orderId,
+          reservationId: viva.id,
+        },
+        { status: 409 }
+      );
+  }
+
   try {
     const order = await prisma.$transaction(async (tx) => {
       // debita com guarda de saldo — falha se ficar negativo
@@ -78,23 +97,24 @@ export async function POST(req: NextRequest) {
       // ACTIVE (e acende o verde) é a leitura da placa pela câmera.
       // Só uma reserva viva por veículo — não duplica se já existir.
       if (vehicle && machine) {
+        // corrida (dois toques ao mesmo tempo): desfaz a compra inteira em
+        // vez de debitar sem criar reserva.
         const jaTem = await tx.reservation.findFirst({
           where: { vehicleId: vehicle.id, status: { in: ["HELD", "ACTIVE", "ENTERED"] } },
         });
-        if (!jaTem) {
-          await tx.reservation.create({
-            data: {
-              userId: auth.user.id,
-              vehicleId: vehicle.id,
-              stationId: machine.stationId,
-              programId: program.id,
-              amountCents: program.precoCents,
-              orderId: order.id,
-              status: "HELD",
-              expiresAt: new Date(Date.now() + HOLD_TTL_MIN * 60_000),
-            },
-          });
-        }
+        if (jaTem) throw new Error("DUPLICADA");
+        await tx.reservation.create({
+          data: {
+            userId: auth.user.id,
+            vehicleId: vehicle.id,
+            stationId: machine.stationId,
+            programId: program.id,
+            amountCents: program.precoCents,
+            orderId: order.id,
+            status: "HELD",
+            expiresAt: new Date(Date.now() + HOLD_TTL_MIN * 60_000),
+          },
+        });
       }
       await tx.walletTx.create({
         data: { userId: auth.user.id, amountCents: -program.precoCents, kind: "WASH", refId: order.id },
@@ -108,6 +128,11 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     if (e instanceof Error && e.message === "SALDO")
       return NextResponse.json({ error: "Saldo insuficiente. Adicione saldo para continuar." }, { status: 402 });
+    if (e instanceof Error && e.message === "DUPLICADA")
+      return NextResponse.json(
+        { error: "Você já tem uma lavagem paga aguardando. Aproxime o carro da câmera." },
+        { status: 409 }
+      );
     console.error("Order falhou:", e);
     return NextResponse.json({ error: "Não foi possível concluir. Tente novamente." }, { status: 500 });
   }
