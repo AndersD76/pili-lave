@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { ARRIVAL_TTL_MIN } from "@/lib/device";
-import { HOLD_TTL_MIN, defaultMachine, machineAvailability, setTransientLight } from "@/lib/reservations";
+import { HOLD_TTL_MIN, defaultMachine } from "@/lib/reservations";
 
 const Body = z.object({ programId: z.number().int() });
 
@@ -14,11 +14,14 @@ function voucherCode(): string {
 }
 
 /**
- * Motorista solicita a lavagem do carro que a câmera reconheceu:
- * debita o saldo, cria o pedido, ABRE A RESERVA e marca a chegada como
- * REQUESTED. A reserva é obrigatória: é ela que o heartbeat da máquina lê
- * (pendingStart busca ACTIVE/ENTERED) para mandar o `start` ao display.
- * Sem ela o cliente pagava e a máquina nunca ligava.
+ * Pagamento da lavagem no app: debita o saldo, cria o pedido e ABRE A
+ * RESERVA (HELD). A reserva é obrigatória — é ela que o heartbeat da
+ * máquina lê (pendingStart busca ACTIVE/ENTERED) para mandar o `start` ao
+ * display; sem ela o cliente pagava e a máquina nunca ligava.
+ *
+ * Fluxo: paga -> reserva (HELD) -> carro chega -> a CÂMERA lê a placa ->
+ * handlePlateRead promove HELD -> ACTIVE, acende o verde e o heartbeat
+ * seguinte manda o `start`. Pagar NÃO libera a máquina.
  */
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireUser(req);
@@ -41,9 +44,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const program = await prisma.program.findFirst({ where: { id: parsed.data.programId, ativo: true } });
   if (!program) return NextResponse.json({ error: "Tipo de lavagem indisponível" }, { status: 404 });
 
-  // A máquina precisa estar viva: verde só com heartbeat recente (< 60s).
+  // Só para vincular a reserva à estação; a liberação é na chegada.
   const machine = await defaultMachine();
-  const avail = machineAvailability(machine);
 
   try {
     const result = await prisma.$transaction(async (tx) => {
@@ -62,9 +64,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           voucherCode: voucherCode(),
         },
       });
-      // Reserva: é o que libera a máquina. ACTIVE (com a máquina já alocada)
-      // quando ela está livre; HELD quando está lavando/indisponível — nesse
-      // caso a leitura da placa promove a HELD para ACTIVE ao liberar.
+      // Reserva SEMPRE em HELD: pagar não libera a máquina. Quem libera é a
+      // CÂMERA — ao reconhecer a placa na chegada, handlePlateRead promove
+      // HELD -> ACTIVE e acende o verde. Assim o carro só é liberado quando
+      // está de fato na frente da máquina.
       const reservation = await tx.reservation.create({
         data: {
           userId: auth.user.id,
@@ -73,10 +76,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           programId: program.id,
           amountCents: program.precoCents,
           orderId: order.id,
+          status: "HELD",
           expiresAt: new Date(Date.now() + HOLD_TTL_MIN * 60_000),
-          ...(avail === "FREE"
-            ? { status: "ACTIVE" as const, machineId: machine.id, activeAt: new Date() }
-            : { status: "HELD" as const }),
         },
       });
 
@@ -100,16 +101,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       });
       return { order, reservation };
     });
-    // Acende a luz na hora (o display pega no próximo heartbeat, ~10s).
-    await setTransientLight(machine.id, avail === "FREE" ? "GREEN_SOLID" : "GREEN_BLINK");
-
+    // Nada de acender luz aqui: a liberação acontece na chegada, quando a
+    // câmera lê a placa.
     return NextResponse.json(
       {
         ok: true,
         orderId: result.order.id,
         status: "REQUESTED",
         reservationId: result.reservation.id,
-        maquina: avail === "FREE" ? "liberada" : "na fila",
+        proximoPasso: "Aproxime o carro da câmera para liberar a lavagem",
       },
       { status: 201 }
     );
