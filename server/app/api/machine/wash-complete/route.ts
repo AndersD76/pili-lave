@@ -60,27 +60,41 @@ export async function POST(req: NextRequest) {
     });
     if (upd.count === 0) return null; // outra requisição concluiu primeiro
 
-    const order = await tx.order.create({
-      data: {
-        userId: reservation.userId,
-        vehicleId: reservation.vehicleId,
-        programId: reservation.programId,
-        amountCents: reservation.amountCents,
-        status: "REDEEMED",
-        voucherCode: voucherCode(),
-        redeemedAt: new Date(),
-      },
-    });
-    await tx.reservation.update({ where: { id: reservation.id }, data: { orderId: order.id } });
+    // Se a reserva já nasceu de uma compra paga no app (orderId preenchido),
+    // o valor JÁ foi debitado ali — aqui só marca a Order como usada. Sem
+    // esta guarda o cliente pagava duas vezes pela mesma lavagem.
+    const jaPago = reservation.orderId
+      ? await tx.order.findUnique({ where: { id: reservation.orderId } })
+      : null;
 
-    // o valor estava garantido pela reserva desde a criação — débito direto
-    await tx.user.update({
-      where: { id: reservation.userId },
-      data: { walletCents: { decrement: reservation.amountCents } },
-    });
-    await tx.walletTx.create({
-      data: { userId: reservation.userId, amountCents: -reservation.amountCents, kind: "WASH", refId: order.id },
-    });
+    const order = jaPago
+      ? await tx.order.update({
+          where: { id: jaPago.id },
+          data: { status: "REDEEMED", redeemedAt: new Date() },
+        })
+      : await tx.order.create({
+          data: {
+            userId: reservation.userId,
+            vehicleId: reservation.vehicleId,
+            programId: reservation.programId,
+            amountCents: reservation.amountCents,
+            status: "REDEEMED",
+            voucherCode: voucherCode(),
+            redeemedAt: new Date(),
+          },
+        });
+
+    if (!jaPago) {
+      await tx.reservation.update({ where: { id: reservation.id }, data: { orderId: order.id } });
+      // o valor estava garantido pela reserva desde a criação — débito direto
+      await tx.user.update({
+        where: { id: reservation.userId },
+        data: { walletCents: { decrement: reservation.amountCents } },
+      });
+      await tx.walletTx.create({
+        data: { userId: reservation.userId, amountCents: -reservation.amountCents, kind: "WASH", refId: order.id },
+      });
+    }
     const washCounterField =
       reservation.programId >= 1 && reservation.programId <= 4
         ? (`totalWashesM${reservation.programId}` as const)

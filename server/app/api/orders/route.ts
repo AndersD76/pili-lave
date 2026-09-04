@@ -3,6 +3,7 @@ import { randomBytes } from "crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { HOLD_TTL_MIN, defaultMachine } from "@/lib/reservations";
 
 function voucherCode(): string {
   // 10 chars base32 sem ambíguos (sem 0/O/1/I)
@@ -27,7 +28,13 @@ const Body = z.object({
   vehicleId: z.string().optional(),
 });
 
-/** Compra de lavagem: debita a carteira e emite o voucher (QR). Atômico. */
+/**
+ * Compra de lavagem pelo app: debita a carteira, emite o voucher (QR) e
+ * ABRE A RESERVA (HELD) quando há veículo — é a reserva que libera a
+ * máquina depois, quando a câmera reconhecer a placa na chegada. Sem ela
+ * o cliente pagava e a máquina nunca ligava (o voucher só serve para o
+ * lavador validar no balcão).
+ */
 export async function POST(req: NextRequest) {
   const auth = await requireUser(req);
   if ("error" in auth) return auth.error;
@@ -37,10 +44,15 @@ export async function POST(req: NextRequest) {
   const program = await prisma.program.findFirst({ where: { id: parsed.data.programId, ativo: true } });
   if (!program) return NextResponse.json({ error: "Tipo de lavagem indisponível" }, { status: 404 });
 
-  if (parsed.data.vehicleId) {
-    const v = await prisma.vehicle.findFirst({ where: { id: parsed.data.vehicleId, userId: auth.user.id } });
-    if (!v) return NextResponse.json({ error: "Veículo não encontrado" }, { status: 404 });
-  }
+  // Veículo: o informado, senão o único/primeiro cadastrado do cliente —
+  // é o que amarra a reserva à placa que a câmera vai ler na chegada.
+  const vehicle = parsed.data.vehicleId
+    ? await prisma.vehicle.findFirst({ where: { id: parsed.data.vehicleId, userId: auth.user.id } })
+    : await prisma.vehicle.findFirst({ where: { userId: auth.user.id }, orderBy: { createdAt: "asc" } });
+  if (parsed.data.vehicleId && !vehicle)
+    return NextResponse.json({ error: "Veículo não encontrado" }, { status: 404 });
+
+  const machine = vehicle ? await defaultMachine() : null;
 
   try {
     const order = await prisma.$transaction(async (tx) => {
@@ -54,13 +66,36 @@ export async function POST(req: NextRequest) {
       const order = await tx.order.create({
         data: {
           userId: auth.user.id,
-          vehicleId: parsed.data.vehicleId ?? null,
+          vehicleId: vehicle?.id ?? null,
           programId: program.id,
           amountCents: program.precoCents,
           voucherCode: voucherCode(),
         },
         include: { program: true, vehicle: true },
       });
+
+      // Reserva HELD: fica aguardando o carro chegar. Quem promove para
+      // ACTIVE (e acende o verde) é a leitura da placa pela câmera.
+      // Só uma reserva viva por veículo — não duplica se já existir.
+      if (vehicle && machine) {
+        const jaTem = await tx.reservation.findFirst({
+          where: { vehicleId: vehicle.id, status: { in: ["HELD", "ACTIVE", "ENTERED"] } },
+        });
+        if (!jaTem) {
+          await tx.reservation.create({
+            data: {
+              userId: auth.user.id,
+              vehicleId: vehicle.id,
+              stationId: machine.stationId,
+              programId: program.id,
+              amountCents: program.precoCents,
+              orderId: order.id,
+              status: "HELD",
+              expiresAt: new Date(Date.now() + HOLD_TTL_MIN * 60_000),
+            },
+          });
+        }
+      }
       await tx.walletTx.create({
         data: { userId: auth.user.id, amountCents: -program.precoCents, kind: "WASH", refId: order.id },
       });
