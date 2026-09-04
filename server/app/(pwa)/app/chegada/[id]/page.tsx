@@ -57,13 +57,14 @@ export default function Chegada() {
           const st = a.lavagem?.status;
           if (st === "ACTIVE") avisar("reconhecido", `Placa ${fmtPlate(a.plate)} identificada. Pode entrar na máquina.`);
           if (st === "ENTERED") avisar("iniciada", `${a.lavagem?.programa} em andamento.`);
+          if (st === "FAILED") avisar("falha", `${money(a.lavagem!.valorCents)} devolvidos ao seu saldo.`);
           if (st === "COMPLETED") {
             avisar("finalizada", `${a.lavagem?.programa} concluída — ${money(a.lavagem!.valorCents)} debitados.`);
             setTimeout(() => avisar("obrigado"), 4200);
           }
 
-          // enquanto não concluiu, pergunta de novo em 5s
-          if (st !== "COMPLETED") timer = setTimeout(() => carregar(false), 5000);
+          // enquanto não terminou (concluída ou falhou), pergunta de novo em 5s
+          if (st !== "COMPLETED" && st !== "FAILED") timer = setTimeout(() => carregar(false), 5000);
         })
         .catch(() => { if (primeira) router.replace("/app"); });
 

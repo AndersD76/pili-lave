@@ -8,7 +8,8 @@ export type Etapa =
   | "reconhecido"  // a câmera leu a placa
   | "iniciada"     // a máquina começou a lavar
   | "finalizada"   // ciclo encerrado
-  | "obrigado";    // agradecimento
+  | "obrigado"     // agradecimento
+  | "falha";       // maquina falhou -> estorno
 
 const ORDEM: Etapa[] = ["reserva", "pagamento", "reconhecido", "iniciada", "finalizada"];
 
@@ -19,6 +20,7 @@ const TEXTOS: Record<Etapa, { ic: string; ok?: boolean; titulo: string; msg: str
   iniciada:    { ic: ">", titulo: "Lavagem iniciada",     msg: "A máquina começou a lavar o seu carro." },
   finalizada:  { ic: "OK", ok: true, titulo: "Lavagem finalizada", msg: "Seu carro está pronto." },
   obrigado:    { ic: "♥", ok: true, titulo: "Obrigado!",  msg: "Volte sempre à Pili Lave." },
+  falha:       { ic: "!", titulo: "Lavagem interrompida", msg: "A máquina apresentou falha. O valor foi devolvido ao seu saldo." },
 };
 
 /**

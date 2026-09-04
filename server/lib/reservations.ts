@@ -104,18 +104,39 @@ export async function expireStale() {
     });
   }
 
+  // Travou lavando e nem avisou falha (perdeu energia/rede no meio): passa
+  // do dobro da duração -> FAILED e, se a lavagem foi PAGA no app, ESTORNA.
+  // Sem isso o cliente pagava e ficava sem lavagem e sem dinheiro.
   const entered = await prisma.reservation.findMany({
     where: { status: "ENTERED" },
-    include: { program: true },
+    include: { program: true, order: true },
   });
   for (const r of entered) {
     const limitMs = (r.program.duracaoMin || 30) * 2 * 60_000;
     if (r.enteredAt && now.getTime() - r.enteredAt.getTime() > limitMs) {
-      await prisma.reservation.update({ where: { id: r.id }, data: { status: "FAILED" } });
+      let estornado = 0;
+      await prisma.$transaction(async (tx) => {
+        const upd = await tx.reservation.updateMany({
+          where: { id: r.id, status: "ENTERED" },   // trava contra corrida
+          data: { status: "FAILED" },
+        });
+        if (upd.count === 0) return;
+        if (r.order && r.order.status === "PAID") {
+          await tx.order.update({ where: { id: r.order.id }, data: { status: "CANCELED" } });
+          await tx.user.update({ where: { id: r.userId }, data: { walletCents: { increment: r.amountCents } } });
+          await tx.walletTx.create({
+            data: {
+              userId: r.userId, amountCents: r.amountCents, kind: "ADJUST", refId: r.order.id,
+              note: "estorno automático: a máquina não concluiu a lavagem",
+            },
+          });
+          estornado = r.amountCents;
+        }
+      });
       await prisma.event.create({
         data: {
           type: "reservation_timeout",
-          payload: { reservationId: r.id, userId: r.userId, machineId: r.machineId },
+          payload: { reservationId: r.id, userId: r.userId, machineId: r.machineId, estornoCents: estornado },
         },
       });
     }
