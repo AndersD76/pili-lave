@@ -26,10 +26,21 @@ export async function POST(req: NextRequest) {
   });
   if (reservation) return NextResponse.json({ ok: true, reservationId: reservation.id, dedup: true });
 
-  const active = await prisma.reservation.findFirst({
-    where: { machineId: auth.machine.id, status: "ACTIVE", ...(wanted ? { id: wanted } : {}) },
-    orderBy: { activeAt: "asc" },
-  });
+  // O display guarda o último reservationId na NVS e não o limpa ao fim do
+  // ciclo: ele pode mandar uma reserva ANTIGA (já concluída ou apagada).
+  // Por isso, se o id pedido não casa, vale a reserva ACTIVE da máquina —
+  // é ela que a nuvem liberou e que o carro está de fato usando.
+  const active =
+    (await prisma.reservation.findFirst({
+      where: { machineId: auth.machine.id, status: "ACTIVE", ...(wanted ? { id: wanted } : {}) },
+      orderBy: { activeAt: "asc" },
+    })) ??
+    (wanted
+      ? await prisma.reservation.findFirst({
+          where: { machineId: auth.machine.id, status: "ACTIVE" },
+          orderBy: { activeAt: "asc" },
+        })
+      : null);
 
   if (!active) {
     // objeto/animal/carro não autorizado — sem reserva, sem efeito financeiro

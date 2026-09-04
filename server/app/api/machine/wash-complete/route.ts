@@ -25,14 +25,20 @@ export async function POST(req: NextRequest) {
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   const wanted = parsed.success ? parsed.data.reservationId : undefined;
 
-  const reservation = await prisma.reservation.findFirst({
-    where: {
-      machineId: auth.machine.id,
-      status: "ENTERED",
-      ...(wanted ? { id: wanted } : {}),
-    },
-    orderBy: { enteredAt: "asc" },
-  });
+  // Mesmo caso do car-entered: o id que o display manda pode ser de uma
+  // reserva antiga (a NVS dele não é limpa). Se não casar, conclui a
+  // reserva ENTERED da máquina — é a lavagem que realmente aconteceu.
+  const reservation =
+    (await prisma.reservation.findFirst({
+      where: { machineId: auth.machine.id, status: "ENTERED", ...(wanted ? { id: wanted } : {}) },
+      orderBy: { enteredAt: "asc" },
+    })) ??
+    (wanted
+      ? await prisma.reservation.findFirst({
+          where: { machineId: auth.machine.id, status: "ENTERED" },
+          orderBy: { enteredAt: "asc" },
+        })
+      : null);
 
   if (!reservation) {
     // retransmissão de um complete já processado?
