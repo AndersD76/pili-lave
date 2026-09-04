@@ -8,8 +8,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const { id } = await ctx.params;
   const order = await prisma.order.findFirst({
     where: { id, userId: auth.user.id },
-    include: { program: true, vehicle: true },
+    // a reserva conta o que está acontecendo na máquina: HELD (esperando o
+    // carro) -> ACTIVE (verde) -> ENTERED (lavando) -> COMPLETED | FAILED
+    include: { program: true, vehicle: true, reservation: true },
   });
   if (!order) return NextResponse.json({ error: "Lavagem não encontrada" }, { status: 404 });
-  return NextResponse.json(order);
+
+  const r = order.reservation;
+  return NextResponse.json({
+    ...order,
+    lavagem: r ? { status: r.status, valorCents: r.amountCents, concluidaEm: r.completedAt } : null,
+  });
 }
