@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { ARRIVAL_TTL_MIN } from "@/lib/device";
+import { HOLD_TTL_MIN, defaultMachine, machineAvailability, setTransientLight } from "@/lib/reservations";
 
 const Body = z.object({ programId: z.number().int() });
 
@@ -14,8 +15,10 @@ function voucherCode(): string {
 
 /**
  * Motorista solicita a lavagem do carro que a câmera reconheceu:
- * debita o saldo, cria o pedido e marca a chegada como REQUESTED —
- * a máquina pega no próximo polling e acende a luz verde.
+ * debita o saldo, cria o pedido, ABRE A RESERVA e marca a chegada como
+ * REQUESTED. A reserva é obrigatória: é ela que o heartbeat da máquina lê
+ * (pendingStart busca ACTIVE/ENTERED) para mandar o `start` ao display.
+ * Sem ela o cliente pagava e a máquina nunca ligava.
  */
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireUser(req);
@@ -38,6 +41,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const program = await prisma.program.findFirst({ where: { id: parsed.data.programId, ativo: true } });
   if (!program) return NextResponse.json({ error: "Tipo de lavagem indisponível" }, { status: 404 });
 
+  // A máquina precisa estar viva: verde só com heartbeat recente (< 60s).
+  const machine = await defaultMachine();
+  const avail = machineAvailability(machine);
+
   try {
     const result = await prisma.$transaction(async (tx) => {
       const debit = await tx.user.updateMany({
@@ -55,9 +62,27 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           voucherCode: voucherCode(),
         },
       });
+      // Reserva: é o que libera a máquina. ACTIVE (com a máquina já alocada)
+      // quando ela está livre; HELD quando está lavando/indisponível — nesse
+      // caso a leitura da placa promove a HELD para ACTIVE ao liberar.
+      const reservation = await tx.reservation.create({
+        data: {
+          userId: auth.user.id,
+          vehicleId: arrival.vehicleId!,
+          stationId: machine.stationId,
+          programId: program.id,
+          amountCents: program.precoCents,
+          orderId: order.id,
+          expiresAt: new Date(Date.now() + HOLD_TTL_MIN * 60_000),
+          ...(avail === "FREE"
+            ? { status: "ACTIVE" as const, machineId: machine.id, activeAt: new Date() }
+            : { status: "HELD" as const }),
+        },
+      });
+
       const upd = await tx.arrival.updateMany({
         where: { id: arrival.id, status: "WAITING_DRIVER" },
-        data: { status: "REQUESTED", orderId: order.id, requestedAt: new Date() },
+        data: { status: "REQUESTED", orderId: order.id, reservationId: reservation.id, requestedAt: new Date() },
       });
       if (upd.count === 0) throw new Error("CORRIDA"); // outra solicitação ganhou
 
@@ -67,12 +92,27 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       await tx.event.create({
         data: {
           type: "arrival_requested",
-          payload: { arrivalId: arrival.id, orderId: order.id, programId: program.id, plate: arrival.plate },
+          payload: {
+            arrivalId: arrival.id, orderId: order.id, programId: program.id,
+            plate: arrival.plate, reservationId: reservation.id, reservationStatus: reservation.status,
+          },
         },
       });
-      return order;
+      return { order, reservation };
     });
-    return NextResponse.json({ ok: true, orderId: result.id, status: "REQUESTED" }, { status: 201 });
+    // Acende a luz na hora (o display pega no próximo heartbeat, ~10s).
+    await setTransientLight(machine.id, avail === "FREE" ? "GREEN_SOLID" : "GREEN_BLINK");
+
+    return NextResponse.json(
+      {
+        ok: true,
+        orderId: result.order.id,
+        status: "REQUESTED",
+        reservationId: result.reservation.id,
+        maquina: avail === "FREE" ? "liberada" : "na fila",
+      },
+      { status: 201 }
+    );
   } catch (e) {
     if (e instanceof Error && e.message === "SALDO")
       return NextResponse.json({ error: "Saldo insuficiente. Adicione saldo para continuar." }, { status: 402 });
