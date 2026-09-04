@@ -109,8 +109,15 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
   const st: { best: Best | null; calls: number } = { best: null, calls: 0 };
   const MAX_CALLS = 6;      // teto de chamadas ao reconhecedor por foto (cota, 1/s)
   const SURE = 0.98;        // para cedo só com quase-certeza
+  /* Só entra na disputa o que TEM CARA DE PLACA (formato antigo ou Mercosul,
+   * aceitando 1 troca de sósia). Sem isso a orientação errada vencia: numa
+   * foto real, "KADTE3" (0.89, lixo espelhado) era gravado na 1ª tentativa e
+   * o RYD1E43 legítimo (0.997), lido na 3ª, nem chegava a ser considerado.
+   * Empate de placa válida continua sendo decidido pela confiança. */
   const consider = (r: PrResult | null, how: string) => {
-    if (r && r.score >= MIN_SCORE && (!st.best || r.score > st.best.score)) st.best = { plate: r.plate, score: r.score, how, k: curKey };
+    if (!r || r.score < MIN_SCORE) return;
+    if (plateCandidates(r.plate).length === 0) return;   // não é placa: descarta
+    if (!st.best || r.score > st.best.score) st.best = { plate: r.plate, score: r.score, how, k: curKey };
   };
 
   let curKey = "";
