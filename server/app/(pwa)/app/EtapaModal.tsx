@@ -28,17 +28,26 @@ const TEXTOS: Record<Etapa, { ic: string; ok?: boolean; titulo: string; msg: str
  * não deve precisar tocar na tela), e também no toque.
  */
 export default function EtapaModal({
-  etapa, detalhe, onFechar, segundos = 4,
+  etapa, detalhe, onFechar, segundos,
 }: {
   etapa: Etapa;
   detalhe?: string;
   onFechar: () => void;
+  /** sobrescreve o tempo padrão da etapa */
   segundos?: number;
 }) {
+  /* Fim de ciclo fica MAIS tempo na tela: o cliente está saindo da máquina
+   * e precisa conseguir ler. As etapas do meio saem rápido para não atrapalhar. */
+  const padrao: Record<Etapa, number> = {
+    reserva: 4, pagamento: 4, reconhecido: 6, iniciada: 4,
+    finalizada: 10, obrigado: 10, falha: 10,
+  };
+  const tempo = segundos ?? padrao[etapa] ?? 4;
+
   useEffect(() => {
-    const t = setTimeout(onFechar, segundos * 1000);
+    const t = setTimeout(onFechar, tempo * 1000);
     return () => clearTimeout(t);
-  }, [etapa, segundos, onFechar]);
+  }, [etapa, tempo, onFechar]);
 
   const t = TEXTOS[etapa];
   const idx = ORDEM.indexOf(etapa);

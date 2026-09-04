@@ -39,7 +39,7 @@ export default function Voucher() {
       if (st === "ENTERED") avisar("iniciada", `${o.program.nome} em andamento.`);
       if (st === "FAILED") avisar("falha", `${val} devolvidos ao seu saldo.`);
       if (st === "COMPLETED") {
-        avisar("finalizada", "Pode sair. Tenha um bom dia!");
+        avisar("finalizada", "Pode sair. Tenha um bom dia!");   // 10s (ver EtapaModal)
         setTimeout(() => avisar("obrigado"), 4200);
       }
       if (st === "COMPLETED" || st === "FAILED") { if (poll.current) clearInterval(poll.current); }
@@ -51,15 +51,18 @@ export default function Voucher() {
 
   if (!order) return <p className="sub">Carregando…</p>;
 
+  // REDEEMED = a máquina concluiu o ciclo. Antes esta tela dizia "Lavagem
+  // liberada!" e engolia o aviso de saída, porque o pedido só vira REDEEMED
+  // no fim. Agora ela é a própria tela de saída.
   if (order.status === "REDEEMED")
     return (
       <div className="center" style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 30 }}>
         <div className="successbig">OK</div>
-        <h1>Lavagem liberada!</h1>
-        <p className="sub">{order.program.nome} · {money(order.amountCents)}</p>
+        <h1>Lavagem finalizada!</h1>
+        <p className="sub">Pode sair. Tenha um bom dia!</p>
+        <p className="sub" style={{ fontSize: 13 }}>{order.program.nome} · {money(order.amountCents)}</p>
         <Link className="btn" href="/app">Voltar ao início</Link>
-        <CameraAoVivo />
-        {etapa && <EtapaModal etapa={etapa} detalhe={detalhe} onFechar={() => setEtapa(null)} />}
+        {etapa && <EtapaModal etapa={etapa} detalhe={detalhe} onFechar={() => setEtapa(null)} segundos={10} />}
       </div>
     );
 
@@ -79,7 +82,9 @@ export default function Voucher() {
           : "Mostre este código ao lavador"}
       </p>
       <p className="sub center" style={{ fontSize: 12 }}>{order.voucherCode}</p>
-      {order.lavagem && <CameraAoVivo />}
+      {order.lavagem &&
+        order.lavagem.status !== "COMPLETED" &&
+        order.lavagem.status !== "FAILED" && <CameraAoVivo />}
       {etapa && <EtapaModal etapa={etapa} detalhe={detalhe} onFechar={() => setEtapa(null)} />}
     </>
   );
