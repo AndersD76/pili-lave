@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { api, getToken } from "./client";
+import { ApiError, api, getToken } from "./client";
 
 type Frame = { id: string; at: string; plate: string | null; clientName: string | null } | null;
 
@@ -30,19 +30,26 @@ export default function CameraAoVivo({ titulo }: { titulo?: string }) {
         const f = r.frame;
         if (!f || f.id === atual.current) return;   // nada novo
 
-        const res = await fetch(`/api/lpr/ao-vivo?img=${f.id}`, {
-          headers: { Authorization: `Bearer ${getToken() ?? ""}` },
-        });
-        if (!res.ok || !vivo) return;
-        const blob = await res.blob();
-        if (!vivo) return;
-        const novo = URL.createObjectURL(blob);
-        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-        urlRef.current = novo;
-        atual.current = f.id;
-        setUrl(novo);
-      } catch {
-        if (vivo) setErro(true);
+        // baixa o JPEG (fetch direto: o helper api() faz res.json() e
+        // quebraria numa imagem). Falha aqui NÃO esconde a câmera — só
+        // mantém o quadro anterior até a próxima tentativa.
+        try {
+          const res = await fetch(`/api/lpr/ao-vivo?img=${f.id}`, {
+            headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+          });
+          if (!res.ok || !vivo) return;
+          const blob = await res.blob();
+          if (!vivo) return;
+          const novo = URL.createObjectURL(blob);
+          if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+          urlRef.current = novo;
+          atual.current = f.id;
+          setUrl(novo);
+        } catch { /* rede instável: tenta de novo no próximo ciclo */ }
+      } catch (e) {
+        // só esconde quando o servidor diz que não há lavagem (403);
+        // qualquer outra falha mantém a câmera visível.
+        if (vivo && e instanceof ApiError && e.status === 403) setErro(true);
       }
     };
 
