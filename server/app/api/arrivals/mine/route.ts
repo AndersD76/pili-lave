@@ -18,7 +18,15 @@ export async function GET(req: NextRequest) {
       ],
     },
     orderBy: { createdAt: "desc" },
-    include: { vehicle: { select: { plate: true, defaultProgramId: true } } },
+    include: {
+      vehicle: { select: { plate: true, defaultProgramId: true } },
+      // o status da CHEGADA não conta o fim da história: ela fica em
+      // REQUESTED mesmo depois da lavagem concluir ou falhar. Quem sabe o
+      // que aconteceu na máquina é a reserva.
+      reservation: { select: { status: true } },
+    },
   });
-  return NextResponse.json({ arrival });
+  return NextResponse.json({
+    arrival: arrival ? { ...arrival, lavagem: arrival.reservation?.status ?? null } : null,
+  });
 }

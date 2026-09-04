@@ -8,6 +8,8 @@ import { Nav } from "./nav";
 type Arrival = {
   id: string; plate: string; status: "WAITING_DRIVER" | "NO_MATCH" | "REQUESTED" | "STARTED" | "EXPIRED";
   vehicle: { plate: string; defaultProgramId: number | null } | null;
+  /** status da reserva: é ele que diz o que aconteceu na máquina */
+  lavagem?: "HELD" | "ACTIVE" | "ENTERED" | "COMPLETED" | "FAILED" | "EXPIRED" | null;
 };
 
 export default function Home() {
@@ -47,10 +49,28 @@ export default function Home() {
           </div>
         </Link>
       )}
-      {arrival?.status === "REQUESTED" && (
+      {arrival?.status === "REQUESTED" && arrival.lavagem !== "FAILED" && arrival.lavagem !== "COMPLETED" && (
         <div className="card" style={{ borderColor: "var(--atencao)" }}>
-          <div className="lab" style={{ color: "var(--atencao)" }}>Aguardando a máquina…</div>
-          <p className="sub">Lavagem paga. A luz verde acende em instantes.</p>
+          <div className="lab" style={{ color: "var(--atencao)" }}>
+            {arrival.lavagem === "ACTIVE" ? "Luz verde!" : "Aguardando a máquina…"}
+          </div>
+          <p className="sub">
+            {arrival.lavagem === "ACTIVE"
+              ? "Pode entrar. Boa lavagem!"
+              : "Lavagem paga. A luz verde acende em instantes."}
+          </p>
+        </div>
+      )}
+      {arrival?.lavagem === "FAILED" && (
+        <div className="card" style={{ borderColor: "var(--erro)" }}>
+          <div className="lab" style={{ color: "var(--erro)" }}>Lavagem interrompida</div>
+          <p className="sub">A máquina apresentou falha. O valor foi devolvido ao seu saldo.</p>
+        </div>
+      )}
+      {arrival?.lavagem === "COMPLETED" && (
+        <div className="card" style={{ borderColor: "var(--ok)" }}>
+          <div className="lab" style={{ color: "var(--ok)" }}>Lavagem finalizada</div>
+          <p className="sub">Pode sair. Tenha um bom dia!</p>
         </div>
       )}
       {arrival?.status === "STARTED" && (
