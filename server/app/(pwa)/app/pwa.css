@@ -127,3 +127,30 @@
 .pw .etapa .passos i.on { background: var(--jato); }
 @keyframes etapa-sobe { from { transform: translateY(26px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes etapa-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Câmera ao vivo (metade de baixo da tela durante a lavagem). A câmera manda
+   uma foto a cada ~8s, então é uma imagem que se atualiza, não vídeo. */
+.pw .camviva {
+  position: sticky; bottom: 0;
+  margin-top: auto; padding-top: 10px;
+  background: linear-gradient(to top, var(--verniz) 70%, transparent);
+}
+.pw .camviva-cab {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--aco-d); margin-bottom: 7px;
+}
+.pw .camviva-cab .ponto {
+  width: 8px; height: 8px; border-radius: 999px; background: var(--erro);
+  animation: camviva-pisca 1.6s ease-in-out infinite;
+}
+.pw .camviva-img,
+.pw .camviva-vazio {
+  width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+  border-radius: 16px; border: 1px solid var(--linha); background: #0d1416;
+}
+.pw .camviva-vazio {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--aco-d); font-size: 14px;
+}
+@keyframes camviva-pisca { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }

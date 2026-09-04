@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, fmtPlate, money, type Program } from "../../client";
 import EtapaModal, { type Etapa } from "../../EtapaModal";
+import CameraAoVivo from "../../CameraAoVivo";
 
 type Lavagem = {
   status: string;            // HELD | ACTIVE | ENTERED | COMPLETED | ...
@@ -124,6 +125,7 @@ export default function Chegada() {
             : "A luz verde acende em instantes — pode se aproximar."}
         </p>
         <Link className="btn" href="/app">Voltar ao início</Link>
+        <CameraAoVivo />
         {Modal}
       </div>
     );

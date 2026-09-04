@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { api, fmtPlate, money, type Order } from "../../client";
 import EtapaModal, { type Etapa } from "../../EtapaModal";
+import CameraAoVivo from "../../CameraAoVivo";
 
 type Lavagem = { status: string; valorCents: number; concluidaEm: string | null } | null;
 
@@ -57,6 +58,7 @@ export default function Voucher() {
         <h1>Lavagem liberada!</h1>
         <p className="sub">{order.program.nome} · {money(order.amountCents)}</p>
         <Link className="btn" href="/app">Voltar ao início</Link>
+        <CameraAoVivo />
         {etapa && <EtapaModal etapa={etapa} detalhe={detalhe} onFechar={() => setEtapa(null)} />}
       </div>
     );
@@ -77,6 +79,7 @@ export default function Voucher() {
           : "Mostre este código ao lavador"}
       </p>
       <p className="sub center" style={{ fontSize: 12 }}>{order.voucherCode}</p>
+      {order.lavagem && <CameraAoVivo />}
       {etapa && <EtapaModal etapa={etapa} detalhe={detalhe} onFechar={() => setEtapa(null)} />}
     </>
   );
