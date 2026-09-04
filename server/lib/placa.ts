@@ -20,20 +20,27 @@ export function isValidPlate(plate: string): boolean {
 const TO_LETTER: Record<string, string> = { "0": "O", "1": "I", "2": "Z", "5": "S", "6": "G", "8": "B" };
 const TO_DIGIT: Record<string, string> = { O: "0", Q: "0", D: "0", I: "1", L: "1", Z: "2", S: "5", G: "6", B: "8" };
 
+/* Trocar sósia demais transforma QUALQUER texto em "placa": letreiro de
+ * fachada como AULIC0S virava AUL1C05 e liberava a cancela. Limite de
+ * MAX_TROCAS mantém a correção de OCR sem inventar placa. */
+const MAX_TROCAS = 1;
+
 function coerce(raw: string, pattern: ("L" | "D")[]): string | null {
   if (raw.length !== pattern.length) return null;
   let out = "";
+  let trocas = 0;
   for (let i = 0; i < raw.length; i++) {
     const ch = raw[i];
     if (pattern[i] === "L") {
       if (/[A-Z]/.test(ch)) out += ch;
-      else if (TO_LETTER[ch]) out += TO_LETTER[ch];
+      else if (TO_LETTER[ch]) { out += TO_LETTER[ch]; trocas++; }
       else return null;
     } else {
       if (/[0-9]/.test(ch)) out += ch;
-      else if (TO_DIGIT[ch]) out += TO_DIGIT[ch];
+      else if (TO_DIGIT[ch]) { out += TO_DIGIT[ch]; trocas++; }
       else return null;
     }
+    if (trocas > MAX_TROCAS) return null;
   }
   return out;
 }

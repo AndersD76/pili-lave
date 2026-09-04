@@ -89,10 +89,15 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
   const base: Variant[] = fixed !== null
     ? [{ rot: fixed, scale: 1 }, { rot: fixed, scale: 2 }, { rot: fixed, scale: 2, flop: true }, { rot: fixed, scale: 2, enh: true }]
     : [
-        { rot: 0, scale: 1 }, { rot: 180, scale: 2, flop: true }, { rot: 0, scale: 2 },
-        { rot: 180, scale: 2 }, { rot: 0, scale: 2, flop: true },
-        { rot: 90, scale: 2 }, { rot: 270, scale: 2 },
-        { rot: 0, scale: 2, enh: true }, { rot: 180, scale: 2, enh: true },
+        // A câmera fica DEITADA no poste e a imagem vem ESPELHADA: as quatro
+        // primeiras cobrem as montagens reais (90/270 com e sem espelho) e
+        // são as únicas que cabem no teto de chamadas quando lastGood falha.
+        { rot: 90, scale: 1, flop: true }, { rot: 270, scale: 1, flop: true },
+        { rot: 90, scale: 1 }, { rot: 270, scale: 1 },
+        { rot: 0, scale: 1 }, { rot: 180, scale: 1 },
+        { rot: 90, scale: 2, flop: true }, { rot: 270, scale: 2, flop: true },
+        { rot: 0, scale: 1, flop: true }, { rot: 180, scale: 1, flop: true },
+        { rot: 90, scale: 2, flop: true, enh: true }, { rot: 270, scale: 2, flop: true, enh: true },
       ];
   // aprende: a variante que funcionou da última vez vai primeiro (1 chamada)
   const key = (v: Variant) => `${v.rot}|${v.scale}|${v.flop ? 1 : 0}|${v.enh ? 1 : 0}`;

@@ -33,8 +33,11 @@ let qLastFullAt = 0;
 
 async function analisar(id: string, jpeg: Buffer): Promise<void> {
   const agora = Date.now();
-  const similar = qSize > 0 && Math.abs(jpeg.length - qSize) / qSize < 0.01;
-  const podePular = similar && !qHadPlate && agora - qLastFullAt < 60_000;
+  // A câmera balança no poste: o tamanho oscila ~1% mesmo com a cena parada,
+  // e o filtro antigo (1%) deixava passar frame com carro. 0.3% + janela de
+  // 25 s: pula só o que é claramente a mesma cena vazia.
+  const similar = qSize > 0 && Math.abs(jpeg.length - qSize) / qSize < 0.003;
+  const podePular = similar && !qHadPlate && agora - qLastFullAt < 25_000;
   qSize = jpeg.length;
   if (podePular) {
     await updateFrame(id, { note: "cena parada (não analisada)" });
