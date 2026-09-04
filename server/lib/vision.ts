@@ -15,6 +15,8 @@ const MIN_DSCORE = 0.3;  // confiança mínima da DETECÇÃO p/ tentar o recorte
 
 let lastScore = 0;
 let lastGood: string | null = null; // variante que leu por último (aprendizado)
+let lastGoodAt = 0;                 // quando aprendeu (o atalho expira)
+const LASTGOOD_TTL_MS = 10 * 60_000; // 10 min: sobrevive à remontagem da câmera
 /** Confiança da última leitura aceita (0..1). */
 export function lastPlateScore(): number { return lastScore; }
 
@@ -89,19 +91,23 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
   const base: Variant[] = fixed !== null
     ? [{ rot: fixed, scale: 1 }, { rot: fixed, scale: 2 }, { rot: fixed, scale: 2, flop: true }, { rot: fixed, scale: 2, enh: true }]
     : [
-        // A câmera fica DEITADA no poste e a imagem vem ESPELHADA: as quatro
-        // primeiras cobrem as montagens reais (90/270 com e sem espelho) e
-        // são as únicas que cabem no teto de chamadas quando lastGood falha.
-        { rot: 90, scale: 1, flop: true }, { rot: 270, scale: 1, flop: true },
+        // A câmera fica DEITADA no poste. As SEM espelho vêm primeiro: é a
+        // montagem atual (medido na foto ao vivo: rot=90 lê 0.996; as
+        // espelhadas leem 0.73 e ainda gastam uma 2ª chamada no zoom).
         { rot: 90, scale: 1 }, { rot: 270, scale: 1 },
+        { rot: 90, scale: 1, flop: true }, { rot: 270, scale: 1, flop: true },
         { rot: 0, scale: 1 }, { rot: 180, scale: 1 },
-        { rot: 90, scale: 2, flop: true }, { rot: 270, scale: 2, flop: true },
+        { rot: 90, scale: 2 }, { rot: 270, scale: 2 },
         { rot: 0, scale: 1, flop: true }, { rot: 180, scale: 1, flop: true },
-        { rot: 90, scale: 2, flop: true, enh: true }, { rot: 270, scale: 2, flop: true, enh: true },
+        { rot: 90, scale: 2, enh: true }, { rot: 270, scale: 2, enh: true },
       ];
-  // aprende: a variante que funcionou da última vez vai primeiro (1 chamada)
+  /* Aprende: a variante que funcionou por último vai primeiro (1 chamada).
+   * MAS o aprendizado expira: se a câmera é remontada (foi o que aconteceu
+   * ao tirarem o espelho), o lastGood antigo passa a liderar a fila com uma
+   * orientação errada e as leituras despencam até o servidor reiniciar. */
   const key = (v: Variant) => `${v.rot}|${v.scale}|${v.flop ? 1 : 0}|${v.enh ? 1 : 0}`;
-  const variants = lastGood
+  const aprendidoVale = lastGood && Date.now() - lastGoodAt < LASTGOOD_TTL_MS;
+  const variants = aprendidoVale
     ? [...base.filter((v) => key(v) === lastGood), ...base.filter((v) => key(v) !== lastGood)]
     : base;
 
@@ -139,8 +145,11 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
     consider(r, how);
     if (st.best && st.best.score >= SURE) break;
 
-    // detectou a placa (longe/pequena) mas leu mal -> recorte ampliado
-    if (r && r.box && r.dscore >= MIN_DSCORE && r.score < MIN_SCORE) {
+    /* Recorte ampliado só quando a leitura é MUITO fraca (< 0.5): numa
+     * orientação errada o detector acha a placa e lê ~0.73, e o zoom
+     * gastava a 2ª chamada de cada variante ruim — o orçamento acabava
+     * antes de chegar à orientação certa. */
+    if (r && r.box && r.dscore >= MIN_DSCORE && r.score < 0.5) {
       const zoom = await cropZoom(img, r.box).catch(() => null);
       if (zoom && st.calls < MAX_CALLS) {
         st.calls++;
@@ -154,6 +163,7 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
   const b = st.best;
   lastScore = b.score;
   lastGood = b.k;
+  lastGoodAt = Date.now();
   console.log(`LPR: ${b.plate} (${b.score.toFixed(2)}) via ${b.how}`);
   return b.plate;
 }
