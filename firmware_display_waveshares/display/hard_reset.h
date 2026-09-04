@@ -29,6 +29,10 @@
 #ifndef HARD_RESET_APAGA_NVS
 #define HARD_RESET_APAGA_NVS 0
 #endif
+// 1 = faz o reinicio por software ao energizar (fase 1); 0 = so loga o motivo.
+#ifndef HARD_RESET_REINICIA
+#define HARD_RESET_REINICIA 0
+#endif
 
 #define HR_MARCA 0x50494C49UL   // "PILI" — sobrevive ao esp_restart, indefinida ao energizar
 RTC_NOINIT_ATTR static uint32_t g_hr_marca;
@@ -52,7 +56,7 @@ static const char* hard_reset_motivo(esp_reset_reason_t r) {
 static void hard_reset_fase1(const char* nome) {
     esp_reset_reason_t r = esp_reset_reason();
     bool energizou = (r == ESP_RST_POWERON || r == ESP_RST_BROWNOUT || r == ESP_RST_UNKNOWN);
-    if (energizou && g_hr_marca != HR_MARCA) {
+    if (HARD_RESET_REINICIA && energizou && g_hr_marca != HR_MARCA) {
         g_hr_marca = HR_MARCA;
 #if HARD_RESET_APAGA_NVS
         Serial.printf("[%s] HARD RESET: apagando NVS (reset de fabrica)\n", nome);
