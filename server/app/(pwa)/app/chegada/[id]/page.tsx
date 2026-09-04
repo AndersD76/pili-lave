@@ -55,11 +55,11 @@ export default function Chegada() {
 
           // avisa o cliente a cada mudança de etapa da lavagem
           const st = a.lavagem?.status;
-          if (st === "ACTIVE") avisar("reconhecido", `Placa ${fmtPlate(a.plate)} identificada. Pode entrar na máquina.`);
+          if (st === "ACTIVE") avisar("reconhecido", "Pode entrar. Boa lavagem!");
           if (st === "ENTERED") avisar("iniciada", `${a.lavagem?.programa} em andamento.`);
           if (st === "FAILED") avisar("falha", `${money(a.lavagem!.valorCents)} devolvidos ao seu saldo.`);
           if (st === "COMPLETED") {
-            avisar("finalizada", `${a.lavagem?.programa} concluída — ${money(a.lavagem!.valorCents)} debitados.`);
+            avisar("finalizada", "Pode sair. Tenha um bom dia!");
             setTimeout(() => avisar("obrigado"), 4200);
           }
 

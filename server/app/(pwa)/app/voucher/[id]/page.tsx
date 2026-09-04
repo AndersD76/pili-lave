@@ -34,11 +34,11 @@ export default function Voucher() {
       const st = o.lavagem?.status;
       const val = money(o.lavagem?.valorCents ?? o.amountCents);
       if (st === "HELD") { avisar("reserva", `${o.program.nome} reservada.`); avisar("pagamento", `${val} debitados do seu saldo.`); }
-      if (st === "ACTIVE") avisar("reconhecido", "A câmera identificou sua placa. Pode entrar na máquina.");
+      if (st === "ACTIVE") avisar("reconhecido", "Pode entrar. Boa lavagem!");
       if (st === "ENTERED") avisar("iniciada", `${o.program.nome} em andamento.`);
       if (st === "FAILED") avisar("falha", `${val} devolvidos ao seu saldo.`);
       if (st === "COMPLETED") {
-        avisar("finalizada", `${o.program.nome} concluída — ${val}.`);
+        avisar("finalizada", "Pode sair. Tenha um bom dia!");
         setTimeout(() => avisar("obrigado"), 4200);
       }
       if (st === "COMPLETED" || st === "FAILED") { if (poll.current) clearInterval(poll.current); }
