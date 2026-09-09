@@ -3,7 +3,8 @@ import { randomBytes } from "crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { HOLD_TTL_MIN, defaultMachine } from "@/lib/reservations";
+import { HOLD_TTL_MIN, defaultMachine, machineAvailability, setTransientLight } from "@/lib/reservations";
+import { diagnosticar } from "@/lib/saude";
 
 function voucherCode(): string {
   // 10 chars base32 sem ambíguos (sem 0/O/1/I)
@@ -26,6 +27,9 @@ export async function GET(req: NextRequest) {
 const Body = z.object({
   programId: z.number().int(),
   vehicleId: z.string().optional(),
+  /** "cheguei": o cliente já está na máquina e a câmera não o reconheceu.
+   *  Libera direto, sem esperar a leitura da placa. */
+  jaEstouNaMaquina: z.boolean().optional(),
 });
 
 /**
@@ -53,6 +57,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Veículo não encontrado" }, { status: 404 });
 
   const machine = vehicle ? await defaultMachine() : null;
+
+  /* Máquina parada (falha, manutenção ou display mudo): não deixa pagar por
+   * uma lavagem que não vai acontecer. */
+  const saude = await diagnosticar();
+  if (!saude.disponivel)
+    return NextResponse.json(
+      { error: saude.motivo ?? "Máquina não disponível no momento.", indisponivel: true },
+      { status: 503 }
+    );
+
+  /* Modo "cheguei": libera na hora. Só faz sentido com a máquina LIVRE —
+   * se ela estiver lavando outro carro, a reserva entra na fila normal. */
+  const agoraNaMaquina = parsed.data.jaEstouNaMaquina === true;
+  const maquinaLivre = machine ? machineAvailability(machine) === "FREE" : false;
+  const liberarJa = agoraNaMaquina && maquinaLivre && !!machine;
 
   /* Já tem lavagem paga esperando? NÃO cobra de novo. Antes o débito
    * acontecia e a reserva não era criada (guarda de duplicidade lá
@@ -102,7 +121,7 @@ export async function POST(req: NextRequest) {
         const jaTem = await tx.reservation.findFirst({
           where: { vehicleId: vehicle.id, status: { in: ["HELD", "ACTIVE", "ENTERED"] } },
         });
-        if (jaTem) throw new Error("DUPLICADA");
+          if (jaTem) throw new Error("DUPLICADA");
         await tx.reservation.create({
           data: {
             userId: auth.user.id,
@@ -111,7 +130,12 @@ export async function POST(req: NextRequest) {
             programId: program.id,
             amountCents: program.precoCents,
             orderId: order.id,
-            status: "HELD",
+            // "cheguei" com a máquina livre: já nasce ACTIVE (verde acende
+            // e o display recebe a ordem no próximo heartbeat). Caso normal:
+            // HELD, esperando a câmera reconhecer a placa na chegada.
+            ...(liberarJa
+              ? { status: "ACTIVE" as const, machineId: machine.id, activeAt: new Date() }
+              : { status: "HELD" as const }),
             expiresAt: new Date(Date.now() + HOLD_TTL_MIN * 60_000),
           },
         });
@@ -124,7 +148,8 @@ export async function POST(req: NextRequest) {
       });
       return order;
     });
-    return NextResponse.json(order, { status: 201 });
+    if (liberarJa && machine) await setTransientLight(machine.id, "GREEN_SOLID", 15 * 60);
+    return NextResponse.json({ ...order, liberadaAgora: liberarJa }, { status: 201 });
   } catch (e) {
     if (e instanceof Error && e.message === "SALDO")
       return NextResponse.json({ error: "Saldo insuficiente. Adicione saldo para continuar." }, { status: 402 });

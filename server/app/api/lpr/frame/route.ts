@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { requireDevice } from "@/lib/device";
-import { plateCandidates } from "@/lib/placa";
+import { plateCandidates, pareceMesmaPlaca } from "@/lib/placa";
 import { handlePlateRead } from "@/lib/lpr";
 import { recognizePlate, lastPlateScore } from "@/lib/vision";
 import { cenaMudou } from "@/lib/vision-claude";
@@ -59,17 +59,51 @@ async function analisar(id: string, jpeg: Buffer): Promise<void> {
   votes = votes.filter((v) => t - v.at < VOTE_WINDOW_MS);
   votes.push({ plate, score, at: t });
   const iguais = votes.filter((v) => v.plate === plate).length;
-  if (!(score >= 0.97 || iguais >= 2)) {
-    await updateFrame(id, { plate, score, note: `pendente (1 de 2 votos; ${Math.round(score * 100)}%)` });
+
+  /* Leitura fraca + reserva paga esperando = libera.
+   * Quem já pagou e aguarda é uma lista curta de candidatos, então uma
+   * leitura imperfeita que casa com UM único deles é confiável — resolve o
+   * "pendente (1 de 2 votos)" sem obrigar o motorista a esperar outra foto.
+   * Se DUAS reservas casarem (RYD1E43 x RVD1E43), não libera: melhor o
+   * cliente usar o botão manual do que lavar o carro errado. */
+  const porReserva = score >= 0.5 ? await casaComReservaNaFila(plate) : null;
+
+  if (!(score >= 0.97 || iguais >= 2 || porReserva)) {
+    const nota = score >= 0.5
+      ? `pendente (1 de 2 votos; ${Math.round(score * 100)}%)`
+      : `leitura fraca (${Math.round(score * 100)}%)`;
+    await updateFrame(id, { plate, score, note: nota });
     return;
   }
   votes = votes.filter((v) => v.plate !== plate);
 
-  const result = await handlePlateRead(plate);
-  await updateFrame(id, { plate, score, status: result.status, light: result.light, clientName: result.clientName, note: null });
+  // casou com a fila: usa a placa CADASTRADA, não a lida com erro
+  const placaFinal = porReserva ?? plate;
+  const result = await handlePlateRead(placaFinal);
+  await updateFrame(id, {
+    plate: placaFinal, score, status: result.status, light: result.light,
+    clientName: result.clientName,
+    note: porReserva && porReserva !== plate ? `lida ${plate}, casada com a reserva de ${porReserva}` : null,
+  });
   await prisma.event.create({
     data: { type: "lpr_photo", payload: { plate, score, bytes: jpeg.length, arrivalId: result.arrivalId } },
   });
+}
+
+/**
+ * A leitura casa com alguma reserva paga aguardando? Devolve a placa
+ * CADASTRADA quando houver exatamente uma compatível; null se não houver
+ * nenhuma — ou se houver mais de uma (ambíguo, não liberamos no palpite).
+ */
+async function casaComReservaNaFila(lida: string): Promise<string | null> {
+  const vivas = await prisma.reservation.findMany({
+    where: { status: { in: ["HELD", "ACTIVE", "ENTERED"] }, expiresAt: { gt: new Date() } },
+    select: { vehicle: { select: { plate: true } } },
+  });
+  const compat = [...new Set(
+    vivas.map((r) => r.vehicle.plate).filter((p) => pareceMesmaPlaca(lida, p))
+  )];
+  return compat.length === 1 ? compat[0] : null;
 }
 
 export async function POST(req: NextRequest) {

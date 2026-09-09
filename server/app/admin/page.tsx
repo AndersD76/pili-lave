@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireAdminPage } from "@/lib/admin";
 import { AdminNav } from "./nav";
+import { diagnosticar } from "@/lib/saude";
 
 export const dynamic = "force-dynamic";
 
@@ -47,9 +48,59 @@ export default async function AdminDashboard() {
   const programas = await prisma.program.findMany({ orderBy: { ordem: "asc" } });
   const progNome = (id: number) => programas.find((p) => p.id === id)?.nome ?? `#${id}`;
 
+  // saúde ao vivo + alertas recentes (falha, display mudo, câmera fora)
+  const saude = await diagnosticar();
+  const alertas = await prisma.event.findMany({
+    where: { type: "alerta_admin", createdAt: { gte: new Date(Date.now() - 24 * 3600e3) } },
+    orderBy: { createdAt: "desc" },
+    take: 12,
+  });
+
   return (
     <main>
       <AdminNav />
+
+      <div className="stats">
+        <div className={`stat${saude.disponivel ? "" : " alerta"}`}>
+          <div className="lab">Máquina</div>
+          <div className="val">{saude.disponivel ? "OK" : "PARADA"}</div>
+          <div className="sub">{saude.detalhe ?? "operando normalmente"}</div>
+        </div>
+        <div className={`stat${saude.displaySegundos !== null && saude.displaySegundos <= 60 ? "" : " alerta"}`}>
+          <div className="lab">Display</div>
+          <div className="val">{saude.displaySegundos === null ? "—" : `${saude.displaySegundos}s`}</div>
+          <div className="sub">desde o último contato</div>
+        </div>
+        <div className={`stat${saude.cameraSegundos !== null && saude.cameraSegundos <= 180 ? "" : " alerta"}`}>
+          <div className="lab">Câmera</div>
+          <div className="val">{saude.cameraSegundos === null ? "—" : `${saude.cameraSegundos}s`}</div>
+          <div className="sub">desde a última foto</div>
+        </div>
+      </div>
+
+      {alertas.length > 0 && (
+        <>
+          <h2 className="section-title">Alertas — 24h</h2>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead><tr><th>Quando</th><th>Tipo</th><th>O que aconteceu</th></tr></thead>
+              <tbody>
+                {alertas.map((a) => {
+                  const p = (a.payload ?? {}) as { tipo?: string; mensagem?: string };
+                  return (
+                    <tr key={a.id}>
+                      <td>{a.createdAt.toLocaleString("pt-BR")}</td>
+                      <td>{p.tipo ?? "-"}</td>
+                      <td>{p.mensagem ?? "-"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
       <div className="stats">
         <div className="stat"><div className="lab">Lavagens hoje</div><div className="val">{vendidasHoje}</div><div className="sub">{vendidas7} em 7 dias · {vendidas30} em 30</div></div>
         <div className="stat"><div className="lab">Resgates hoje</div><div className="val">{resgatadasHoje}</div><div className="sub">{resgatadas30} em 30 dias</div></div>

@@ -4,7 +4,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, money, type Me, type Order, type Program } from "../client";
 
-/** Compra manual (fallback sem câmera): gera voucher QR p/ o lavador. */
+type Saude = { disponivel: boolean; motivo: string | null; cameraOffline: boolean };
+
+/** Compra da lavagem. Dois caminhos: pagar e esperar a câmera reconhecer a
+ *  placa na chegada, ou "já estou na máquina" — libera na hora, para quando
+ *  a câmera não reconhecer (ou estiver fora do ar). */
 export default function NovaLavagem() {
   const router = useRouter();
   const [programs, setPrograms] = useState<Program[]>([]);
@@ -12,20 +16,28 @@ export default function NovaLavagem() {
   const [sel, setSel] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [saude, setSaude] = useState<Saude | null>(null);
 
   useEffect(() => {
     api<Program[]>("/api/programs", { auth: false }).then(setPrograms).catch(() => {});
     api<Me>("/api/me").then(setMe).catch(() => router.replace("/app/login"));
+    // saúde da máquina: não deixa pagar por lavagem que não vai acontecer
+    const verSaude = () => api<Saude>("/api/saude", { auth: false }).then(setSaude).catch(() => {});
+    verSaude();
+    const t = setInterval(verSaude, 20000);
+    return () => clearInterval(t);
   }, [router]);
 
   const selected = programs.find((p) => p.id === sel);
   const falta = selected && me ? selected.precoCents - me.walletCents : 0;
 
-  async function comprar() {
+  async function comprar(jaEstouNaMaquina = false) {
     if (!selected) return;
     setError(""); setLoading(true);
     try {
-      const order = await api<Order>("/api/orders", { body: { programId: selected.id } });
+      const order = await api<Order>("/api/orders", {
+        body: { programId: selected.id, jaEstouNaMaquina },
+      });
       router.replace(`/app/voucher/${order.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível concluir");
@@ -36,7 +48,20 @@ export default function NovaLavagem() {
   return (
     <>
       <h1>Nova lavagem</h1>
-      <p className="sub">Pague com saldo e mostre o QR ao lavador. Saldo: {me ? money(me.walletCents) : "…"}</p>
+      <p className="sub">Saldo: {me ? money(me.walletCents) : "…"}</p>
+
+      {saude && !saude.disponivel && (
+        <div className="card" style={{ borderColor: "var(--erro)" }}>
+          <div className="lab" style={{ color: "var(--erro)" }}>Máquina não disponível</div>
+          <p className="sub">{saude.motivo ?? "Tente novamente em alguns minutos."}</p>
+        </div>
+      )}
+      {saude?.disponivel && saude.cameraOffline && (
+        <div className="card" style={{ borderColor: "var(--atencao)" }}>
+          <div className="lab" style={{ color: "var(--atencao)" }}>Câmera fora do ar</div>
+          <p className="sub">A placa não será reconhecida sozinha. Use &quot;Já estou na máquina&quot; ao chegar.</p>
+        </div>
+      )}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {programs.map((p) => (
           <button key={p.id} type="button" className={`opt${sel === p.id ? " sel" : ""}`} onClick={() => setSel(p.id)}>
@@ -52,9 +77,27 @@ export default function NovaLavagem() {
           <Link className="btn" href="/app/recarga">Adicionar saldo</Link>
         </>
       ) : (
-        <button className="btn" onClick={comprar} disabled={!selected || loading}>
-          {loading ? "Processando…" : selected ? `Pagar ${money(selected.precoCents)} com saldo` : "Escolha o tipo"}
-        </button>
+        <>
+          <button
+            className="btn"
+            onClick={() => comprar(false)}
+            disabled={!selected || loading || saude?.disponivel === false}
+          >
+            {loading ? "Processando…" : selected ? `Pagar ${money(selected.precoCents)} com saldo` : "Escolha o tipo"}
+          </button>
+          {/* Saída para quando a câmera não reconhecer: o cliente já está na
+              máquina e libera na hora, sem depender da leitura da placa. */}
+          <button
+            className="btn ghost"
+            onClick={() => comprar(true)}
+            disabled={!selected || loading || saude?.disponivel === false}
+          >
+            Já estou na máquina — pagar e liberar agora
+          </button>
+          <p className="sub center" style={{ fontSize: 13 }}>
+            Pagando normal, a máquina libera sozinha quando a câmera ler sua placa.
+          </p>
+        </>
       )}
     </>
   );

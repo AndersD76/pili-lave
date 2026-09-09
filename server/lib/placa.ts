@@ -101,3 +101,28 @@ export async function lookupPlate(plate: string): Promise<PlateInfo | null> {
   }
   return null;
 }
+
+/** Distância de edição (quantos caracteres diferem/faltam/sobram). */
+export function distancia(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  let ant = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++)
+      cur[j] = Math.min(ant[j] + 1, cur[j - 1] + 1, ant[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    ant = cur;
+  }
+  return ant[n];
+}
+
+/**
+ * A leitura bate com esta placa cadastrada? Aceita a leitura crua, as
+ * correções de sósia e até 1 caractere de diferença — a IA às vezes troca
+ * D por B ou V numa foto ruim (RYD1E43 lido como RVD1E43).
+ */
+export function pareceMesmaPlaca(lida: string, cadastrada: string): boolean {
+  const l = normalizePlate(lida), c = normalizePlate(cadastrada);
+  if (l === c) return true;
+  if (plateCandidates(l).includes(c)) return true;
+  return l.length === c.length && distancia(l, c) <= 1;
+}

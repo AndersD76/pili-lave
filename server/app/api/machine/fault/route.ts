@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireMachine } from "@/lib/device";
+import { alertarAdmin } from "@/lib/saude";
 
 const Body = z.object({
   errorCode: z.string().max(64).optional(),
@@ -91,6 +92,18 @@ export async function POST(req: NextRequest) {
       },
     },
   });
+
+  /* O display hoje manda só {reservationId} — o motivo do erro fica na tela
+   * dele (msg_alarme) e não viaja. Então o alerta diz o que a nuvem sabe:
+   * a máquina parou. `errorCode` é opcional e será usado se o firmware
+   * passar a enviá-lo. */
+  await alertarAdmin(
+    "MAQUINA_FALHA",
+    body.errorCode
+      ? `A máquina parou por falha (${body.errorCode}). Veja o motivo no display.`
+      : "A máquina parou por falha. O motivo aparece na tela do display.",
+    { errorCode: body.errorCode ?? null, estornadas, estornoCents }
+  );
 
   return NextResponse.json({
     ok: true,
