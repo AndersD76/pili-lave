@@ -7,8 +7,12 @@
  *  2. Placa LONGE: o detector devolve a caixa mesmo sem conseguir ler;
  *     recortamos a caixa, ampliamos 4x, realçamos e lemos de novo.
  *  3. Sem token: fallback grátis com tesseract (fraco; só para bancada).
+ *
+ * Desde 09/2026 o caminho principal é a IA da Anthropic (lib/vision-claude.ts):
+ * não tem cota mensal, que foi o que derrubou o reconhecimento por dias.
  */
 import { isValidPlate, normalizePlate, plateCandidates } from "./placa";
+import { lerPlacaComClaude, temChaveClaude, ultimaConfianca } from "./vision-claude";
 
 const MIN_SCORE = 0.8;   // confiança dos caracteres p/ aceitar
 const MIN_DSCORE = 0.3;  // confiança mínima da DETECÇÃO p/ tentar o recorte
@@ -200,10 +204,36 @@ async function viaTesseract(jpeg: Buffer): Promise<string | null> {
   return extractPlate(data.text || "");
 }
 
-/** Devolve a placa normalizada encontrada na foto, ou null. */
+/**
+ * Devolve a placa normalizada encontrada na foto, ou null.
+ *
+ * Ordem: Claude (não tem cota mensal) -> Plate Recognizer (quando a cota
+ * renova, é mais barato por leitura) -> tesseract (bancada). A cota do
+ * Plate Recognizer estourou em 08/09 e derrubou o sistema por dias; com o
+ * Claude no caminho principal isso não volta a acontecer.
+ */
 export async function recognizePlate(jpeg: Buffer): Promise<string | null> {
   lastScore = 0;
-  if (visionToken()) return recognizeAnyOrientation(jpeg);
+
+  if (temChaveClaude()) {
+    const placa = await lerPlacaComClaude(jpeg).catch((e) => {
+      console.error("Claude vision falhou:", e);
+      return null;
+    });
+    if (placa) { lastScore = ultimaConfianca(); return placa; }
+    // Claude não viu placa: se houver token do PR, ainda vale a segunda opinião
+  }
+
+  if (visionToken()) {
+    const placa = await recognizeAnyOrientation(jpeg).catch((e) => {
+      console.error("Plate Recognizer falhou:", e);
+      return null;
+    });
+    if (placa) return placa;
+  }
+
+  if (temChaveClaude()) return null;   // sem PR utilizável, já tentamos o que dava
+
   const plate = await viaTesseract(jpeg).catch((e) => { console.error("Tesseract falhou:", e); return null; });
   if (!plate) return null;
   if (isValidPlate(plate)) return plate;

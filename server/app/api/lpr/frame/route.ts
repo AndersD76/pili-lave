@@ -3,6 +3,7 @@ import { requireDevice } from "@/lib/device";
 import { plateCandidates } from "@/lib/placa";
 import { handlePlateRead } from "@/lib/lpr";
 import { recognizePlate, lastPlateScore } from "@/lib/vision";
+import { cenaMudou } from "@/lib/vision-claude";
 import { saveFrame, updateFrame, readFrame } from "@/lib/frames";
 import { prisma } from "@/lib/prisma";
 
@@ -33,11 +34,14 @@ let qLastFullAt = 0;
 
 async function analisar(id: string, jpeg: Buffer): Promise<void> {
   const agora = Date.now();
-  // A câmera balança no poste: o tamanho oscila ~1% mesmo com a cena parada,
-  // e o filtro antigo (1%) deixava passar frame com carro. 0.3% + janela de
-  // 25 s: pula só o que é claramente a mesma cena vazia.
+  /* Filtro de cena (custo zero): a câmera fotografa a cada ~8s tenha carro
+   * ou não, e o firmware não vai mudar. Comparar uma miniatura da cena diz se
+   * algo mudou; cena parada não tem carro novo para ler. Isso é o que segura
+   * o gasto do reconhecimento — o tamanho do arquivo sozinho não servia, ele
+   * oscila com o vento e a luz. Garantia: 1 análise por minuto mesmo parada. */
+  const mudou = await cenaMudou(jpeg);
   const similar = qSize > 0 && Math.abs(jpeg.length - qSize) / qSize < 0.003;
-  const podePular = similar && !qHadPlate && agora - qLastFullAt < 25_000;
+  const podePular = !mudou || (similar && !qHadPlate && agora - qLastFullAt < 25_000);
   qSize = jpeg.length;
   if (podePular) {
     await updateFrame(id, { note: "cena parada (não analisada)" });
