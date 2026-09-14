@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Switch, Text, View } from "react-native";
 import { api } from "@/lib/api";
+import { autenticarComBiometria, biometriaAtiva, biometriaDisponivel, setBiometriaAtiva } from "@/lib/biometria";
 import { useSession } from "@/lib/session";
 import { Btn, Card, ErrText, Input, Label, Screen, Sub } from "@/ui";
 import { C, F } from "@/theme";
@@ -20,6 +21,27 @@ export default function MeusDados() {
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+
+  const [temBiometria, setTemBiometria] = useState(false);
+  const [biometriaOn, setBiometriaOn] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      setTemBiometria(await biometriaDisponivel());
+      setBiometriaOn(await biometriaAtiva());
+    })();
+  }, []);
+
+  async function alternarBiometria(ligar: boolean) {
+    if (ligar) {
+      // pede a digital/rosto AGORA — só ativa se o dono do celular confirmar,
+      // senão qualquer um que pegasse o aparelho ligaria a entrada por biometria.
+      const ok = await autenticarComBiometria();
+      if (!ok) return;
+    }
+    await setBiometriaAtiva(ligar);
+    setBiometriaOn(ligar);
+  }
 
   async function salvar() {
     setError("");
@@ -46,9 +68,14 @@ export default function MeusDados() {
     <Screen>
       <View style={{ marginTop: 20, gap: 16 }}>
         <Card>
+          <Label>E-mail</Label>
+          <Text style={{ fontFamily: F.bodyBold, fontSize: 18, color: C.cromo }}>{me?.email}</Text>
+          <Sub>O e-mail é seu login e não pode ser alterado aqui.</Sub>
+        </Card>
+
+        <Card>
           <Label>Telefone</Label>
           <Text style={{ fontFamily: F.bodyBold, fontSize: 18, color: C.cromo }}>{me?.phone}</Text>
-          <Sub>O telefone é seu login e não pode ser alterado aqui.</Sub>
         </Card>
 
         <View>
@@ -71,6 +98,21 @@ export default function MeusDados() {
             maxLength={14}
           />
         </View>
+
+        {temBiometria && (
+          <Card style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <Text style={{ fontFamily: F.bodyBold, fontSize: 16, color: C.cromo }}>Entrar com biometria</Text>
+              <Sub>Use digital ou reconhecimento facial para abrir o app.</Sub>
+            </View>
+            <Switch
+              value={biometriaOn}
+              onValueChange={alternarBiometria}
+              trackColor={{ false: C.linha, true: C.jatoInk }}
+              thumbColor={biometriaOn ? C.jato : C.aco}
+            />
+          </Card>
+        )}
 
         <ErrText>{error}</ErrText>
         <Btn title={saved ? "Salvo!" : "Salvar"} onPress={salvar} loading={loading} />
