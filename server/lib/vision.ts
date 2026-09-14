@@ -14,7 +14,8 @@
 import { isValidPlate, normalizePlate, plateCandidates } from "./placa";
 import { lerPlacaComClaude, temChaveClaude, ultimaConfianca } from "./vision-claude";
 
-const MIN_SCORE = 0.8;   // confiança dos caracteres p/ aceitar
+const MIN_SCORE = 0.8;   // confiança dos caracteres p/ aceitar sozinha (sem fila)
+const WEAK_MIN_SCORE = 0.4; // abaixo disso nem entra na disputa — lixo puro
 const MIN_DSCORE = 0.3;  // confiança mínima da DETECÇÃO p/ tentar o recorte
 
 let lastScore = 0;
@@ -125,7 +126,7 @@ async function recognizeAnyOrientation(jpeg: Buffer): Promise<string | null> {
    * o RYD1E43 legítimo (0.997), lido na 3ª, nem chegava a ser considerado.
    * Empate de placa válida continua sendo decidido pela confiança. */
   const consider = (r: PrResult | null, how: string) => {
-    if (!r || r.score < MIN_SCORE) return;
+    if (!r || r.score < WEAK_MIN_SCORE) return;
     if (plateCandidates(r.plate).length === 0) return;   // não é placa: descarta
     if (!st.best || r.score > st.best.score) st.best = { plate: r.plate, score: r.score, how, k: curKey };
   };
@@ -211,6 +212,11 @@ async function viaTesseract(jpeg: Buffer): Promise<string | null> {
  * renova, é mais barato por leitura) -> tesseract (bancada). A cota do
  * Plate Recognizer estourou em 08/09 e derrubou o sistema por dias; com o
  * Claude no caminho principal isso não volta a acontecer.
+ *
+ * ATENÇÃO: pode devolver leitura de BAIXA confiança (score < MIN_SCORE,
+ * ver lastPlateScore()) — quem chama decide o que fazer com ela (aceitar
+ * sozinha exige score alto; senão só serve para bater contra a fila de
+ * quem já reservou, ver lib/lpr.ts).
  */
 export async function recognizePlate(jpeg: Buffer): Promise<string | null> {
   lastScore = 0;

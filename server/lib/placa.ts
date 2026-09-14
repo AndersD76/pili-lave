@@ -58,6 +58,16 @@ export function plateCandidates(raw: string): string[] {
   return [...out];
 }
 
+/** Diferenças caractere-a-caractere entre duas placas do mesmo tamanho
+ *  (Infinity se os tamanhos não baterem — não dá pra comparar). Usado para
+ *  bater uma leitura fraca da câmera contra quem já está na fila. */
+export function plateDistance(a: string, b: string): number {
+  if (a.length !== b.length) return Infinity;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++;
+  return d;
+}
+
 export type PlateInfo = { brand?: string; model?: string; color?: string; year?: string };
 
 export async function lookupPlate(plate: string): Promise<PlateInfo | null> {

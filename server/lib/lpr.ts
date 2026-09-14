@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { ARRIVAL_TTL_MIN } from "./device";
-import { plateCandidates } from "./placa";
+import { normalizePlate, plateCandidates, plateDistance } from "./placa";
 import {
   LightState,
   QUEUE_FREEZE_MIN,
@@ -162,4 +162,54 @@ export async function handlePlateRead(plate: string): Promise<PlateReadResult> {
     machineState: avail,
     dedup: dedup || undefined,
   };
+}
+
+const SUGGEST_MAX_DIST = 2;     // até 2 caracteres diferentes ainda conta como "pode ser esse"
+const SUGGEST_DEDUP_MIN = 2;    // não recria sugestão a cada frame novo
+
+export type SuggestResult = { arrivalId: string; plate: string; matchScore: number };
+
+/**
+ * Leitura de placa FRACA (não passou no corte de auto-aceite): em vez de
+ * jogar fora, compara com quem já pagou e está na fila (reserva HELD) nesta
+ * estação. Se bater com EXATAMENTE UM veículo (folga de até 2 caracteres —
+ * cobre sósias de OCR), cria uma chegada "SUGESTÃO" para o dono confirmar no
+ * app ("é o seu carro?"). Nunca libera nada sozinho: só a confirmação do
+ * motorista promove a reserva (ver /api/arrivals/[id]/confirm).
+ */
+export async function suggestFromWeakRead(rawPlate: string, score: number): Promise<SuggestResult | null> {
+  const guess = normalizePlate(rawPlate);
+  const held = await prisma.reservation.findMany({
+    where: { status: "HELD", expiresAt: { gt: new Date() } },
+    include: { vehicle: true },
+  });
+  const matches = held.filter((r) => plateDistance(guess, r.vehicle.plate) <= SUGGEST_MAX_DIST);
+  if (matches.length !== 1) return null; // nenhum ou ambíguo demais — não arrisca
+  const [hit] = matches;
+
+  const cutoff = new Date(Date.now() - SUGGEST_DEDUP_MIN * 60_000);
+  const existing = await prisma.arrival.findFirst({
+    where: { reservationId: hit.id, status: "SUGGESTED", createdAt: { gte: cutoff } },
+  });
+  if (existing) return { arrivalId: existing.id, plate: hit.vehicle.plate, matchScore: score };
+
+  const machine = await defaultMachine();
+  const arrival = await prisma.arrival.create({
+    data: {
+      plate: hit.vehicle.plate,
+      vehicleId: hit.vehicleId,
+      userId: hit.userId,
+      reservationId: hit.id,
+      stationId: machine.stationId,
+      status: "SUGGESTED",
+      matchScore: score,
+    },
+  });
+  await prisma.event.create({
+    data: {
+      type: "lpr_suggested",
+      payload: { plate: hit.vehicle.plate, guess, score, reservationId: hit.id, arrivalId: arrival.id },
+    },
+  });
+  return { arrivalId: arrival.id, plate: hit.vehicle.plate, matchScore: score };
 }

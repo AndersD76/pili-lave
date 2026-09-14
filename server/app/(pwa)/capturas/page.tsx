@@ -54,7 +54,12 @@ export default function Capturas() {
               <img
                 src={`/api/lpr/frame?id=${f.id}`}
                 alt={f.plate ?? "sem placa"}
-                style={{ width: "100%", borderRadius: 12, display: "block", background: "#000" }}
+                // Espelhado SÓ na exibição (CSS) — os bytes crus que vão pro
+                // OCR (vision.ts) continuam intocados. O OCR foi calibrado
+                // pra ler bem o frame como a câmera manda de verdade (sem
+                // hmirror no firmware); mas esse mesmo frame cru fica
+                // invertido pra quem olha na tela, então corrigimos só aqui.
+                style={{ width: "100%", borderRadius: 12, display: "block", background: "#000", transform: "scaleX(-1)" }}
               />
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, gap: 8 }}>
                 <span className={`chip ${cls}`}>
