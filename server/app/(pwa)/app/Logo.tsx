@@ -13,7 +13,17 @@ export function Logo({ altura = 46 }: { altura?: number }) {
     <img
       src="/logo-pili-clean.png"
       alt="PILI CLEAN"
-      style={{ height: altura, width: "auto", display: "block" }}
+      /* alignSelf:"flex-start" é o que impede a deformação: o container
+         .pw é flex em coluna e estica os filhos na largura (align-items:
+         stretch é o padrão), então a imagem era puxada para 444px de
+         largura mantendo a altura — daí o aspecto achatado. */
+      style={{
+        height: altura,
+        width: "auto",
+        alignSelf: "flex-start",
+        objectFit: "contain",
+        display: "block",
+      }}
     />
   );
 }
