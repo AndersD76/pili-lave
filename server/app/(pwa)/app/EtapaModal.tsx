@@ -19,7 +19,7 @@ const TEXTOS: Record<Etapa, { ic: string; ok?: boolean; titulo: string; msg: str
   reconhecido: { ic: "@", titulo: "Carro reconhecido",    msg: "Pode entrar. Boa lavagem!" },
   iniciada:    { ic: ">", titulo: "Lavagem iniciada",     msg: "A máquina começou a lavar o seu carro." },
   finalizada:  { ic: "OK", ok: true, titulo: "Lavagem finalizada", msg: "Pode sair. Tenha um bom dia!" },
-  obrigado:    { ic: "♥", ok: true, titulo: "Obrigado!",  msg: "Volte sempre à Pili Lave." },
+  obrigado:    { ic: "♥", ok: true, titulo: "Obrigado!",  msg: "Volte sempre à Pili Clean." },
   falha:       { ic: "!", titulo: "Lavagem interrompida", msg: "A máquina apresentou falha. O valor foi devolvido ao seu saldo." },
 };
 

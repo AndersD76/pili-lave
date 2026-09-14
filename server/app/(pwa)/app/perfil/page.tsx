@@ -121,7 +121,7 @@ export default function Perfil() {
       {isLavador && <Link className="btn" href="/app/scanner">Modo lavador — escanear voucher</Link>}
       {me?.role === "ADMIN" && <Link className="btn ghost" href="/admin">Painel do admin</Link>}
       <button className="btn ghost" onClick={() => { setToken(null); router.replace("/app/login"); }}>Sair</button>
-      <p className="sub center">PILI LAVE v1.0</p>
+      <p className="sub center">PILI CLEAN v1.0</p>
       <Nav />
     </>
   );

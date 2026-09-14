@@ -1,6 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Logo } from "../Logo";
 
 const PASSOS = [
   {
@@ -31,7 +32,7 @@ export default function Onboarding() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, justifyContent: "center", minHeight: "70dvh" }}>
-      <div className="pw-logo">PILI LAVE<span>.</span></div>
+      <Logo />
       <div className="card">
         <div className="lab">{passo + 1} de {PASSOS.length}</div>
         <h1 style={{ margin: "8px 0" }}>{atual.titulo}</h1>

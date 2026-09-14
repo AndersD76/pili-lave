@@ -1,4 +1,4 @@
-/* PILI LAVE — service worker.
+/* PILI CLEAN — service worker.
    Sem cache agressivo de propósito: pagamento e voucher precisam estar frescos.
    Também recebe os avisos (push) da nuvem e abre o app ao tocar. */
 self.addEventListener("install", () => self.skipWaiting());
@@ -15,7 +15,7 @@ self.addEventListener("fetch", (e) => {
 
 /* Aviso chegando: mostra na tela do celular mesmo com o app fechado. */
 self.addEventListener("push", (e) => {
-  let d = { titulo: "PILI LAVE", corpo: "", url: "/app", tag: "pili" };
+  let d = { titulo: "PILI CLEAN", corpo: "", url: "/app", tag: "pili" };
   try { d = { ...d, ...e.data.json() }; } catch { /* payload vazio: usa o padrão */ }
   e.waitUntil(
     self.registration.showNotification(d.titulo, {

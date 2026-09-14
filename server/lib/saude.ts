@@ -107,7 +107,7 @@ export async function alertarAdmin(tipo: string, mensagem: string, extra?: unkno
   });
   console.error(`[ALERTA ADMIN] ${tipo}: ${mensagem}`);
   // no painel já aparece; o push é para o admin saber sem estar olhando
-  void avisarAdmins({ titulo: "PILI LAVE — alerta", corpo: mensagem, url: "/admin", tag: `alerta-${tipo}` });
+  void avisarAdmins({ titulo: "PILI CLEAN — alerta", corpo: mensagem, url: "/admin", tag: `alerta-${tipo}` });
 }
 
 /** Verifica a saúde e alerta o admin quando houver problema. */

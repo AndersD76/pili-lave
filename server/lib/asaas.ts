@@ -53,7 +53,7 @@ export async function createCharge(
     billingType: method === "PIX" ? "PIX" : "CREDIT_CARD",
     value: amountCents / 100,
     dueDate: today,
-    description: "Recarga de saldo — PILI LAVE",
+    description: "Recarga de saldo — PILI CLEAN",
     externalReference: userId,
   });
 

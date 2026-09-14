@@ -7,7 +7,7 @@ export default function Home() {
   return (
     <main style={{ maxWidth: 560, margin: "10vh auto 0", padding: 24, display: "grid", gap: 14 }}>
       <h1 style={{ fontSize: 44, fontWeight: 800 }}>
-        PILI LAVE<span style={{ color: "var(--pili)" }}>.</span>
+        PILI CLEAN<span style={{ color: "var(--pili)" }}>.</span>
       </h1>
       <p style={{ color: "var(--aco-d)", marginBottom: 10 }}>Lavagem sem fila.</p>
 

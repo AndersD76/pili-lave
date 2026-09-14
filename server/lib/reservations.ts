@@ -161,7 +161,7 @@ export async function defaultMachine(): Promise<Machine> {
   const existing = await prisma.machine.findFirst({ orderBy: { createdAt: "asc" } });
   if (existing) return existing;
   const station = await prisma.washStation.create({
-    data: { name: "Pili Lave", address: "", city: "" },
+    data: { name: "Pili Clean", address: "", city: "" },
   });
   return prisma.machine.create({
     data: { stationId: station.id, name: "Máquina 1", deviceKey: `dev_${station.id.slice(-8)}` },

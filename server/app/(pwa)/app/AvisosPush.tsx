@@ -90,7 +90,7 @@ export function AvisosPush() {
       {erro && <p className="err">{erro}</p>}
       {/* No iPhone só funciona com o app instalado na tela de início */}
       <p className="sub" style={{ fontSize: 12 }}>
-        No iPhone, adicione o PILI LAVE à tela de início para receber avisos.
+        No iPhone, adicione o PILI CLEAN à tela de início para receber avisos.
       </p>
     </div>
   );

@@ -29,7 +29,7 @@ export default async function AdminLogin({
     <main>
       <form action={login} className="login-card">
         <div className="admin-nav" style={{ border: 0, padding: 0, marginBottom: 4 }}>
-          <span className="logo">PILI LAVE<span>.</span> Painel</span>
+          <span className="logo">PILI CLEAN<span>.</span> Painel</span>
         </div>
         <input
           className="field"

@@ -40,7 +40,7 @@ export default function Capturas() {
 
   return (
     <div className="pw" style={{ maxWidth: 1100 }}>
-      <div className="pw-logo">PILI LAVE<span>.</span> Capturas da câmera</div>
+      <div className="pw-logo">PILI CLEAN<span>.</span> Capturas da câmera</div>
       <p className="sub">Últimas fotos recebidas da ESP32-CAM e o que a nuvem leu. Atualiza a cada 4 s.</p>
       {err && <p className="err">Não consegui carregar: {err}</p>}
       {frames.length === 0 && !err && <p className="sub">Nenhuma captura ainda — aguardando a câmera detectar uma chegada.</p>}

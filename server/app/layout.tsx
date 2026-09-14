@@ -6,8 +6,8 @@ const sora = Sora({ subsets: ["latin"], weight: ["700", "800"], variable: "--fon
 const publicSans = Public_Sans({ subsets: ["latin"], weight: ["400", "600"], variable: "--font-body" });
 
 export const metadata: Metadata = {
-  title: "PILI LAVE",
-  description: "Servidor e painel do PILI LAVE",
+  title: "PILI CLEAN",
+  description: "Servidor e painel do PILI CLEAN",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api, setToken, type Me } from "../client";
+import { Logo } from "../Logo";
 
 export default function Cadastro() {
   const router = useRouter();
@@ -34,7 +35,7 @@ export default function Cadastro() {
   return (
     <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16, justifyContent: "center", minHeight: "70dvh" }}>
       <div>
-        <div className="pw-logo">PILI LAVE<span>.</span></div>
+        <Logo />
         <p className="sub">Crie sua conta para começar.</p>
       </div>
       <input

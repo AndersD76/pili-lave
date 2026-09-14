@@ -7,6 +7,7 @@ import { Nav } from "./nav";
 import { StatusMaquina } from "./StatusMaquina";
 import { ProgressoLavagem, type StatusLavagem } from "./ProgressoLavagem";
 import CameraAoVivo from "./CameraAoVivo";
+import { Logo } from "./Logo";
 
 type Arrival = {
   id: string; plate: string; status: "WAITING_DRIVER" | "NO_MATCH" | "REQUESTED" | "STARTED" | "EXPIRED";
@@ -49,7 +50,7 @@ export default function Home() {
 
   return (
     <>
-      <div className="pw-logo">PILI LAVE<span>.</span></div>
+      <Logo />
 
       {/* Primeira coisa que o cliente vê: dá para lavar agora? */}
       <StatusMaquina />

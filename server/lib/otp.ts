@@ -18,7 +18,7 @@ export async function requestOtp(phone: string): Promise<{ ok: true } | { ok: fa
   await prisma.otp.create({
     data: { phone, codeHash: hashCode(code), expiresAt: new Date(Date.now() + OTP_TTL_MIN * 60_000) },
   });
-  await sendSms(phone, `PILI LAVE: seu código é ${code}. Vale por ${OTP_TTL_MIN} minutos.`);
+  await sendSms(phone, `PILI CLEAN: seu código é ${code}. Vale por ${OTP_TTL_MIN} minutos.`);
   await prisma.event.create({ data: { type: "otp_sent", payload: { phone } } });
   return { ok: true };
 }

@@ -165,7 +165,7 @@ export default function CameraMaquina() {
   if (!keySaved)
     return (
       <div className="pw" style={{ justifyContent: "center" }}>
-        <div className="pw-logo">PILI LAVE<span>.</span> Câmera</div>
+        <div className="pw-logo">PILI CLEAN<span>.</span> Câmera</div>
         <p className="sub">Cole a chave de dispositivo (DEVICE_KEY do servidor).</p>
         <input className="field" value={key} onChange={(e) => setKey(e.target.value)} placeholder="dev_..." />
         <button className="btn" disabled={key.length < 10}
@@ -256,7 +256,7 @@ export default function CameraMaquina() {
       <>
         {big("LUZ VERMELHA", "#3d0705")}
         <div style={{ fontSize: 20, letterSpacing: 4, color: "#3d0705", fontWeight: 600 }}>{panel.plate}</div>
-        {sub2("Você ainda não é cadastrado — baixe o app PILI LAVE, cadastre seu carro e insira saldo.", "#3d0705")}
+        {sub2("Você ainda não é cadastrado — baixe o app PILI CLEAN, cadastre seu carro e insira saldo.", "#3d0705")}
       </>
     ));
 
@@ -276,14 +276,14 @@ export default function CameraMaquina() {
       <>
         {big(`Olá${panel.name ? `, ${panel.name.split(" ")[0]}` : ""}!`, "#0b1418")}
         <div style={{ fontSize: 20, letterSpacing: 4, color: "#0b1418", fontWeight: 600 }}>{panel.plate}</div>
-        {sub2("Você não tem reserva ativa — abra o app PILI LAVE e reserve sua lavagem.", "#0b1418")}
+        {sub2("Você não tem reserva ativa — abra o app PILI CLEAN e reserve sua lavagem.", "#0b1418")}
       </>
     ));
 
   /* estado ocioso: câmera + entrada manual */
   return (
     <div className="pw">
-      <div className="pw-logo">PILI LAVE<span>.</span> Câmera da máquina</div>
+      <div className="pw-logo">PILI CLEAN<span>.</span> Câmera da máquina</div>
 
       {ocrOn ? (
         <>
