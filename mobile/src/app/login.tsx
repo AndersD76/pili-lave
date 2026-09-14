@@ -1,12 +1,15 @@
 import { router } from "expo-router";
 import { useState } from "react";
 import { KeyboardAvoidingView, Platform, Text, View } from "react-native";
-import { api } from "@/lib/api";
+import { api, type Me } from "@/lib/api";
+import { useSession } from "@/lib/session";
 import { Btn, ErrText, Input, Screen, Sub } from "@/ui";
 import { C, F } from "@/theme";
 
 export default function Login() {
-  const [phone, setPhone] = useState("");
+  const { signIn } = useSession();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -14,12 +17,13 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      const r = await api<{ ok: true; phone: string }>("/api/auth/otp/request", {
-        body: { phone }, auth: false,
+      const r = await api<{ token: string; user: Me }>("/api/auth/login", {
+        body: { email: email.trim().toLowerCase(), password }, auth: false,
       });
-      router.push({ pathname: "/otp", params: { phone: r.phone } });
+      await signIn(r.token, r.user);
+      router.replace("/(tabs)");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Falha ao enviar o código");
+      setError(e instanceof Error ? e.message : "Não foi possível entrar");
     } finally {
       setLoading(false);
     }
@@ -35,18 +39,30 @@ export default function Login() {
           <Text style={{ fontFamily: F.displayX, fontSize: 40, color: C.cromo, letterSpacing: -0.5 }}>
             PILI LAVE<Text style={{ color: C.pili }}>.</Text>
           </Text>
-          <Sub>Entre com seu celular. Enviamos um código por SMS.</Sub>
+          <Sub>Entre com seu e-mail e senha.</Sub>
         </View>
         <Input
-          placeholder="(54) 99999-9999"
-          keyboardType="phone-pad"
-          value={phone}
-          onChangeText={setPhone}
+          placeholder="seu@email.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          value={email}
+          onChangeText={setEmail}
           autoFocus
-          maxLength={16}
+        />
+        <Input
+          placeholder="Senha"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
         />
         <ErrText>{error}</ErrText>
-        <Btn title="Receber código" onPress={submit} loading={loading} disabled={phone.replace(/\D/g, "").length < 10} />
+        <Btn title="Entrar" onPress={submit} loading={loading} disabled={!email || !password} />
+        <Text
+          style={{ fontFamily: F.body, fontSize: 14, color: C.jato, textAlign: "center", marginTop: 4 }}
+          onPress={() => router.push("/cadastro")}
+        >
+          Criar conta
+        </Text>
       </KeyboardAvoidingView>
     </Screen>
   );

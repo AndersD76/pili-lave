@@ -55,7 +55,7 @@ export async function api<T = unknown>(
 }
 
 export type Me = {
-  id: string; phone: string; name: string | null; cpf?: string | null;
+  id: string; phone: string; email?: string | null; name: string | null; cpf?: string | null;
   role: "CLIENT" | "LAVADOR" | "ADMIN"; walletCents: number;
 };
 export type Program = { id: number; nome: string; precoCents: number };

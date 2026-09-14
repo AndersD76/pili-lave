@@ -1,19 +1,12 @@
 import { createHash, randomInt } from "crypto";
 import { prisma } from "./prisma";
+export { normalizePhone } from "./phone";
 
 const OTP_TTL_MIN = 5;
 const MAX_PER_HOUR = 5;
 
 export function hashCode(code: string): string {
   return createHash("sha256").update(code + process.env.JWT_SECRET).digest("hex");
-}
-
-/** Normaliza para E.164 Brasil: aceita "54999648368", "(54) 99964-8368", "+55…". */
-export function normalizePhone(raw: string): string | null {
-  const digits = raw.replace(/\D/g, "");
-  const national = digits.startsWith("55") ? digits.slice(2) : digits;
-  if (national.length < 10 || national.length > 11) return null;
-  return `+55${national}`;
 }
 
 export async function requestOtp(phone: string): Promise<{ ok: true } | { ok: false; error: string }> {
