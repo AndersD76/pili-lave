@@ -2,14 +2,17 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { api, fmtPlate, getToken, money, type Me, type Vehicle } from "./client";
+import { api, fmtPlate, getToken, money, type Me, type Order, type Program, type Vehicle } from "./client";
 import { Nav } from "./nav";
+import { StatusMaquina } from "./StatusMaquina";
+import { ProgressoLavagem, type StatusLavagem } from "./ProgressoLavagem";
+import CameraAoVivo from "./CameraAoVivo";
 
 type Arrival = {
   id: string; plate: string; status: "WAITING_DRIVER" | "NO_MATCH" | "REQUESTED" | "STARTED" | "EXPIRED";
   vehicle: { plate: string; defaultProgramId: number | null } | null;
   /** status da reserva: é ele que diz o que aconteceu na máquina */
-  lavagem?: "HELD" | "ACTIVE" | "ENTERED" | "COMPLETED" | "FAILED" | "EXPIRED" | null;
+  lavagem?: StatusLavagem;
 };
 
 export default function Home() {
@@ -17,10 +20,15 @@ export default function Home() {
   const [me, setMe] = useState<Me | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [arrival, setArrival] = useState<Arrival | null>(null);
+  const [ultima, setUltima] = useState<Order | null>(null);
+  const [programas, setProgramas] = useState<Program[]>([]);
 
   const load = useCallback(() => {
     api<Me>("/api/me").then(setMe).catch(() => router.replace("/app/login"));
     api<Vehicle[]>("/api/vehicles").then(setVehicles).catch(() => {});
+    // última lavagem: atalho para repetir sem escolher tudo de novo
+    api<Order[]>("/api/orders").then((os) => setUltima(os[0] ?? null)).catch(() => {});
+    api<Program[]>("/api/programs", { auth: false }).then(setProgramas).catch(() => {});
   }, [router]);
 
   useEffect(() => {
@@ -34,9 +42,17 @@ export default function Home() {
     return () => clearInterval(poll);
   }, [router, load]);
 
+  const maisBarata = programas.length
+    ? programas.reduce((a, b) => (a.precoCents <= b.precoCents ? a : b))
+    : null;
+  const saldoCurto = !!me && !!maisBarata && me.walletCents < maisBarata.precoCents;
+
   return (
     <>
       <div className="pw-logo">PILI LAVE<span>.</span></div>
+
+      {/* Primeira coisa que o cliente vê: dá para lavar agora? */}
+      <StatusMaquina />
 
       {arrival?.status === "WAITING_DRIVER" && (
         <Link href={`/app/chegada/${arrival.id}`} style={{ textDecoration: "none" }}>
@@ -49,46 +65,34 @@ export default function Home() {
           </div>
         </Link>
       )}
-      {arrival?.status === "REQUESTED" && arrival.lavagem !== "FAILED" && arrival.lavagem !== "COMPLETED" && (
-        <div className="card" style={{ borderColor: "var(--atencao)" }}>
-          <div className="lab" style={{ color: "var(--atencao)" }}>
-            {arrival.lavagem === "ACTIVE" ? "Luz verde!" : "Aguardando a máquina…"}
-          </div>
-          <p className="sub">
-            {arrival.lavagem === "ACTIVE"
-              ? "Pode entrar. Boa lavagem!"
-              : "Lavagem paga. A luz verde acende em instantes."}
-          </p>
-        </div>
-      )}
-      {arrival?.lavagem === "FAILED" && (
-        <div className="card" style={{ borderColor: "var(--erro)" }}>
-          <div className="lab" style={{ color: "var(--erro)" }}>Lavagem interrompida</div>
-          <p className="sub">A máquina apresentou falha. O valor foi devolvido ao seu saldo.</p>
-        </div>
-      )}
-      {arrival?.lavagem === "COMPLETED" && (
-        <div className="card" style={{ borderColor: "var(--ok)" }}>
-          <div className="lab" style={{ color: "var(--ok)" }}>Lavagem finalizada</div>
-          <p className="sub">Pode sair. Tenha um bom dia!</p>
-        </div>
-      )}
-      {arrival?.status === "STARTED" && (
-        <div className="card" style={{ borderColor: "var(--ok)" }}>
-          <div className="lab" style={{ color: "var(--ok)" }}>Luz verde!</div>
-          <p className="sub">Lavagem liberada — pode entrar. Boa lavagem!</p>
-        </div>
+      {/* Onde a lavagem está, em etapas — e a câmera junto, para o cliente
+          ver o próprio carro sem sair do app. */}
+      {arrival?.lavagem && <ProgressoLavagem status={arrival.lavagem} />}
+      {arrival?.lavagem && arrival.lavagem !== "COMPLETED" && arrival.lavagem !== "FAILED" && (
+        <CameraAoVivo />
       )}
 
-      <div className="card">
+      <div className="card" style={saldoCurto ? { borderColor: "var(--atencao)" } : undefined}>
         <div className="lab">Saldo disponível</div>
         <div className="money"><span className="cur">R$</span>{((me?.walletCents ?? 0) / 100).toFixed(2).replace(".", ",")}</div>
+        {/* avisa ANTES de o cliente chegar na máquina e não conseguir pagar */}
+        {saldoCurto && (
+          <p className="sub" style={{ color: "var(--atencao)", marginTop: 6 }}>
+            Não dá para pagar nem a lavagem mais barata ({money(maisBarata!.precoCents)}). Adicione saldo antes de vir.
+          </p>
+        )}
         <div style={{ marginTop: 12 }}>
           <Link className="btn ghost" href="/app/recarga">Adicionar saldo</Link>
         </div>
       </div>
 
       <Link className="btn" href="/app/lavagem">Nova lavagem</Link>
+      {/* repetir a última: o cliente costuma pedir sempre a mesma */}
+      {ultima && !arrival?.lavagem && (
+        <Link className="btn ghost" href={`/app/lavagem?programa=${ultima.program.id}`}>
+          Repetir {ultima.program.nome} · {money(ultima.amountCents)}
+        </Link>
+      )}
 
       <div>
         <div className="lab">Meus veículos</div>

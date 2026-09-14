@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, money, type Me, type Order, type Program } from "../client";
 
@@ -11,6 +11,7 @@ type Saude = { disponivel: boolean; motivo: string | null; cameraOffline: boolea
  *  a câmera não reconhecer (ou estiver fora do ar). */
 export default function NovaLavagem() {
   const router = useRouter();
+  const params = useSearchParams();
   const [programs, setPrograms] = useState<Program[]>([]);
   const [me, setMe] = useState<Me | null>(null);
   const [sel, setSel] = useState<number | null>(null);
@@ -19,7 +20,12 @@ export default function NovaLavagem() {
   const [saude, setSaude] = useState<Saude | null>(null);
 
   useEffect(() => {
-    api<Program[]>("/api/programs", { auth: false }).then(setPrograms).catch(() => {});
+    api<Program[]>("/api/programs", { auth: false }).then((ps) => {
+      setPrograms(ps);
+      // veio de "repetir a última": já deixa escolhido
+      const pre = Number(params.get("programa"));
+      if (pre && ps.some((x) => x.id === pre)) setSel(pre);
+    }).catch(() => {});
     api<Me>("/api/me").then(setMe).catch(() => router.replace("/app/login"));
     // saúde da máquina: não deixa pagar por lavagem que não vai acontecer
     const verSaude = () => api<Saude>("/api/saude", { auth: false }).then(setSaude).catch(() => {});

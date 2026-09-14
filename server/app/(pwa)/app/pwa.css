@@ -154,3 +154,38 @@
   color: var(--aco-d); font-size: 14px;
 }
 @keyframes camviva-pisca { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+/* Barra de status da máquina (tela inicial) */
+.pw .statusbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; border-radius: 12px; font-size: 14px; font-weight: 600;
+  background: rgba(46, 160, 67, 0.12); color: var(--ok);
+  border: 1px solid rgba(46, 160, 67, 0.3);
+}
+.pw .statusbar .ponto {
+  width: 8px; height: 8px; border-radius: 999px; background: var(--ok);
+  animation: pulso 2s ease-in-out infinite;
+}
+@keyframes pulso { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* Progresso da lavagem (etapas) */
+.pw .etapas { display: flex; flex-direction: column; gap: 0; margin-top: 4px; }
+.pw .etapas .passo {
+  display: flex; align-items: flex-start; gap: 12px; padding: 7px 0; position: relative;
+}
+.pw .etapas .passo .bola {
+  width: 22px; height: 22px; border-radius: 999px; flex: 0 0 22px;
+  border: 2px solid var(--linha); background: var(--verniz2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 800; color: var(--aco-d);
+}
+.pw .etapas .passo.feito .bola { background: var(--ok); border-color: var(--ok); color: var(--espuma); }
+.pw .etapas .passo.agora .bola { background: var(--jato); border-color: var(--jato); color: var(--espuma); }
+.pw .etapas .passo:not(:last-child)::before {
+  content: ""; position: absolute; left: 10px; top: 29px; bottom: -7px;
+  width: 2px; background: var(--linha);
+}
+.pw .etapas .passo.feito:not(:last-child)::before { background: var(--ok); }
+.pw .etapas .passo .txt { font-size: 14px; color: var(--aco-d); padding-top: 1px; }
+.pw .etapas .passo.agora .txt { color: var(--cromo); font-weight: 700; }
+.pw .etapas .passo.feito .txt { color: var(--cromo); }
