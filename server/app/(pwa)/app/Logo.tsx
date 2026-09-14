@@ -4,12 +4,15 @@
  * do texto — a logo tem o "P" e a tipografia próprios, que o texto não
  * reproduz.
  *
- * O arquivo servido já vem SEM a moldura preta do original (quase metade da
- * imagem era margem) e com fundo transparente, para assentar sobre o fundo
- * do app. A altura é a original (34px) — o que deformava a imagem era o
- * container flex, não o tamanho.
+ * A imagem é o arquivo original, com a proporção 3:1 intacta — recortar a
+ * moldura preta mudava a proporção (a margem não é simétrica) e era isso
+ * que deixava a logo com aspecto esticado.
+ *
+ * Como o desenho ocupa só ~55% da altura do arquivo (o resto é moldura),
+ * a altura aqui é maior para a marca aparecer no tamanho certo: 62px de
+ * caixa ≈ 34px de desenho visível.
  */
-export function Logo({ altura = 34 }: { altura?: number }) {
+export function Logo({ altura = 62 }: { altura?: number }) {
   return (
     <img
       src="/logo-pili-clean.png"
