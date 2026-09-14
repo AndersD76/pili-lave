@@ -5,10 +5,11 @@
  * reproduz.
  *
  * O arquivo servido já vem SEM a moldura preta do original (quase metade da
- * imagem era margem, o que fazia a marca aparecer minúscula numa faixa
- * larga) e com fundo transparente, para assentar sobre o fundo do app.
+ * imagem era margem) e com fundo transparente, para assentar sobre o fundo
+ * do app. A altura é a original (34px) — o que deformava a imagem era o
+ * container flex, não o tamanho.
  */
-export function Logo({ altura = 46 }: { altura?: number }) {
+export function Logo({ altura = 34 }: { altura?: number }) {
   return (
     <img
       src="/logo-pili-clean.png"
