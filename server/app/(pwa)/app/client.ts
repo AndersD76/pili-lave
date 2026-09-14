@@ -47,7 +47,10 @@ export function fmtPlate(plate: string): string {
   return plate.length === 7 ? `${plate.slice(0, 3)} ${plate.slice(3)}` : plate;
 }
 
-export type Me = { id: string; phone: string; name: string | null; role: "CLIENT" | "LAVADOR" | "ADMIN"; walletCents: number };
+export type Me = {
+  id: string; phone: string; email: string | null; name: string | null;
+  role: "CLIENT" | "LAVADOR" | "ADMIN"; walletCents: number;
+};
 export type Program = { id: number; nome: string; precoCents: number };
 export type Vehicle = { id: string; plate: string; brand: string | null; model: string | null };
 export type Order = {

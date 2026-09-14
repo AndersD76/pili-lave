@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { requireDevice } from "@/lib/device";
 import { plateCandidates, pareceMesmaPlaca } from "@/lib/placa";
-import { handlePlateRead } from "@/lib/lpr";
+import { handlePlateRead, suggestFromWeakRead } from "@/lib/lpr";
 import { recognizePlate, lastPlateScore } from "@/lib/vision";
 import { cenaMudou } from "@/lib/vision-claude";
 import { saveFrame, updateFrame, readFrame } from "@/lib/frames";
@@ -69,9 +69,15 @@ async function analisar(id: string, jpeg: Buffer): Promise<void> {
   const porReserva = score >= 0.5 ? await casaComReservaNaFila(plate) : null;
 
   if (!(score >= 0.97 || iguais >= 2 || porReserva)) {
-    const nota = score >= 0.5
-      ? `pendente (1 de 2 votos; ${Math.round(score * 100)}%)`
-      : `leitura fraca (${Math.round(score * 100)}%)`;
+    // Não é confiança o suficiente pra aceitar sozinha, e não casou com folga
+    // apertada — mas pode bater (com folga maior) com quem já pagou e está
+    // esperando na fila. Aí pergunta pro dono no app em vez de descartar.
+    const sug = await suggestFromWeakRead(plate, score).catch(() => null);
+    const nota = sug
+      ? `sugerido ao cliente (${sug.plate}, ${Math.round(score * 100)}%)`
+      : score >= 0.5
+        ? `pendente (1 de 2 votos; ${Math.round(score * 100)}%)`
+        : `leitura fraca (${Math.round(score * 100)}%)`;
     await updateFrame(id, { plate, score, note: nota });
     return;
   }

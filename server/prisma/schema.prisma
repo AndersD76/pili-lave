@@ -58,6 +58,8 @@ enum MachineStatus {
 model User {
   id              String   @id @default(cuid())
   phone           String   @unique // E.164: +5554999999999
+  email           String?  @unique // login principal desde 09/2026 (e-mail + senha)
+  passwordHash    String? // formato "salt:hash" (scrypt) — ver lib/password.ts
   name            String?
   cpf             String?
   role            Role     @default(CLIENT)
@@ -74,6 +76,8 @@ model User {
   reservations Reservation[]
 }
 
+/* Legado: login por SMS. Mantido no schema/rotas por compatibilidade, mas
+ * não é mais o método principal — ver lib/password.ts e /api/auth/register. */
 model Otp {
   id         String    @id @default(cuid())
   phone      String
@@ -177,6 +181,7 @@ enum ArrivalStatus {
   REQUESTED      // motorista pagou — máquina deve liberar (luz verde)
   STARTED        // máquina confirmou o início
   EXPIRED        // ninguém solicitou a tempo
+  SUGGESTED      // leitura de baixa confiança bateu com quem está na fila — aguarda o motorista confirmar "é meu carro"
 }
 
 // Chegada de veículo na máquina (leitura da câmera LPR)
@@ -189,6 +194,7 @@ model Arrival {
   orderId       String?       @unique
   reservationId String?
   stationId     String?
+  matchScore    Float?        // confiança da leitura que gerou um SUGGESTED (transparência/debug)
   createdAt     DateTime      @default(now())
   requestedAt   DateTime?
   startedAt     DateTime?

@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   if ("error" in auth) return auth.error;
   const { user } = auth;
   return NextResponse.json({
-    id: user.id, phone: user.phone, name: user.name, cpf: user.cpf,
+    id: user.id, phone: user.phone, email: user.email, name: user.name, cpf: user.cpf,
     role: user.role, walletCents: user.walletCents,
   });
 }

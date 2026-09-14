@@ -33,8 +33,9 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="cadastro" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
-        <Stack.Screen name="otp" options={{ title: "Código" }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="veiculo-novo" options={{ title: "Novo veículo", presentation: "modal" }} />
         <Stack.Screen name="nova-lavagem" options={{ title: "Reservar lavagem" }} />

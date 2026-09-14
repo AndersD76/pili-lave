@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api, getToken, setToken, type Me } from "./api";
+import { setBiometriaAtiva } from "./biometria";
 
 type Session = {
   ready: boolean;
@@ -39,6 +40,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     await setToken(null);
+    await setBiometriaAtiva(false);
     setMe(null);
   }, []);
 

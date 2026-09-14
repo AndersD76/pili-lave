@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Modal, Pressable, ScrollView, Text, View } from "react-native";
-import { api, type Program, type Reservation, type Vehicle, type WalletResp } from "@/lib/api";
+import { api, type Arrival, type Program, type Reservation, type Vehicle, type WalletResp } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { Btn, Card, ErrText, Label, Screen, Sub } from "@/ui";
 import { C, F, fmtPlate, money } from "@/theme";
@@ -23,6 +23,9 @@ export default function Home() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [reservation, setReservation] = useState<Reservation | null>(null);
+  const [suggestion, setSuggestion] = useState<Arrival | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [liberando, setLiberando] = useState(false);
   const [available, setAvailable] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -42,6 +45,15 @@ export default function Home() {
     api<WalletResp>("/api/wallet").then((w) => setAvailable(w.availableCents)).catch(() => {});
   }, []);
 
+  // Sugestão de chegada (leitura de placa de baixa confiança batendo com a
+  // fila) — polling mais curto porque, se for mesmo o carro, o motorista
+  // está parado esperando o verde acender.
+  const loadSuggestion = useCallback(() => {
+    api<{ arrival: Arrival | null }>("/api/arrivals/mine")
+      .then((r) => setSuggestion(r.arrival?.status === "SUGGESTED" ? r.arrival : null))
+      .catch(() => {});
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       refresh();
@@ -49,10 +61,27 @@ export default function Home() {
       api<Program[]>("/api/programs", { auth: false }).then(setPrograms).catch(() => {});
       loadWallet();
       loadReservation();
+      loadSuggestion();
       const t = setInterval(loadReservation, 10000);
-      return () => clearInterval(t);
-    }, [refresh, loadWallet, loadReservation])
+      const t2 = setInterval(loadSuggestion, 5000);
+      return () => { clearInterval(t); clearInterval(t2); };
+    }, [refresh, loadWallet, loadReservation, loadSuggestion])
   );
+
+  async function responderSugestao(confirm: boolean) {
+    if (!suggestion) return;
+    setConfirming(true);
+    try {
+      await api(`/api/arrivals/${suggestion.id}/confirm`, { method: "POST", body: { confirm } });
+    } catch {
+      /* a sugestão expira sozinha mesmo se a resposta falhar */
+    } finally {
+      setConfirming(false);
+      setSuggestion(null);
+      loadReservation();
+      loadWallet();
+    }
+  }
 
   // Countdown da reserva HELD
   useEffect(() => {
@@ -60,6 +89,35 @@ export default function Home() {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [reservation]);
+
+  function liberarManual() {
+    if (!reservation) return;
+    Alert.alert(
+      "Confirmar chegada?",
+      `A câmera ainda não reconheceu sua placa. Ao confirmar, a lavagem "${reservation.program.nome}" será liberada nesta máquina para o ${fmtPlate(reservation.vehicle.plate)}, e o valor será debitado do seu saldo assim que ela terminar. Confirma que está na frente da máquina?`,
+      [
+        { text: "Voltar", style: "cancel" },
+        {
+          text: "Confirmar",
+          onPress: async () => {
+            setLiberando(true);
+            try {
+              await api(`/api/reservations/${reservation.id}/confirmar-chegada`, {
+                method: "POST",
+                body: { confirmo: true },
+              });
+            } catch (e) {
+              Alert.alert("Não deu certo", e instanceof Error ? e.message : "Tente de novo em instantes.");
+            } finally {
+              setLiberando(false);
+              loadReservation();
+              loadWallet();
+            }
+          },
+        },
+      ]
+    );
+  }
 
   function cancelarReserva() {
     if (!reservation) return;
@@ -117,6 +175,26 @@ export default function Home() {
           {me?.name ? <Sub>Olá, {me.name.split(" ")[0]}</Sub> : null}
         </View>
 
+        {suggestion && (
+          <Card style={{ marginBottom: 16, borderColor: C.atencao }}>
+            <Text style={{ fontFamily: F.display, fontSize: 17, color: C.cromo }}>
+              É o seu carro chegando?
+            </Text>
+            <Text style={{ fontFamily: F.body, fontSize: 14, color: C.acoD, marginTop: 6 }}>
+              A câmera não teve certeza, mas achou que pode ser o{" "}
+              <Text style={{ fontFamily: F.bodyBold, color: C.cromo }}>{fmtPlate(suggestion.plate)}</Text>.
+            </Text>
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+              <View style={{ flex: 1 }}>
+                <Btn title="Não é o meu" kind="ghost" onPress={() => responderSugestao(false)} disabled={confirming} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Btn title="Sim, sou eu" onPress={() => responderSugestao(true)} loading={confirming} />
+              </View>
+            </View>
+          </Card>
+        )}
+
         {reservation && (
           <Card
             style={{
@@ -147,9 +225,15 @@ export default function Home() {
             <Text style={{ fontFamily: F.body, fontSize: 14, color: C.acoD, marginTop: 6 }}>
               {reservation.program.nome} · {fmtPlate(reservation.vehicle.plate)}
             </Text>
-            {reservation.status !== "ENTERED" && (
+            {reservation.status === "HELD" && (
               <View style={{ marginTop: 14 }}>
-                <Btn title="Cancelar reserva" kind="ghost" onPress={cancelarReserva} />
+                <Btn title="Cheguei, liberar manualmente" onPress={liberarManual} loading={liberando} />
+                <Sub>Use se a câmera não reconhecer sua placa.</Sub>
+              </View>
+            )}
+            {reservation.status !== "ENTERED" && (
+              <View style={{ marginTop: 10 }}>
+                <Btn title="Cancelar reserva" kind="ghost" onPress={cancelarReserva} disabled={liberando} />
               </View>
             )}
           </Card>

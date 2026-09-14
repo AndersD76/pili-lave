@@ -39,6 +39,12 @@
         {
           "cameraPermission": "O PILI LAVE usa a câmera para o lavador escanear o voucher do cliente."
         }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "O PILI LAVE usa Face ID para abrir o app sem precisar do código por SMS."
+        }
       ]
     ],
     "experiments": {

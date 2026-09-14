@@ -24,7 +24,7 @@ export default function Home() {
   }, [router]);
 
   useEffect(() => {
-    if (!getToken()) { router.replace("/app/login"); return; }
+    if (!getToken()) { router.replace("/app/cadastro"); return; }
     load();
     const poll = setInterval(() => {
       api<{ arrival: Arrival | null }>("/api/arrivals/mine")

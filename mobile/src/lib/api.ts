@@ -55,7 +55,7 @@ export async function api<T = unknown>(
 }
 
 export type Me = {
-  id: string; phone: string; name: string | null; cpf?: string | null;
+  id: string; phone: string; email?: string | null; name: string | null; cpf?: string | null;
   role: "CLIENT" | "LAVADOR" | "ADMIN"; walletCents: number;
 };
 export type Program = { id: number; nome: string; precoCents: number };
@@ -89,6 +89,17 @@ export type Reservation = {
 };
 
 export type WalletTx = { id: string; amountCents: number; kind: string; createdAt: string; note?: string | null };
+
+/** Chegada sugerida por leitura de placa de baixa confiança — o app pergunta
+ *  "é o seu carro?" antes de liberar qualquer coisa (ver server/lib/lpr.ts). */
+export type Arrival = {
+  id: string;
+  status: "WAITING_DRIVER" | "REQUESTED" | "STARTED" | "SUGGESTED";
+  plate: string;
+  matchScore?: number | null;
+  vehicle: { plate: string; defaultProgramId: number | null } | null;
+  lavagem: string | null;
+};
 
 export type WalletResp = {
   walletCents: number; reservedCents: number; availableCents: number; txs: WalletTx[];

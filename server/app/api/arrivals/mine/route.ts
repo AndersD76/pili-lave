@@ -14,6 +14,9 @@ export async function GET(req: NextRequest) {
       userId: auth.user.id,
       OR: [
         { status: "WAITING_DRIVER", createdAt: { gte: cutoff } },
+        // sugestão de baixa confiança: janela curta, some sozinha se o
+        // motorista não responder (a próxima leitura tenta de novo).
+        { status: "SUGGESTED", createdAt: { gte: new Date(Date.now() - 2 * 60_000) } },
         {
           status: { in: ["REQUESTED", "STARTED"] },
           createdAt: { gte: new Date(Date.now() - 60 * 60_000) },
