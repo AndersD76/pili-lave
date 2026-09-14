@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { useEffect, useState } from "react";
 import { api, money, type Me, type Order, type Program } from "../client";
 
@@ -9,7 +10,7 @@ type Saude = { disponivel: boolean; motivo: string | null; cameraOffline: boolea
 /** Compra da lavagem. Dois caminhos: pagar e esperar a câmera reconhecer a
  *  placa na chegada, ou "já estou na máquina" — libera na hora, para quando
  *  a câmera não reconhecer (ou estiver fora do ar). */
-export default function NovaLavagem() {
+function NovaLavagemConteudo() {
   const router = useRouter();
   const params = useSearchParams();
   const [programs, setPrograms] = useState<Program[]>([]);
@@ -106,5 +107,15 @@ export default function NovaLavagem() {
         </>
       )}
     </>
+  );
+}
+
+/* useSearchParams (usado para o atalho "repetir a última lavagem") precisa
+ * de Suspense, senão a geração estática da página falha no build. */
+export default function NovaLavagem() {
+  return (
+    <Suspense fallback={<p className="sub">Carregando…</p>}>
+      <NovaLavagemConteudo />
+    </Suspense>
   );
 }
