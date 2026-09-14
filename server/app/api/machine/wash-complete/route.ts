@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireMachine } from "@/lib/device";
 import { DONE_GREEN_S } from "@/lib/reservations";
+import { avisarCliente } from "@/lib/push";
 
 const Body = z.object({ reservationId: z.string().optional() });
 
@@ -120,5 +121,11 @@ export async function POST(req: NextRequest) {
   });
 
   if (!result) return NextResponse.json({ ok: true, reservationId: reservation.id, dedup: true });
+
+  void avisarCliente(reservation.userId, {
+    titulo: "Lavagem finalizada!",
+    corpo: "Pode sair. Tenha um bom dia!",
+    tag: "lavagem",
+  });
   return NextResponse.json({ ok: true, reservationId: reservation.id, orderId: result.id });
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireMachine } from "@/lib/device";
 import { alertarAdmin } from "@/lib/saude";
+import { avisarAdmins, avisarCliente } from "@/lib/push";
 
 const Body = z.object({
   errorCode: z.string().max(64).optional(),
@@ -97,6 +98,20 @@ export async function POST(req: NextRequest) {
    * dele (msg_alarme) e não viaja. Então o alerta diz o que a nuvem sabe:
    * a máquina parou. `errorCode` é opcional e será usado se o firmware
    * passar a enviá-lo. */
+  // quem estava lavando precisa saber na hora, com o dinheiro de volta
+  for (const r of alvos)
+    void avisarCliente(r.userId, {
+      titulo: "Lavagem interrompida",
+      corpo: "A máquina apresentou falha. O valor foi devolvido ao seu saldo.",
+      tag: "lavagem",
+    });
+  void avisarAdmins({
+    titulo: "Máquina parou por falha",
+    corpo: "Veja o motivo no display. Lavagens em andamento foram estornadas.",
+    url: "/admin",
+    tag: "alerta",
+  });
+
   await alertarAdmin(
     "MAQUINA_FALHA",
     body.errorCode

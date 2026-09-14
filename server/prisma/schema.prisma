@@ -74,6 +74,7 @@ model User {
   redemptions  Order[]       @relation("redeemedBy")
   arrivals     Arrival[]
   reservations Reservation[]
+  pushSubs PushSubscription[]
 }
 
 /* Legado: login por SMS. Mantido no schema/rotas por compatibilidade, mas
@@ -314,4 +315,20 @@ model Capture {
   clientName String?
 
   @@index([at])
+}
+
+/// Inscrição do celular do cliente para receber avisos (push).
+/// Uma pessoa pode ter vários aparelhos — por isso é 1:N.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique          // endereço do aparelho no serviço do navegador
+  p256dh    String                    // chaves de criptografia da inscrição
+  auth      String
+  createdAt DateTime @default(now())
+  lastOkAt  DateTime?                 // último envio aceito (diagnóstico)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

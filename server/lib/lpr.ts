@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { avisarCliente } from "./push";
 import { ARRIVAL_TTL_MIN } from "./device";
 import { normalizePlate, plateCandidates, plateDistance } from "./placa";
 import {
@@ -97,6 +98,12 @@ export async function handlePlateRead(plate: string): Promise<PlateReadResult> {
       });
       light = "GREEN_SOLID";
       arrivalStatus = "REQUESTED";
+      // o cliente não fica olhando a tela: avisa no celular
+      void avisarCliente(reservation.userId, {
+        titulo: "Pode entrar!",
+        corpo: `${vehicle.plate} reconhecida — luz verde acesa. Boa lavagem!`,
+        tag: "lavagem",
+      });
     } else if (avail === "WASHING") {
       // fila: mantém HELD e congela o relógio da reserva
       await prisma.reservation.update({

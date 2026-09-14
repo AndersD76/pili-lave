@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, fmtPlate, money, setToken, type Me, type Vehicle } from "../client";
 import { Nav } from "../nav";
+import { AvisosPush } from "../AvisosPush";
 
 export default function Perfil() {
   const router = useRouter();
@@ -97,6 +98,8 @@ export default function Perfil() {
         ))}
         <Link className="btn ghost" href="/app/veiculo">+ Adicionar veículo</Link>
       </div>
+
+      <AvisosPush />
 
       {me?.email && (
         <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>

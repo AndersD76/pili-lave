@@ -11,6 +11,7 @@
  */
 import { prisma } from "./prisma";
 import { HEARTBEAT_OFFLINE_S, machineAvailability } from "./reservations";
+import { avisarAdmins } from "./push";
 
 /** Sem foto por este tempo = câmera caiu (ela manda ~1 a cada 8s). */
 export const CAMERA_OFFLINE_S = 180;
@@ -105,6 +106,8 @@ export async function alertarAdmin(tipo: string, mensagem: string, extra?: unkno
     data: { type: "alerta_admin", payload: { tipo, mensagem, extra: extra ?? null } as object },
   });
   console.error(`[ALERTA ADMIN] ${tipo}: ${mensagem}`);
+  // no painel já aparece; o push é para o admin saber sem estar olhando
+  void avisarAdmins({ titulo: "PILI LAVE — alerta", corpo: mensagem, url: "/admin", tag: `alerta-${tipo}` });
 }
 
 /** Verifica a saúde e alerta o admin quando houver problema. */
