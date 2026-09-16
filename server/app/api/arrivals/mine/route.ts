@@ -59,7 +59,14 @@ export async function GET(req: NextRequest) {
     },
   });
   if (arrival)
-    return NextResponse.json({ arrival: { ...arrival, lavagem: arrival.reservation?.status ?? null } });
+    // reservaId: o app precisa dele para o botão de cancelar
+    return NextResponse.json({
+      arrival: {
+        ...arrival,
+        lavagem: arrival.reservation?.status ?? null,
+        reservaId: arrival.reservationId,
+      },
+    });
 
   /* Sem chegada, mas com lavagem paga esperando o carro: quem compra pela
    * tela "Nova lavagem" só ganha uma chegada quando a câmera lê a placa.
@@ -78,6 +85,7 @@ export async function GET(req: NextRequest) {
       status: "REQUESTED",
       vehicle: viva.vehicle,
       lavagem: viva.status,
+      reservaId: viva.id,
       semChegada: true,   // a câmera ainda não leu a placa
     },
   });

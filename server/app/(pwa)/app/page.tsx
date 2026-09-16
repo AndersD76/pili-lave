@@ -14,6 +14,7 @@ type Arrival = {
   vehicle: { plate: string; defaultProgramId: number | null } | null;
   /** status da reserva: é ele que diz o que aconteceu na máquina */
   lavagem?: StatusLavagem;
+  reservaId?: string | null;
 };
 
 export default function Home() {
@@ -25,6 +26,25 @@ export default function Home() {
   const [programas, setProgramas] = useState<Program[]>([]);
   const [liberando, setLiberando] = useState(false);
   const [erroLiberar, setErroLiberar] = useState("");
+  const [cancelando, setCancelando] = useState(false);
+
+  /* Cancelar só vale ANTES de o carro entrar; o servidor recusa depois do
+     X14. Devolve o valor pago ao saldo. */
+  async function cancelar() {
+    if (!arrival?.reservaId) return;
+    if (!confirm("Cancelar a lavagem? O valor volta para o seu saldo.")) return;
+    setErroLiberar(""); setCancelando(true);
+    try {
+      await api(`/api/reservations/${arrival.reservaId}/cancel`, { body: {} });
+      const r = await api<{ arrival: Arrival | null }>("/api/arrivals/mine");
+      setArrival(r.arrival);
+      load();   // saldo atualizado
+    } catch (e) {
+      setErroLiberar(e instanceof Error ? e.message : "Não foi possível cancelar");
+    } finally {
+      setCancelando(false);
+    }
+  }
 
   /* Libera a lavagem JÁ PAGA sem depender da câmera. Não cobra de novo:
      o servidor reaproveita a reserva que existe. */
@@ -101,6 +121,11 @@ export default function Home() {
             {liberando ? "Liberando…" : "Já estou na máquina — liberar agora"}
           </button>
           {erroLiberar && <p className="err">{erroLiberar}</p>}
+          {/* Desistiu: cancelar e receber o dinheiro de volta. Só aparece
+              ANTES de o carro entrar — depois disso o ciclo já começou. */}
+          <button className="btn ghost" onClick={cancelar} disabled={cancelando} style={{ marginTop: 8 }}>
+            {cancelando ? "Cancelando…" : "Cancelar lavagem e receber de volta"}
+          </button>
           {/* O QR ainda serve para validar no balcão (fluxo do lavador) —
               fica a um toque, sem ocupar a tela. */}
           {ultima?.status === "PAID" && (
