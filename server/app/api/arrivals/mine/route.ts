@@ -20,14 +20,31 @@ export async function GET(req: NextRequest) {
         {
           status: { in: ["REQUESTED", "STARTED"] },
           createdAt: { gte: new Date(Date.now() - 60 * 60_000) },
-          /* A chegada NÃO muda de status quando a lavagem acaba: uma
-           * chegada velha, de uma lavagem já concluída ou falhada, ficava
-           * sendo devolvida e a tela mostrava "Lavagem interrompida"
-           * mesmo com uma reserva nova em andamento. Só vale a chegada
-           * cuja lavagem ainda está viva (ou que nem chegou a ter uma). */
+          /* A chegada NÃO muda de status quando a lavagem acaba, então uma
+           * chegada velha ficava sendo devolvida para sempre e a tela
+           * mostrava "Lavagem interrompida" mesmo com uma reserva nova.
+           * Mas descartar TODA lavagem encerrada era o outro extremo: o
+           * cliente terminava a lavagem e a tela voltava ao normal na
+           * hora, sem ele ver "pode sair" nem o aviso do estorno.
+           * Regra: lavagem viva sempre; lavagem encerrada só por 5 min,
+           * tempo de o cliente ler o desfecho. */
           OR: [
             { reservationId: null },
             { reservation: { status: { in: ["HELD", "ACTIVE", "ENTERED"] } } },
+            // concluída: completedAt marca a hora exata do fim
+            {
+              reservation: {
+                status: "COMPLETED",
+                completedAt: { gte: new Date(Date.now() - 5 * 60_000) },
+              },
+            },
+            /* falhada: a reserva não guarda "quando falhou", então usa a
+             * hora da CHEGADA — a falha acontece durante a lavagem, que
+             * começa poucos minutos depois de o carro chegar. */
+            {
+              reservation: { status: "FAILED" },
+              createdAt: { gte: new Date(Date.now() - 20 * 60_000) },
+            },
           ],
         },
       ],
