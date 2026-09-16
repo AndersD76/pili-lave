@@ -7,6 +7,13 @@ import { computeLight, pendingStart } from "@/lib/reservations";
 const Body = z.object({
   state: z.enum(["FREE", "WASHING", "FAULT"]).optional(),
   restanteSeg: z.number().int().min(0).optional(),
+  /* Sensores de presença do carro (o display manda o nível ao vivo):
+   *   x14 = carro entrando   ·   x15 = carro na posição de lavagem
+   * Servem para a nuvem saber que a máquina está OCUPADA mesmo sem
+   * reserva — carro que entrou sem pagar, ou teste manual do operador.
+   * Opcionais: firmware antigo continua funcionando sem eles. */
+  x14: z.boolean().optional(),
+  x15: z.boolean().optional(),
 });
 
 /**
@@ -26,10 +33,18 @@ export async function POST(req: NextRequest) {
   // MAINTENANCE é decisão do admin — o heartbeat não a sobrescreve.
   // Sem `state` no corpo, só sai de OFFLINE (volta a FREE); estados
   // reportados (FREE/WASHING/FAULT) valem como fonte da verdade.
+  /* Carro sob a máquina (X14/X15) = ocupada, mesmo que o display ainda
+   * reporte FREE — ele só diz WASHING depois que o ciclo começa. Sem isto
+   * o app mostraria "máquina livre" com um carro parado lá dentro. */
+  const carroPresente = body.x14 === true || body.x15 === true;
   const nextStatus =
     auth.machine.status === "MAINTENANCE"
       ? undefined
-      : body.state ?? (auth.machine.status === "OFFLINE" ? "FREE" : undefined);
+      : body.state === "FAULT"
+        ? "FAULT"
+        : carroPresente && body.state !== "WASHING"
+          ? "WASHING"
+          : body.state ?? (auth.machine.status === "OFFLINE" ? "FREE" : undefined);
   const now = new Date();
   const machine = await prisma.machine.update({
     where: { id: auth.machine.id },
@@ -37,6 +52,8 @@ export async function POST(req: NextRequest) {
       lastHeartbeat: now,
       lastHeartbeatSuccess: now,
       remainingSec: body.restanteSeg ?? 0,
+      ...(body.x14 !== undefined ? { sensorX14: body.x14 } : {}),
+      ...(body.x15 !== undefined ? { sensorX15: body.x15 } : {}),
       ...(nextStatus ? { status: nextStatus } : {}),
     },
   });

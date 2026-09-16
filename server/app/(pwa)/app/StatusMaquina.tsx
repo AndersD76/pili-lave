@@ -54,7 +54,7 @@ export function StatusMaquina({ compacto = false }: { compacto?: boolean }) {
         <p className="sub">
           {s.liberaEmSeg !== null
             ? `Libera em aproximadamente ${tempo(s.liberaEmSeg)}.`
-            : "Libera em alguns minutos."}
+            : "Tem um carro na máquina. Libera em alguns minutos."}
           {s.naFila > 0
             ? ` ${s.naFila} ${s.naFila === 1 ? "pessoa já pagou e espera" : "pessoas já pagaram e esperam"} a vez.`
             : " Ninguém na fila — você é o próximo."}

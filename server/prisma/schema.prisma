@@ -237,6 +237,9 @@ model Machine {
   status        MachineStatus @default(FREE)
   lastHeartbeat DateTime?
   remainingSec  Int           @default(0)
+  /// Sensores de presença reportados pelo display (nível ao vivo).
+  sensorX14     Boolean?      // carro entrando
+  sensorX15     Boolean?      // carro na posição de lavagem
   // luz transitória fixada por eventos (placa desconhecida, fim de ciclo…);
   // fora da janela lightUntil, o heartbeat calcula a luz pelo estado real
   lightState    String        @default("OFF")

@@ -98,9 +98,13 @@ export async function diagnosticar(): Promise<Diagnostico> {
   if (problemas.includes("CAMERA_OFFLINE"))
     detalhes.push(`câmera sem enviar fotos há ${cameraSegundos === null ? "sempre" : cameraSegundos + "s"}`);
 
+  /* Ocupada também quando o sensor acusa carro sob a máquina, mesmo sem
+   * reserva nossa — carro que entrou sem pagar ou teste do operador. Sem
+   * isto o app diria "livre" com um carro parado lá dentro. */
+  const carroNaMaquina = m?.sensorX14 === true || m?.sensorX15 === true;
   const estado: Diagnostico["estado"] = impeditivo
     ? "PARADA"
-    : m?.status === "WASHING" || lavando
+    : m?.status === "WASHING" || lavando || carroNaMaquina
       ? "LAVANDO"
       : "LIVRE";
 
