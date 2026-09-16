@@ -11,6 +11,9 @@ export async function GET() {
   return NextResponse.json(
     {
       disponivel: d.disponivel,
+      estado: d.estado,               // LIVRE | LAVANDO | PARADA
+      liberaEmSeg: d.liberaEmSeg,     // quanto falta, quando está lavando
+      naFila: d.naFila,               // quantos já pagaram e esperam a vez
       motivo: d.motivo,
       cameraOffline: d.problemas.includes("CAMERA_OFFLINE"),
     },

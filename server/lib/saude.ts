@@ -18,6 +18,12 @@ export const CAMERA_OFFLINE_S = 180;
 
 export type Diagnostico = {
   disponivel: boolean;
+  /** LIVRE | LAVANDO | PARADA — o que mostrar ao cliente. */
+  estado: "LIVRE" | "LAVANDO" | "PARADA";
+  /** Segundos estimados até a máquina liberar (só quando LAVANDO). */
+  liberaEmSeg: number | null;
+  /** Quantos já pagaram e estão esperando a vez. */
+  naFila: number;
   /** Mensagem pronta para o cliente. null quando está tudo certo. */
   motivo: string | null;
   /** Detalhe técnico para o admin. */
@@ -44,6 +50,26 @@ export async function diagnosticar(): Promise<Diagnostico> {
   const cameraSegundos = ultimaFoto
     ? Math.round((agora - ultimaFoto.at.getTime()) / 1000)
     : null;
+
+  /* Quanto falta para liberar. Duas fontes, nesta ordem:
+   *  1. o que a MÁQUINA reporta (remainingSec do heartbeat) — é o real;
+   *  2. a duração do programa menos o tempo já decorrido — estimativa.
+   * A duração cadastrada é conservadora (um ciclo "Simples" de 15 min
+   * levou 7 na prática), então o número é um teto, não uma promessa. */
+  const lavando = await prisma.reservation.findFirst({
+    where: { status: "ENTERED" },
+    include: { program: true },
+    orderBy: { enteredAt: "asc" },
+  });
+  let liberaEmSeg: number | null = null;
+  if (lavando?.enteredAt) {
+    const decorrido = Math.round((agora - lavando.enteredAt.getTime()) / 1000);
+    const total = (lavando.program.duracaoMin || 15) * 60;
+    liberaEmSeg = m?.remainingSec && m.remainingSec > 0
+      ? m.remainingSec
+      : Math.max(0, total - decorrido);
+  }
+  const naFila = await prisma.reservation.count({ where: { status: "HELD" } });
 
   const problemas: Diagnostico["problemas"] = [];
   if (m?.status === "FAULT") problemas.push("MAQUINA_FALHA");
@@ -72,8 +98,17 @@ export async function diagnosticar(): Promise<Diagnostico> {
   if (problemas.includes("CAMERA_OFFLINE"))
     detalhes.push(`câmera sem enviar fotos há ${cameraSegundos === null ? "sempre" : cameraSegundos + "s"}`);
 
+  const estado: Diagnostico["estado"] = impeditivo
+    ? "PARADA"
+    : m?.status === "WASHING" || lavando
+      ? "LAVANDO"
+      : "LIVRE";
+
   return {
     disponivel: !impeditivo,
+    estado,
+    liberaEmSeg,
+    naFila,
     motivo,
     detalhe: detalhes.length ? detalhes.join("; ") : null,
     problemas,

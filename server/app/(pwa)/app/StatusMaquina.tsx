@@ -2,7 +2,21 @@
 import { useEffect, useState } from "react";
 import { api } from "./client";
 
-export type Saude = { disponivel: boolean; motivo: string | null; cameraOffline: boolean };
+export type Saude = {
+  disponivel: boolean;
+  estado: "LIVRE" | "LAVANDO" | "PARADA";
+  liberaEmSeg: number | null;
+  naFila: number;
+  motivo: string | null;
+  cameraOffline: boolean;
+};
+
+/** "7 min" / "1 min" / "menos de 1 min" — sem segundos, que oscilam. */
+function tempo(seg: number): string {
+  const min = Math.ceil(seg / 60);
+  if (min <= 0) return "menos de 1 min";
+  return `${min} min`;
+}
 
 /**
  * Status da máquina, sempre visível na tela inicial.
@@ -28,6 +42,23 @@ export function StatusMaquina({ compacto = false }: { compacto?: boolean }) {
       <div className="card" style={{ borderColor: "var(--erro)", borderWidth: 2 }}>
         <div className="lab" style={{ color: "var(--erro)" }}>● Máquina não disponível</div>
         <p className="sub">{s.motivo ?? "Tente novamente em alguns minutos."}</p>
+      </div>
+    );
+
+  /* Lavando: o cliente precisa saber que a máquina está OK (não parada) e
+   * quando ela libera — senão ele não sabe se vale a pena vir agora. */
+  if (s.estado === "LAVANDO")
+    return (
+      <div className="card" style={{ borderColor: "var(--atencao)" }}>
+        <div className="lab" style={{ color: "var(--atencao)" }}>● Máquina lavando outro carro</div>
+        <p className="sub">
+          {s.liberaEmSeg !== null
+            ? `Libera em aproximadamente ${tempo(s.liberaEmSeg)}.`
+            : "Libera em alguns minutos."}
+          {s.naFila > 0
+            ? ` ${s.naFila} ${s.naFila === 1 ? "pessoa já pagou e espera" : "pessoas já pagaram e esperam"} a vez.`
+            : " Ninguém na fila — você é o próximo."}
+        </p>
       </div>
     );
 
