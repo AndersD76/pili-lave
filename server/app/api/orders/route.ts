@@ -81,10 +81,41 @@ export async function POST(req: NextRequest) {
       where: { vehicleId: vehicle.id, status: { in: ["HELD", "ACTIVE", "ENTERED"] } },
       include: { order: true },
     });
+
+    /* "Já estou na máquina" com uma reserva paga esperando: NÃO cobra de
+     * novo — libera a que já existe. Era exatamente este o caso de uso do
+     * botão (pagou, a câmera não leu a placa, ele quer entrar), e a guarda
+     * de cobrança dupla respondia "aproxime o carro da câmera", que é o
+     * oposto do que o cliente pediu. */
+    if (viva && agoraNaMaquina && viva.status === "HELD" && machine && maquinaLivre) {
+      await prisma.reservation.update({
+        where: { id: viva.id },
+        data: {
+          status: "ACTIVE",
+          machineId: machine.id,
+          stationId: machine.stationId,
+          activeAt: new Date(),
+        },
+      });
+      await setTransientLight(machine.id, "GREEN_SOLID", 15 * 60);
+      await prisma.event.create({
+        data: {
+          type: "manual_release",
+          payload: { reservationId: viva.id, userId: auth.user.id, plate: vehicle.plate, viaBotao: true },
+        },
+      });
+      return NextResponse.json(
+        { ok: true, orderId: viva.orderId, reservationId: viva.id, liberadaAgora: true, jaPaga: true },
+        { status: 200 }
+      );
+    }
+
     if (viva)
       return NextResponse.json(
         {
-          error: "Você já tem uma lavagem paga aguardando. Aproxime o carro da câmera.",
+          error: viva.status === "HELD"
+            ? "Você já tem uma lavagem paga aguardando. Aproxime o carro da câmera ou use \"Já estou na máquina\"."
+            : "Você já tem uma lavagem em andamento.",
           orderId: viva.orderId,
           reservationId: viva.id,
         },

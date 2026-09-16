@@ -23,6 +23,23 @@ export default function Home() {
   const [arrival, setArrival] = useState<Arrival | null>(null);
   const [ultima, setUltima] = useState<Order | null>(null);
   const [programas, setProgramas] = useState<Program[]>([]);
+  const [liberando, setLiberando] = useState(false);
+  const [erroLiberar, setErroLiberar] = useState("");
+
+  /* Libera a lavagem JÁ PAGA sem depender da câmera. Não cobra de novo:
+     o servidor reaproveita a reserva que existe. */
+  async function liberarAgora() {
+    setErroLiberar(""); setLiberando(true);
+    try {
+      await api("/api/orders", { body: { programId: 1, jaEstouNaMaquina: true } });
+      const r = await api<{ arrival: Arrival | null }>("/api/arrivals/mine");
+      setArrival(r.arrival);
+    } catch (e) {
+      setErroLiberar(e instanceof Error ? e.message : "Não foi possível liberar");
+    } finally {
+      setLiberando(false);
+    }
+  }
 
   const load = useCallback(() => {
     api<Me>("/api/me").then(setMe).catch(() => router.replace("/app/login"));
@@ -69,6 +86,30 @@ export default function Home() {
       {/* Onde a lavagem está, em etapas — e a câmera junto, para o cliente
           ver o próprio carro sem sair do app. */}
       {arrival?.lavagem && <ProgressoLavagem status={arrival.lavagem} />}
+
+      {/* Lavagem paga esperando a câmera: o botão de liberar sem ela fica
+          AQUI, em destaque. Antes só existia dentro da tela de compra —
+          quem já tinha pago não passava mais por lá e não achava. */}
+      {arrival?.lavagem === "HELD" && (
+        <div className="card" style={{ borderColor: "var(--jato)", borderWidth: 2 }}>
+          <div className="lab" style={{ color: "var(--jato)" }}>Lavagem paga — aguardando você chegar</div>
+          <p className="sub">
+            A câmera libera sozinha ao reconhecer sua placa. Se já está na frente
+            da máquina e nada aconteceu, libere por aqui.
+          </p>
+          <button className="btn" onClick={liberarAgora} disabled={liberando} style={{ marginTop: 10 }}>
+            {liberando ? "Liberando…" : "Já estou na máquina — liberar agora"}
+          </button>
+          {erroLiberar && <p className="err">{erroLiberar}</p>}
+          {/* O QR ainda serve para validar no balcão (fluxo do lavador) —
+              fica a um toque, sem ocupar a tela. */}
+          {ultima?.status === "PAID" && (
+            <Link className="btn ghost" href={`/app/voucher/${ultima.id}`} style={{ marginTop: 8 }}>
+              Ver comprovante / QR
+            </Link>
+          )}
+        </div>
+      )}
       {arrival?.lavagem && arrival.lavagem !== "COMPLETED" && arrival.lavagem !== "FAILED" && (
         <CameraAoVivo />
       )}

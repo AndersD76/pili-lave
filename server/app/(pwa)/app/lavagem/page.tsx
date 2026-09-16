@@ -42,10 +42,14 @@ function NovaLavagemConteudo() {
     if (!selected) return;
     setError(""); setLoading(true);
     try {
-      const order = await api<Order>("/api/orders", {
+      await api<Order>("/api/orders", {
         body: { programId: selected.id, jaEstouNaMaquina },
       });
-      router.replace(`/app/voucher/${order.id}`);
+      /* Volta para a tela inicial: é lá que está o acompanhamento da
+       * lavagem (status da máquina, progresso, câmera ao vivo e o botão
+       * de liberar sem a câmera). O voucher só interessa no fluxo antigo,
+       * de mostrar o QR ao lavador. */
+      router.replace("/app");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível concluir");
       setLoading(false);
