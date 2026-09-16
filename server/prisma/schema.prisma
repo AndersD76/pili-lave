@@ -240,6 +240,8 @@ model Machine {
   /// Sensores de presença reportados pelo display (nível ao vivo).
   sensorX14     Boolean?      // carro entrando
   sensorX15     Boolean?      // carro na posição de lavagem
+  /// Quando o sensor passou a acusar carro (para ignorar piscada do X15).
+  sensorDesde   DateTime?
   // luz transitória fixada por eventos (placa desconhecida, fim de ciclo…);
   // fora da janela lightUntil, o heartbeat calcula a luz pelo estado real
   lightState    String        @default("OFF")

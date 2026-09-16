@@ -36,16 +36,28 @@ export async function POST(req: NextRequest) {
   /* Carro sob a máquina (X14/X15) = ocupada, mesmo que o display ainda
    * reporte FREE — ele só diz WASHING depois que o ciclo começa. Sem isto
    * o app mostraria "máquina livre" com um carro parado lá dentro. */
+  const now0 = new Date();
   const carroPresente = body.x14 === true || body.x15 === true;
+  /* O X15 é instável (pisca 0/1 — o próprio firmware usa debounce). Guarda
+   * DESDE QUANDO acusa carro: assim uma piscada não faz o app alternar
+   * entre "ocupada" e "livre" na frente do cliente. */
+  const jaAcusava = auth.machine.sensorX14 === true || auth.machine.sensorX15 === true;
+  const sensorDesde = carroPresente
+    ? (jaAcusava ? auth.machine.sensorDesde ?? now0 : now0)
+    : null;
+  /* Só marca ocupada depois de 15s acusando carro — uma piscada do X15 não
+   * pode alternar o estado da máquina a cada batida. */
+  const carroEstavel =
+    carroPresente && !!sensorDesde && now0.getTime() - sensorDesde.getTime() >= 15_000;
   const nextStatus =
     auth.machine.status === "MAINTENANCE"
       ? undefined
       : body.state === "FAULT"
         ? "FAULT"
-        : carroPresente && body.state !== "WASHING"
+        : carroEstavel && body.state !== "WASHING"
           ? "WASHING"
           : body.state ?? (auth.machine.status === "OFFLINE" ? "FREE" : undefined);
-  const now = new Date();
+  const now = now0;
   const machine = await prisma.machine.update({
     where: { id: auth.machine.id },
     data: {
@@ -54,6 +66,7 @@ export async function POST(req: NextRequest) {
       remainingSec: body.restanteSeg ?? 0,
       ...(body.x14 !== undefined ? { sensorX14: body.x14 } : {}),
       ...(body.x15 !== undefined ? { sensorX15: body.x15 } : {}),
+      ...(body.x14 !== undefined || body.x15 !== undefined ? { sensorDesde } : {}),
       ...(nextStatus ? { status: nextStatus } : {}),
     },
   });

@@ -101,7 +101,13 @@ export async function diagnosticar(): Promise<Diagnostico> {
   /* Ocupada também quando o sensor acusa carro sob a máquina, mesmo sem
    * reserva nossa — carro que entrou sem pagar ou teste do operador. Sem
    * isto o app diria "livre" com um carro parado lá dentro. */
-  const carroNaMaquina = m?.sensorX14 === true || m?.sensorX15 === true;
+  /* Só conta como ocupada depois que o sensor acusa carro por 15s — o X15
+   * pisca 0/1 e, sem isso, o app alternaria "ocupada"/"livre" na frente do
+   * cliente a cada batida do heartbeat. */
+  const SENSOR_ESTAVEL_MS = 15_000;
+  const carroNaMaquina =
+    (m?.sensorX14 === true || m?.sensorX15 === true) &&
+    (!m?.sensorDesde || agora - m.sensorDesde.getTime() >= SENSOR_ESTAVEL_MS);
   const estado: Diagnostico["estado"] = impeditivo
     ? "PARADA"
     : m?.status === "WASHING" || lavando || carroNaMaquina
