@@ -78,7 +78,10 @@ export async function pendingStart(m: Machine): Promise<Reservation | null> {
 
 /**
  * Expira o que venceu — chamado pelo cron e oportunisticamente pelos endpoints:
- *  - HELD vencida → EXPIRED (saldo volta a ficar disponível; sem estorno)
+ *  - HELD vencida → EXPIRED. Se veio de uma COMPRA (Order paga na hora,
+ *    ver /api/orders), ESTORNA — o cliente pagou e nunca usou em 1h, o
+ *    dinheiro não pode ficar preso. Reserva "seca" (via /api/reservations,
+ *    sem Order — só segurava saldo, nunca debitou) não tem o que estornar.
  *  - ACTIVE sem X14 em 5 min → volta a HELD (nova tentativa dentro da validade)
  *  - ENTERED além de 2x a duração do programa → FAILED (alerta p/ admin)
  *  - máquinas sem heartbeat 60s+ → OFFLINE
@@ -86,10 +89,40 @@ export async function pendingStart(m: Machine): Promise<Reservation | null> {
 export async function expireStale() {
   const now = new Date();
 
-  const expired = await prisma.reservation.updateMany({
+  const vencidas = await prisma.reservation.findMany({
     where: { status: "HELD", expiresAt: { lt: now } },
-    data: { status: "EXPIRED" },
+    include: { order: true },
   });
+  for (const r of vencidas) {
+    let estornado = 0;
+    await prisma.$transaction(async (tx) => {
+      const upd = await tx.reservation.updateMany({
+        where: { id: r.id, status: "HELD" },   // trava contra corrida
+        data: { status: "EXPIRED" },
+      });
+      if (upd.count === 0) return;
+      if (r.order && r.order.status === "PAID") {
+        await tx.order.update({ where: { id: r.order.id }, data: { status: "CANCELED" } });
+        await tx.user.update({ where: { id: r.userId }, data: { walletCents: { increment: r.amountCents } } });
+        await tx.walletTx.create({
+          data: {
+            userId: r.userId, amountCents: r.amountCents, kind: "ADJUST", refId: r.order.id,
+            note: "estorno automático: reserva venceu (1h) sem ser usada",
+          },
+        });
+        estornado = r.amountCents;
+      }
+    });
+    if (estornado > 0) {
+      await prisma.event.create({
+        data: {
+          type: "reservation_expired_refund",
+          payload: { reservationId: r.id, userId: r.userId, estornoCents: estornado },
+        },
+      });
+    }
+  }
+  const expired = { count: vencidas.length };
 
   const stuckActive = await prisma.reservation.findMany({
     where: { status: "ACTIVE", activeAt: { lt: new Date(now.getTime() - ACTIVE_TTL_MIN * 60_000) } },

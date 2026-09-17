@@ -42,7 +42,7 @@ enum ReservationStatus {
   ACTIVE    // placa reconhecida + máquina livre — verde aceso, aguardando entrar
   ENTERED   // X14 confirmou o carro dentro — cancelamento bloqueado
   COMPLETED // AUTO_CONCLUIDO — único ponto de débito
-  EXPIRED   // 1h sem uso — saldo liberado sem estorno
+  EXPIRED   // 1h sem uso — saldo liberado; se veio de compra (Order paga), estorna
   CANCELED  // motorista cancelou antes do X14
   FAILED    // AUTO_ERRO ou timeout de segurança — saldo liberado, sem débito
 }
