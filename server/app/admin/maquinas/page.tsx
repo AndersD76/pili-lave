@@ -48,7 +48,7 @@ export default async function AdminMaquinas() {
   await requireAdminPage();
   const machines = await prisma.machine.findMany({
     include: { station: true },
-    orderBy: { createdAt: "asc" },
+    orderBy: [{ station: { city: "asc" } }, { numero: "asc" }],
   });
 
   return (
@@ -59,7 +59,7 @@ export default async function AdminMaquinas() {
         <table className="tbl">
           <thead>
             <tr>
-              <th>Máquina</th><th>Unidade</th><th>Status</th><th>Última batida</th>
+              <th>Unidade</th><th>Nº</th><th>Status</th><th>Última batida</th>
               <th>Sensores</th><th>Licença</th><th>Ações</th>
             </tr>
           </thead>
@@ -72,8 +72,8 @@ export default async function AdminMaquinas() {
               const avisando = !bloqueada && !!m.lastPaymentDate && dias >= LIC_AVISO_DIAS;
               return (
                 <tr key={m.id}>
-                  <td>{m.name}</td>
-                  <td>{m.station.name}</td>
+                  <td>{m.station.city} — {m.station.address}</td>
+                  <td>{m.numero}</td>
                   <td>
                     <span className={offline ? "chip err" : m.status === "MAINTENANCE" ? "chip at" : "chip ok"}>
                       {offline ? "OFFLINE" : m.status}

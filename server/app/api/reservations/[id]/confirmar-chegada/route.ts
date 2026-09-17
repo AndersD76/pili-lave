@@ -3,11 +3,16 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { handlePlateRead } from "@/lib/lpr";
+import { machineForStation } from "@/lib/reservations";
 
 const Body = z.object({
   // exige o toque explícito do cliente — sem isso não libera nada. É o
   // "estou ciente que isso vai debitar meu crédito ao terminar" do app.
   confirmo: z.literal(true),
+  // Só obrigatório quando a unidade da reserva tem mais de uma máquina —
+  // o cliente diz em qual está parado (nunca escolhe entre "as livres",
+  // só confirma a posição física dele).
+  numero: z.number().int().optional(),
 });
 
 /**
@@ -36,7 +41,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const reservation = await prisma.reservation.findFirst({
     where: { id, userId: auth.user.id },
-    include: { vehicle: true },
+    include: { vehicle: true, station: { include: { machines: true } } },
   });
   if (!reservation) return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404 });
 
@@ -45,10 +50,38 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (reservation.status === "ENTERED" || reservation.status === "COMPLETED")
     return NextResponse.json({ ok: true, status: reservation.status }); // idempotente: já passou daqui
 
+  // Unidade com mais de uma máquina: o cliente precisa dizer em qual está.
+  // Sem unidade definida (reserva antiga/legado), segue o comportamento de
+  // sempre — uma única máquina no sistema (handlePlateRead sem override).
+  const maquinasDaUnidade = reservation.station?.machines ?? [];
+  if (maquinasDaUnidade.length > 1 && parsed.data.numero == null) {
+    return NextResponse.json(
+      {
+        ok: false,
+        escolherMaquina: true,
+        opcoes: maquinasDaUnidade
+          .sort((a, b) => a.numero - b.numero)
+          .map((m) => ({ numero: m.numero, status: m.status })),
+      },
+      { status: 409 }
+    );
+  }
+  const machine = reservation.stationId
+    ? await machineForStation(reservation.stationId, parsed.data.numero ?? undefined)
+    : undefined;
+  if (reservation.stationId && !machine)
+    return NextResponse.json({ error: "Máquina não encontrada nesta unidade" }, { status: 400 });
+
   await prisma.event.create({
-    data: { type: "manual_release", payload: { reservationId: reservation.id, userId: auth.user.id, plate: reservation.vehicle.plate } },
+    data: {
+      type: "manual_release",
+      payload: {
+        reservationId: reservation.id, userId: auth.user.id, plate: reservation.vehicle.plate,
+        maquinaEscolhida: machine?.numero ?? null,
+      },
+    },
   });
 
-  const result = await handlePlateRead(reservation.vehicle.plate);
+  const result = await handlePlateRead(reservation.vehicle.plate, machine ?? undefined);
   return NextResponse.json({ ok: true, ...result });
 }

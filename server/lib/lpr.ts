@@ -1,3 +1,4 @@
+import { Machine } from "@prisma/client";
 import { prisma } from "./prisma";
 import { avisarCliente } from "./push";
 import { ARRIVAL_TTL_MIN } from "./device";
@@ -34,10 +35,13 @@ export type PlateReadResult = {
  * Sem cancela: a luz é a única barreira. Verde sólido NUNCA sem máquina
  * confirmada livre (heartbeat < 60s).
  */
-export async function handlePlateRead(plate: string): Promise<PlateReadResult> {
+export async function handlePlateRead(plate: string, machineOverride?: Machine): Promise<PlateReadResult> {
   await expireStale();
 
-  const machine = await defaultMachine();
+  // machineOverride: usado pela liberação manual ("cheguei") quando a
+  // reserva pertence a uma unidade com mais de uma máquina e o cliente já
+  // disse em qual está — sem isso caía sempre na primeira máquina do banco.
+  const machine = machineOverride ?? await defaultMachine();
   const avail = machineAvailability(machine);
 
   // matching tolerante: OCR/digitação confundem O↔0, I↔1, B↔8 etc. —

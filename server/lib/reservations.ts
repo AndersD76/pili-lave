@@ -20,6 +20,28 @@ export type LightState =
 
 const ACTIVE_HOLD_STATUSES = ["HELD", "ACTIVE", "ENTERED"] as const;
 
+/**
+ * Fila única por unidade: quando uma unidade tem mais de uma máquina, o
+ * cliente nunca escolhe qual — pega a que estiver livre primeiro. Só
+ * escolhe manualmente quando libera "sem câmera" (confirmar-chegada) e
+ * quer dizer em qual das máquinas físicas ele está parado.
+ *
+ * numero: força uma máquina específica (usado quando o cliente já
+ * confirmou "estou na máquina N"). Sem isso, prefere a livre; se nenhuma
+ * estiver livre, devolve a de menor número (só para refletir status).
+ */
+export async function machineForStation(
+  stationId: string,
+  numero?: number
+): Promise<Machine | null> {
+  if (numero != null) {
+    return prisma.machine.findUnique({ where: { stationId_numero: { stationId, numero } } });
+  }
+  const machines = await prisma.machine.findMany({ where: { stationId }, orderBy: { numero: "asc" } });
+  if (machines.length === 0) return null;
+  return machines.find((m) => machineAvailability(m) === "FREE") ?? machines[0];
+}
+
 /** Soma dos valores bloqueados por reservas ainda vivas do usuário. */
 export async function reservedCents(
   userId: string,

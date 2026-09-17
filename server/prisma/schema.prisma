@@ -232,6 +232,11 @@ model WashStation {
 model Machine {
   id            String        @id @default(cuid())
   stationId     String
+  /// Posição da máquina dentro da unidade (1, 2, 3…) — o técnico digita no
+  /// cadastro pelo display; o cliente nunca escolhe isso na compra (fila
+  /// única por unidade), só quando libera manualmente sem câmera e há
+  /// mais de uma máquina no endereço.
+  numero        Int           @default(1)
   name          String        @default("Máquina 1")
   deviceKey     String        @unique
   status        MachineStatus @default(FREE)
@@ -262,6 +267,7 @@ model Machine {
   station      WashStation   @relation(fields: [stationId], references: [id])
   reservations Reservation[]
 
+  @@unique([stationId, numero])
   @@index([stationId])
 }
 
