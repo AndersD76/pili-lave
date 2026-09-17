@@ -10,6 +10,14 @@ export function adminOpen(): boolean {
   return !process.env.ADMIN_PASSWORD;
 }
 
+/** Confere usuário + senha do painel (ambos vêm do .env — sem cadastro no banco). */
+export function checarCredenciaisAdmin(usuario: string, senha: string): boolean {
+  if (!process.env.ADMIN_PASSWORD) return false;
+  const usuarioOk = usuario === (process.env.ADMIN_USER ?? "admin");
+  const senhaOk = senha === process.env.ADMIN_PASSWORD;
+  return usuarioOk && senhaOk;
+}
+
 export async function createAdminCookie(): Promise<string> {
   return new SignJWT({ role: "ADMIN" })
     .setProtectedHeader({ alg: "HS256" })
