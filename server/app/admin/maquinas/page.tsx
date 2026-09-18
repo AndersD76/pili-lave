@@ -65,6 +65,40 @@ export default async function AdminMaquinas() {
     )
   );
 
+  // Desde o último "Marcar pago hoje" (lastPaymentDate é o nosso ponto de
+  // fechamento) — por máquina, e agrupado por programa pra alimentar a aba
+  // de totais. Consulta separada (não o histórico limitado a 30) porque uma
+  // máquina de muito movimento pode ter mais lavagens que isso desde o
+  // último fechamento.
+  const porProgramaPorMaquina = await Promise.all(
+    machines.map((m) =>
+      prisma.reservation.groupBy({
+        by: ["programId"],
+        where: { machineId: m.id, status: "COMPLETED", completedAt: { gte: m.lastPaymentDate ?? new Date(0) } },
+        _sum: { amountCents: true },
+        _count: { _all: true },
+      })
+    )
+  );
+  const programas = await prisma.program.findMany({ orderBy: { ordem: "asc" } });
+  const nomePrograma = new Map(programas.map((p) => [p.id, p.nome]));
+
+  const totalPorProgramaGlobal = new Map<number, { qtd: number; valorCents: number }>();
+  let totalGeralCents = 0;
+  const totalDesdeFechamentoPorMaquina = machines.map((m, i) => {
+    let total = 0;
+    for (const g of porProgramaPorMaquina[i]) {
+      const valor = g._sum.amountCents ?? 0;
+      total += valor;
+      totalGeralCents += valor;
+      const atual = totalPorProgramaGlobal.get(g.programId) ?? { qtd: 0, valorCents: 0 };
+      atual.qtd += g._count._all;
+      atual.valorCents += valor;
+      totalPorProgramaGlobal.set(g.programId, atual);
+    }
+    return total;
+  });
+
   const offlineCount = machines.filter(
     (m) => !m.lastHeartbeat || Date.now() - m.lastHeartbeat.getTime() > HEARTBEAT_OFFLINE_S * 1000
   ).length;
@@ -76,6 +110,7 @@ export default async function AdminMaquinas() {
     return {
       id: m.id,
       numero: m.numero,
+      stationId: m.stationId,
       unidade: `${m.station.city} — ${m.station.address}`,
       status: m.status,
       offline,
@@ -84,6 +119,7 @@ export default async function AdminMaquinas() {
       sensores: `X14:${m.sensorX14 ? "1" : "0"} X15:${m.sensorX15 ? "1" : "0"} · ${m.remainingSec}s restante`,
       licenca: licencaDe(m.lastPaymentDate),
       operadorId: m.operadorId,
+      valorDesdeFechamento: money(totalDesdeFechamentoPorMaquina[i]),
       historico: historicos[i].map((r) => ({
         id: r.id,
         quando: r.completedAt ? fmtData(r.completedAt) : "—",
@@ -95,6 +131,13 @@ export default async function AdminMaquinas() {
   });
 
   const lavadoresProps = lavadores.map((l) => ({ id: l.id, label: l.name ?? l.phone }));
+
+  const totaisProps = {
+    valorTotalGeral: money(totalGeralCents),
+    porPrograma: Array.from(totalPorProgramaGlobal.entries())
+      .map(([programId, v]) => ({ programa: nomePrograma.get(programId) ?? `#${programId}`, qtd: v.qtd, valor: money(v.valorCents) }))
+      .sort((a, b) => b.qtd - a.qtd),
+  };
 
   return (
     <main className="admin-wrap">
@@ -121,7 +164,7 @@ export default async function AdminMaquinas() {
       </div>
 
       <div style={{ marginTop: 30 }}>
-        <MaquinasTabs maquinas={maquinasProps} lavadores={lavadoresProps} />
+        <MaquinasTabs maquinas={maquinasProps} lavadores={lavadoresProps} totais={totaisProps} />
       </div>
     </main>
   );
