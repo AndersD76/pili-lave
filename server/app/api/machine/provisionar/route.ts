@@ -10,13 +10,26 @@ import { prisma } from "@/lib/prisma";
  *
  * Duas formas de identificar a unidade:
  *  - stationId: unidade JÁ CADASTRADA (o técnico escolheu numa lista) —
- *    evita duplicar "Erechim/João Carlon" com grafias diferentes.
- *  - cidade+rua: cria uma unidade NOVA (primeira máquina daquele endereço).
+ *    forma mais segura, sem depender de digitação.
+ *  - cidade+rua: procura uma unidade com esse endereço (comparação sem
+ *    diferenciar maiúsculas/espaços) antes de criar uma nova — evita
+ *    duplicar "Erechim/Rua João Carlon" só porque alguém digitou diferente
+ *    da vez anterior (ex.: atualização de firmware numa máquina que já
+ *    existe: sem isso, a mesma unidade viraria duas no banco).
  *
  * Protegido por PROVISION_SECRET (a mesma senha gravada em todo firmware —
  * não é por instalação) pra ninguém de fora conseguir plantar máquina falsa
  * no seu sistema. FASE DE TESTE: sem a env var, fica aberto.
  */
+/** Remove acentos + maiúsculas + espaços duplicados — o teclado do display
+ *  provavelmente não digita "ã/ç" fácil, então "joao carlon" e "João Carlon"
+ *  precisam casar como a mesma rua, senão cada recadastro duplica a unidade. */
+function normalizarEndereco(s: string): string {
+  return s
+    .normalize("NFD").replace(/[̀-ͯ]/g, "") // tira acentos
+    .toLowerCase().trim().replace(/\s+/g, " ");
+}
+
 const Body = z
   .object({
     provisionSecret: z.string().optional(),
@@ -42,9 +55,22 @@ export async function POST(req: NextRequest) {
 
   const station = stationIdInformado
     ? await prisma.washStation.findUnique({ where: { id: stationIdInformado } })
-    : await prisma.washStation.create({
-        data: { name: rua!.trim(), city: cidade!.trim(), address: rua!.trim() },
-      });
+    : await (async () => {
+        const cidadeAparada = cidade!.trim();
+        const ruaAparada = rua!.trim();
+        // Compara ignorando acento/maiúscula/espaço em vez de no banco: o
+        // total de unidades é pequeno (não é uma tabela de milhões), então
+        // trazer todas e comparar em memória é simples e cobre "joao" ==
+        // "João" — o que uma comparação só de maiúsculas não pegaria.
+        const todas = await prisma.washStation.findMany();
+        const alvo = normalizarEndereco(cidadeAparada) + "|" + normalizarEndereco(ruaAparada);
+        const existente = todas.find(
+          (s) => normalizarEndereco(s.city) + "|" + normalizarEndereco(s.address) === alvo
+        );
+        return existente ?? prisma.washStation.create({
+          data: { name: ruaAparada, city: cidadeAparada, address: ruaAparada },
+        });
+      })();
   if (!station) return NextResponse.json({ error: "Unidade não encontrada" }, { status: 404 });
 
   const jaExiste = await prisma.machine.findUnique({ where: { deviceKey } });
