@@ -129,6 +129,8 @@ static void hardResetRadio() { WiFi.persistent(false); WiFi.mode(WIFI_OFF); dela
 #define MSG_IDENT_RESP 16 // câmera -> display: identidade já conhecida (ou nenhuma)
 #define MSG_UNI_REQ   17  // display -> câmera: busca unidades já cadastradas nesta cidade
 #define MSG_UNI_RESP  18  // câmera -> display: uma página da lista de unidades encontradas
+#define MSG_IDPUSH_REQ  19 // display -> câmera: "aqui está sua identidade" (substituição de câmera)
+#define MSG_IDPUSH_RESP 20 // câmera -> display: confirmação de que salvou
 
 typedef struct __attribute__((packed)) {
   uint8_t tipo, id_maquina, origem, seq;
@@ -208,6 +210,19 @@ typedef struct __attribute__((packed)) {
   uint8_t   n;
   UniEntry  unidades[UNI_POR_PAGINA];
 } MsgUniResp;
+
+// Substituição de câmera — DEVE bater byte a byte com tipos.h do display.
+typedef struct __attribute__((packed)) {
+  CabEspNow cab;          // MSG_IDPUSH_REQ
+  char      deviceKey[24];
+  char      cidade[32];
+  char      rua[40];
+  uint16_t  numero;
+} MsgIdPushReq;
+typedef struct __attribute__((packed)) {
+  CabEspNow cab;          // MSG_IDPUSH_RESP
+  uint8_t   ok;
+} MsgIdPushResp;
 
 // Lista de redes achadas no scan, paginada (ESP-NOW <= 250 bytes por pacote).
 // Só a câmera varre canais pra montar isso — o display nunca escaneia, só
@@ -302,6 +317,8 @@ static volatile MsgProvReq g_prov_req;
 static volatile bool g_ident_pedido = false;   // recebeu MSG_IDENT_REQ (responde no loop)
 static volatile bool g_uni_pedido = false;     // recebeu MSG_UNI_REQ (faz o GET no loop)
 static volatile MsgUniReq g_uni_req;
+static volatile bool g_idpush_pedido = false;  // recebeu MSG_IDPUSH_REQ (aplica no loop)
+static volatile MsgIdPushReq g_idpush_req;
 
 /* ===== LED ===== */
 static void blink(int n, int ms = 120) {
@@ -382,6 +399,11 @@ static void onRecvImpl(const uint8_t* mac, const uint8_t* data, int len) {
     if (!g_uni_pedido) {   // 1 por vez; se travar, técnico repete a busca na tela
       memcpy((void*)&g_uni_req, data, sizeof(MsgUniReq));
       g_uni_pedido = true;
+    }
+  } else if (cab->tipo == MSG_IDPUSH_REQ && len >= (int)sizeof(MsgIdPushReq)) {
+    if (!g_idpush_pedido) {
+      memcpy((void*)&g_idpush_req, data, sizeof(MsgIdPushReq));
+      g_idpush_pedido = true;
     }
   }
 }
@@ -534,6 +556,30 @@ static void processarProvisionamento() {
       strncpy(resp.erro, "Falha ao cadastrar (sem detalhe)", sizeof(resp.erro) - 1);
   }
   esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&resp, sizeof(resp));
+}
+
+/* Substituição de CÂMERA: o display já sabe sua identidade (cadastro
+ * anterior) e empurra pra essa câmera nova — sem tocar na nuvem, o registro
+ * da máquina não muda, só a câmera física aprende quem ela é. */
+static void aplicarIdPush() {
+  if (!g_idpush_pedido) return;
+  g_idpush_pedido = false;
+  MsgIdPushReq req; memcpy(&req, (const void*)&g_idpush_req, sizeof(req));
+
+  g_dev_key      = String(req.deviceKey);
+  g_cidade       = String(req.cidade);
+  g_rua          = String(req.rua);
+  g_numero       = req.numero;
+  g_identificada = true;
+  nvsSalvarIdentidade();
+
+  MsgIdPushResp resp = {};
+  resp.cab.tipo = MSG_IDPUSH_RESP; resp.cab.id_maquina = ID_MAQUINA;
+  resp.cab.origem = ORIGEM_CAMERA; resp.cab.seq = 0;
+  resp.ok = 1;
+  esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&resp, sizeof(resp));
+  Serial.printf("[idpush] identidade recebida do display: %s - %s - Maquina %u\n",
+                g_cidade.c_str(), g_rua.c_str(), (unsigned)g_numero);
 }
 
 /* Substituição de peça: o display NOVO (NVS em branco) pergunta "quem é
@@ -976,6 +1022,8 @@ void loop() {
   if (g_scan_pedido) { g_scan_pedido = false; atenderScanRequest(); }
   // (0b2) Display pediu unidades já cadastradas nesta cidade (tela de cadastro)
   if (g_uni_pedido) { g_uni_pedido = false; atenderUniRequest(); }
+  // (0b3) Display empurrou a identidade dele (substituição de câmera)
+  aplicarIdPush();
   // (0c) Substituição de peça: responde de imediato, SEM depender de Wi-Fi/
   // internet — é a câmera local, não a nuvem, que confirma a identidade.
   responderIdentidade();

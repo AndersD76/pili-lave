@@ -238,6 +238,8 @@ enum : uint8_t {
     MSG_IDENT_RESP= 16,  // câmera -> display: identidade já conhecida (ou nenhuma)
     MSG_UNI_REQ   = 17,  // display -> câmera: busca unidades já cadastradas nesta cidade
     MSG_UNI_RESP  = 18,  // câmera -> display: uma página da lista de unidades encontradas
+    MSG_IDPUSH_REQ  = 19, // display -> câmera: "aqui está sua identidade" (substituição de câmera)
+    MSG_IDPUSH_RESP = 20, // câmera -> display: confirmação de que salvou
 };
 
 typedef struct __attribute__((packed)) {
@@ -395,6 +397,23 @@ typedef struct __attribute__((packed)) {      // Câmera -> Display
     uint8_t   n;                              // entradas válidas nesta página
     UniEntry  unidades[UNI_POR_PAGINA];
 } MsgUniResp;   // sizeof = 4+3+3*68 = 211 bytes
+
+// ----- Substituição de CÂMERA (peça física quebrou, display continua o
+// mesmo e já sabe sua identidade) — o display empurra pra câmera nova o que
+// já tem salvo (deviceKey/cidade/rua/numero), sem precisar da nuvem: o
+// registro da máquina não muda, só a câmera física aprende quem ela é.
+// DEVE bater byte a byte com o firmware da câmera.
+typedef struct __attribute__((packed)) {      // Display -> Câmera
+    CabEspNow cab;           // tipo = MSG_IDPUSH_REQ
+    char      deviceKey[24];
+    char      cidade[32];
+    char      rua[40];
+    uint16_t  numero;
+} MsgIdPushReq;
+typedef struct __attribute__((packed)) {      // Câmera -> Display
+    CabEspNow cab;           // tipo = MSG_IDPUSH_RESP
+    uint8_t   ok;
+} MsgIdPushResp;
 
 #define HEARTBEAT_MS    200   // periodo do heartbeat da waveshare
 #define COMM_TIMEOUT_MS 700   // sem heartbeat por isso -> comunicacao perdida (erro seguro)

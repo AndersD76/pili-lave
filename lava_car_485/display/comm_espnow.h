@@ -24,6 +24,7 @@ void wifi_scan_espnow_handle(const uint8_t* data, int len);
 void boot_prov_espnow_handle(const uint8_t* data, int len);   // definida em tela_boot.h (incluído depois)
 void boot_ident_espnow_handle(const uint8_t* data, int len);
 void boot_uni_espnow_handle(const uint8_t* data, int len);
+void boot_idpush_espnow_handle(const uint8_t* data, int len);
 
 static volatile uint8_t  g_canal_novo   = 0;   // Opção A: canal pedido pela câmera (aplica no loop)
 static volatile uint32_t g_cam_last_ms  = 0;   // última vez que ouvimos a câmera (p/ o alarme)
@@ -51,6 +52,9 @@ static void espnow_on_recv(const esp_now_recv_info_t* info, const uint8_t* data,
     if (cab->tipo == MSG_UNI_RESP) {
         g_cam_last_ms = millis(); boot_uni_espnow_handle(data, len); return;
     }
+    if (cab->tipo == MSG_IDPUSH_RESP) {
+        g_cam_last_ms = millis(); boot_idpush_espnow_handle(data, len); return;
+    }
     // Opção A: a CÂMERA é a mestre de canal (Wi-Fi dela, não tem relação com
     // o barramento RS-485 das waveshares). MSG_CANAL avisa o canal do
     // roteador -> o display SEGUE (troca o canal do rádio).
@@ -72,6 +76,77 @@ static void espnow_on_recv(const esp_now_recv_info_t* info, const uint8_t* data,
 #define CAM_ALARME_MS   60000UL
 #define CAM_ISOLADA_MS 300000UL
 static bool g_alarme_cam_ativo = false;
+
+// -----------------------------------------------------------------------
+// "Modo caça" — varre os 13 canais ativamente procurando a câmera e trava
+// no que responder. Regra combinada: cada canal escolhido (Wi-Fi novo,
+// reconfiguração, etc.) é pra ficar TRAVADO ali pros dois lados; só quando
+// o botão Buscar é apertado e a câmera está sem contato recente é que faz
+// sentido varrer de novo — nunca em background/sozinho, senão qualquer
+// ruído passageiro derrubaria o par de um canal que ainda está bom.
+// -----------------------------------------------------------------------
+#define CAM_SEM_CONTATO_MS 3000UL   // sem ouvir a câmera há mais que isso = "perdida" p/ efeito de caça
+bool espnow_camera_perdida() { return (millis() - g_cam_last_ms) > CAM_SEM_CONTATO_MS; }
+
+// Varre canal a canal, ouvindo por um pouco em cada um; para e trava assim
+// que a câmera responder (MSG_CANAL/HB/SCAN/etc. — qualquer um atualiza
+// g_cam_last_ms no callback já existente). Retorna true se achou.
+// A câmera anuncia MSG_CANAL a cada 1s (PILI_CANAL_ANUNCIO_MS) — o tempo de
+// espera por canal PRECISA ser maior que isso, senão a chance de bater o
+// anúncio é baixa (achado em teste real: com 220ms, a caça terminava as 13
+// voltas sem nunca pegar o anúncio, mesmo com a câmera viva e no ar).
+// -----------------------------------------------------------------------
+// Caça não-bloqueante: varre os 13 canais em background (chamado no
+// loop(), sem travar LVGL/toque) e fica repetindo as voltas até achar a
+// câmera OU alguém cancelar (ex.: apertou "Voltar"). Achado em teste real:
+// a versão bloqueante antiga prendia a tela inteira — nem dava pra sair
+// enquanto procurava, e uma volta só às vezes não bastava (o anúncio da
+// câmera é a cada 1s, então o tempo por canal precisa ser maior que isso).
+// -----------------------------------------------------------------------
+#define CACA_MS_POR_CANAL 1300UL
+static volatile bool    g_caca_ativa   = false;
+static volatile bool    g_caca_achou   = false;
+static uint8_t           g_caca_canal   = 1;
+static int               g_caca_volta   = 1;
+static uint32_t          g_caca_t0      = 0;
+static uint32_t          g_caca_marca0  = 0;
+
+static void _caca_ir_canal(uint8_t c) {
+    esp_wifi_set_promiscuous(true);
+    esp_wifi_set_channel(c, WIFI_SECOND_CHAN_NONE);
+    esp_wifi_set_promiscuous(false);
+    g_canal_atual = c;
+}
+
+void espnow_cacar_iniciar() {
+    g_caca_marca0 = g_cam_last_ms;
+    g_caca_volta  = 1;
+    g_caca_canal  = 1;
+    g_caca_achou  = false;
+    g_caca_ativa  = true;
+    g_caca_t0     = millis();
+    _caca_ir_canal(g_caca_canal);
+}
+void espnow_cacar_cancelar() { g_caca_ativa = false; }
+bool espnow_cacando()        { return g_caca_ativa; }
+bool espnow_cacar_achou()    { return g_caca_achou; }
+int  espnow_cacar_volta()    { return g_caca_volta; }
+
+// Chamar sempre no loop() (barato: só compara millis() quando ativa).
+void espnow_cacar_tick() {
+    if (!g_caca_ativa) return;
+    if (g_cam_last_ms != g_caca_marca0) {
+        g_caca_achou = true;
+        g_caca_ativa = false;   // achou — fica travado no canal atual
+        return;
+    }
+    if (millis() - g_caca_t0 >= CACA_MS_POR_CANAL) {
+        g_caca_canal++;
+        if (g_caca_canal > 13) { g_caca_canal = 1; g_caca_volta++; }
+        _caca_ir_canal(g_caca_canal);
+        g_caca_t0 = millis();
+    }
+}
 
 void comm_espnow_canal_tick() {
     if (g_canal_novo) {
@@ -101,13 +176,13 @@ void comm_espnow_canal_tick() {
         if (g_estado_auto != AUTO_ERRO) g_estado.alarme = false;
     }
 
-    if (desde_camera > CAM_ISOLADA_MS && g_canal_atual != 1 && espnow_pode_varrer()) {
-        g_canal_atual = 1;
-        esp_wifi_set_promiscuous(true);
-        esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
-        esp_wifi_set_promiscuous(false);
-        Serial.println("[ESP-NOW] isolado da camera ha muito tempo -> estacionando no canal 1 (aguardando reencontro)");
-    }
+    // Canal 1 é só o ponto de partida (câmera nova / config de fábrica) —
+    // NÃO uma regra de "sempre volta pra lá" quando perde contato. Ficar
+    // parado no 1 esperando passivamente era pior que simplesmente continuar
+    // travado onde já estava (o canal continua bom até algo mudar de verdade).
+    // A recuperação de canal agora é ativa: técnico aperta Buscar e o
+    // display varre os 13 canais de propósito (espnow_cacar_camera), em vez
+    // de ficar estacionado esperando um anúncio que pode nunca chegar aqui.
 }
 
 // -----------------------------------------------------------------------

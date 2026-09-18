@@ -36,6 +36,8 @@ static lv_obj_t* scr_boot_busca = nullptr;
 static lv_obj_t* scr_boot_pick  = nullptr;
 static lv_obj_t* scr_boot_nova  = nullptr;
 static lv_obj_t* scr_boot_subst = nullptr;
+static lv_obj_t* scr_boot_idpush = nullptr;
+static lv_obj_t* lbl_boot_idpush_status = nullptr;
 
 static lv_obj_t* ta_boot_busca_cidade = nullptr;
 static lv_obj_t* dd_boot_unidades     = nullptr;
@@ -61,6 +63,8 @@ static char           g_uni_stationIds[UNI_MAX_RESULTADOS][UNI_STATIONID_LEN];
 static char           g_uni_ruas[UNI_MAX_RESULTADOS][UNI_RUA_LEN];
 static uint8_t         g_uni_proximo[UNI_MAX_RESULTADOS];
 static uint8_t         g_uni_count     = 0;
+static bool g_boot_nova_aguardando_caca = false;   // "modo caça" rodando p/ o formulario livre (NOVA)
+static bool g_boot_pick_aguardando_caca = false;   // "modo caça" rodando p/ confirmar unidade existente
 static volatile bool   g_uni_novo_dado = false;
 static volatile bool   g_uni_pedido_em_curso = false;
 
@@ -120,6 +124,15 @@ void boot_uni_espnow_handle(const uint8_t* data, int len) {
     g_uni_novo_dado = true;
 }
 
+static volatile bool g_boot_idpush_chegou = false;
+static volatile bool g_boot_idpush_ok     = false;
+void boot_idpush_espnow_handle(const uint8_t* data, int len) {
+    if (len < (int)sizeof(MsgIdPushResp)) return;
+    const MsgIdPushResp* r = (const MsgIdPushResp*)data;
+    g_boot_idpush_ok = r->ok;
+    g_boot_idpush_chegou = true;
+}
+
 // Gera uma identidade única pra esta máquina, uma única vez (chip ID —
 // nunca se repete, nunca é escolhido por ninguém). Guardada pra sempre em
 // NVS_DEVICE_KEY; reaproveitada em toda religada seguinte.
@@ -133,7 +146,12 @@ static String boot_gerar_device_key() {
     return String(buf);
 }
 
-static void boot_ir_tipo(lv_event_t* e)      { lv_scr_load(scr_boot_tipo); }
+static void boot_ir_tipo(lv_event_t* e) {
+    espnow_cacar_cancelar();
+    g_boot_nova_aguardando_caca = false;
+    g_boot_pick_aguardando_caca = false;
+    lv_scr_load(scr_boot_tipo);
+}
 static void boot_ir_boot(lv_event_t* e)      { lv_scr_load(scr_boot); }
 
 static void boot_ir_nova(lv_event_t* e) {
@@ -147,14 +165,10 @@ static void boot_ir_nova(lv_event_t* e) {
 // -----------------------------------------------------------------------
 // BUSCA — envia MSG_UNI_REQ com a cidade digitada
 // -----------------------------------------------------------------------
-static void cb_boot_busca_buscar(lv_event_t* e) {
-    String cidade = String(lv_textarea_get_text(ta_boot_busca_cidade));
-    cidade.trim();
-    Serial.printf("[UNI] botao Buscar apertado, cidade='%s' (len=%d)\n", cidade.c_str(), cidade.length());
-    if (cidade.length() < 2) {
-        lv_label_set_text(lbl_boot_busca_status, "Digite ao menos 2 letras da cidade.");
-        return;
-    }
+static bool g_boot_busca_aguardando_caca = false;   // "modo caça" rodando em background
+static char g_boot_busca_cidade_pendente[32] = {0}; // cidade a buscar assim que achar a camera
+
+static void _boot_uni_enviar(const String& cidade) {
     g_uni_count = 0;
     g_uni_pedido_em_curso = true;
     lv_dropdown_set_options(dd_boot_unidades, "(buscando...)");
@@ -168,9 +182,24 @@ static void cb_boot_busca_buscar(lv_event_t* e) {
         esp_now_peer_info_t p = {}; p.channel = 0; p.ifidx = WIFI_IF_STA; p.encrypt = false;
         memcpy(p.peer_addr, MAC_CAMERA, 6); esp_now_add_peer(&p);
     }
-    esp_err_t r = esp_now_send((uint8_t*)MAC_CAMERA, (uint8_t*)&m, sizeof(m));
-    Serial.printf("[UNI] MSG_UNI_REQ enviado (esp_now_send=%d, peer_existe=%d)\n",
-                  (int)r, (int)esp_now_is_peer_exist(MAC_CAMERA));
+    esp_now_send((uint8_t*)MAC_CAMERA, (uint8_t*)&m, sizeof(m));
+}
+
+static void cb_boot_busca_buscar(lv_event_t* e) {
+    String cidade = String(lv_textarea_get_text(ta_boot_busca_cidade));
+    cidade.trim();
+    if (cidade.length() < 2) {
+        lv_label_set_text(lbl_boot_busca_status, "Digite ao menos 2 letras da cidade.");
+        return;
+    }
+    if (espnow_camera_perdida()) {
+        strncpy(g_boot_busca_cidade_pendente, cidade.c_str(), sizeof(g_boot_busca_cidade_pendente) - 1);
+        g_boot_busca_aguardando_caca = true;
+        lv_label_set_text(lbl_boot_busca_status, "Procurando a camera (volta 1 pelos 13 canais)...");
+        espnow_cacar_iniciar();
+        return;
+    }
+    _boot_uni_enviar(cidade);
 }
 
 // Chamado no loop() — monta o dropdown a partir das páginas recebidas.
@@ -201,7 +230,7 @@ void tela_boot_busca_tick() {
     lv_label_set_text(lbl_boot_busca_status, "Toque na unidade e confirme, ou cadastre uma nova.");
 }
 
-static void boot_ir_tipo_de_busca(lv_event_t* e) { lv_scr_load(scr_boot_tipo); }
+static void boot_ir_tipo_de_busca(lv_event_t* e) { espnow_cacar_cancelar(); lv_scr_load(scr_boot_tipo); }
 
 // "Nenhuma dessas" -> vai pro formulario livre, ja com a cidade preenchida
 static void cb_boot_busca_nenhuma(lv_event_t* e) {
@@ -227,9 +256,7 @@ static void cb_boot_busca_selecionar(lv_event_t* e) {
 
 // Confirma a máquina NOVA numa unidade JÁ EXISTENTE (stationId direto,
 // sem cidade/rua — o backend não precisa comparar nada de novo).
-static void cb_boot_pick_confirmar(lv_event_t* e) {
-    uintptr_t idx = (uintptr_t)lv_obj_get_user_data(scr_boot_pick);
-    if (idx >= g_uni_count) return;
+static void _boot_pick_enviar(uintptr_t idx) {
     String deviceKey = boot_gerar_device_key();
 
     MsgProvReq m = {};
@@ -248,6 +275,18 @@ static void cb_boot_pick_confirmar(lv_event_t* e) {
     lv_label_set_text(lbl_boot_pick_status, "Enviando pra nuvem...");
 }
 
+static void cb_boot_pick_confirmar(lv_event_t* e) {
+    uintptr_t idx = (uintptr_t)lv_obj_get_user_data(scr_boot_pick);
+    if (idx >= g_uni_count) return;
+    if (espnow_camera_perdida()) {
+        g_boot_pick_aguardando_caca = true;
+        lv_label_set_text(lbl_boot_pick_status, "Procurando a camera (volta 1 pelos 13 canais)...");
+        espnow_cacar_iniciar();
+        return;
+    }
+    _boot_pick_enviar(idx);
+}
+
 static void boot_ir_subst(lv_event_t* e) {
     lv_label_set_text(lbl_boot_subst_status, "Procurando a câmera desta máquina...");
     lv_obj_add_state(btn_boot_subst_confirmar, LV_STATE_DISABLED);
@@ -256,16 +295,78 @@ static void boot_ir_subst(lv_event_t* e) {
 }
 
 // -----------------------------------------------------------------------
-// NOVA — envia MSG_PROV_REQ
+// SUBSTITUIÇÃO DE CÂMERA — este display JÁ TEM identidade salva (foi
+// cadastrado antes); empurra ela pra câmera nova por ESP-NOW. Não fala com
+// a nuvem — o registro da máquina não muda, só a câmera aprende quem é.
 // -----------------------------------------------------------------------
-static void cb_boot_nova_enviar(lv_event_t* e) {
-    String cidade = String(lv_textarea_get_text(ta_boot_cidade));
-    String rua    = String(lv_textarea_get_text(ta_boot_rua));
-    cidade.trim(); rua.trim();
-    if (cidade.length() == 0 || rua.length() == 0) {
-        lv_label_set_text(lbl_boot_nova_status, "Preencha cidade e rua.");
+static void boot_idpush_enviar() {
+    String deviceKey = nvs_get_device_key();
+    if (deviceKey.length() == 0) {
+        lv_label_set_text(lbl_boot_idpush_status,
+            "Este display nao tem identidade salva.\nUse CADASTRAR > NOVA primeiro.");
         return;
     }
+    MsgIdPushReq m = {};
+    m.cab.tipo = MSG_IDPUSH_REQ; m.cab.id_maquina = ID_MAQUINA;
+    m.cab.origem = ORIGEM_DISPLAY; m.cab.seq = 0;
+    strncpy(m.deviceKey, deviceKey.c_str(), sizeof(m.deviceKey) - 1);
+    strncpy(m.cidade, nvs_get_uni_cidade().c_str(), sizeof(m.cidade) - 1);
+    strncpy(m.rua, nvs_get_uni_rua().c_str(), sizeof(m.rua) - 1);
+    m.numero = nvs_get_maq_numero();
+
+    if (!esp_now_is_peer_exist(MAC_CAMERA)) {
+        esp_now_peer_info_t p = {}; p.channel = 0; p.ifidx = WIFI_IF_STA; p.encrypt = false;
+        memcpy(p.peer_addr, MAC_CAMERA, 6); esp_now_add_peer(&p);
+    }
+    g_boot_idpush_chegou = false;
+    esp_now_send((uint8_t*)MAC_CAMERA, (uint8_t*)&m, sizeof(m));
+    lv_label_set_text_fmt(lbl_boot_idpush_status,
+        "Enviando identidade (%s - %s - Maquina %u) pra camera...",
+        m.cidade, m.rua, (unsigned)m.numero);
+}
+
+static void boot_ir_idpush(lv_event_t* e) {
+    lv_scr_load(scr_boot_idpush);
+    if (espnow_camera_perdida()) {
+        espnow_cacar_iniciar();
+        lv_label_set_text(lbl_boot_idpush_status, "Procurando a camera (volta 1 pelos 13 canais)...");
+    } else {
+        boot_idpush_enviar();
+    }
+}
+static void cb_boot_idpush_reenviar(lv_event_t* e) {
+    if (espnow_camera_perdida()) {
+        espnow_cacar_iniciar();
+        lv_label_set_text(lbl_boot_idpush_status, "Procurando a camera (volta 1 pelos 13 canais)...");
+        return;
+    }
+    boot_idpush_enviar();
+}
+void tela_boot_idpush_tick() {
+    if (lv_scr_act() != scr_boot_idpush) return;
+    static bool aguardando_caca = false;
+    if (espnow_cacando()) {
+        aguardando_caca = true;
+        lv_label_set_text_fmt(lbl_boot_idpush_status, "Procurando a camera (volta %d pelos 13 canais)...", espnow_cacar_volta());
+        return;
+    }
+    if (aguardando_caca) {
+        aguardando_caca = false;
+        if (espnow_cacar_achou()) boot_idpush_enviar();
+        else lv_label_set_text(lbl_boot_idpush_status, "Camera nao encontrada. Toque em Reenviar pra tentar de novo.");
+        return;
+    }
+    if (!g_boot_idpush_chegou) return;
+    g_boot_idpush_chegou = false;
+    lv_label_set_text(lbl_boot_idpush_status,
+        g_boot_idpush_ok ? "Identidade enviada! A camera ja pode operar."
+                          : "A camera recusou. Tente de novo.");
+}
+
+// -----------------------------------------------------------------------
+// NOVA — envia MSG_PROV_REQ
+// -----------------------------------------------------------------------
+static void _boot_nova_enviar(const String& cidade, const String& rua) {
     String deviceKey = boot_gerar_device_key();
 
     MsgProvReq m = {};
@@ -286,8 +387,52 @@ static void cb_boot_nova_enviar(lv_event_t* e) {
     lv_label_set_text(lbl_boot_nova_status, "Enviando pra nuvem...");
 }
 
+static void cb_boot_nova_enviar(lv_event_t* e) {
+    String cidade = String(lv_textarea_get_text(ta_boot_cidade));
+    String rua    = String(lv_textarea_get_text(ta_boot_rua));
+    cidade.trim(); rua.trim();
+    if (cidade.length() == 0 || rua.length() == 0) {
+        lv_label_set_text(lbl_boot_nova_status, "Preencha cidade e rua.");
+        return;
+    }
+    if (espnow_camera_perdida()) {
+        g_boot_nova_aguardando_caca = true;
+        lv_label_set_text(lbl_boot_nova_status, "Procurando a camera (volta 1 pelos 13 canais)...");
+        espnow_cacar_iniciar();
+        return;
+    }
+    _boot_nova_enviar(cidade, rua);
+}
+
 // Chamado no loop() — processa a resposta do provisionamento.
 void tela_boot_nova_tick() {
+    if (g_boot_nova_aguardando_caca) {
+        if (espnow_cacando()) {
+            lv_label_set_text_fmt(lbl_boot_nova_status, "Procurando a camera (volta %d pelos 13 canais)...", espnow_cacar_volta());
+            return;
+        }
+        g_boot_nova_aguardando_caca = false;
+        if (espnow_cacar_achou()) {
+            String cidade = String(lv_textarea_get_text(ta_boot_cidade));
+            String rua    = String(lv_textarea_get_text(ta_boot_rua));
+            cidade.trim(); rua.trim();
+            _boot_nova_enviar(cidade, rua);
+        } else {
+            lv_label_set_text(lbl_boot_nova_status, "Camera nao encontrada. Toque em Enviar pra tentar de novo.");
+        }
+        return;
+    }
+    if (g_boot_pick_aguardando_caca) {
+        if (espnow_cacando()) {
+            lv_label_set_text_fmt(lbl_boot_pick_status, "Procurando a camera (volta %d pelos 13 canais)...", espnow_cacar_volta());
+            return;
+        }
+        g_boot_pick_aguardando_caca = false;
+        uintptr_t idx = (uintptr_t)lv_obj_get_user_data(scr_boot_pick);
+        if (espnow_cacar_achou() && idx < g_uni_count) _boot_pick_enviar(idx);
+        else lv_label_set_text(lbl_boot_pick_status, "Camera nao encontrada. Toque em Confirmar pra tentar de novo.");
+        return;
+    }
     if (!g_boot_prov_chegou) return;
     g_boot_prov_chegou = false;
     // A resposta serve tanto pro formulario livre (scr_boot_nova) quanto pra
@@ -349,6 +494,7 @@ void tela_boot_tick() {
     tela_boot_nova_tick();
     tela_boot_subst_tick();
     tela_boot_busca_tick();
+    tela_boot_idpush_tick();
 }
 
 // -----------------------------------------------------------------------
@@ -457,11 +603,22 @@ void tela_boot_criar(void (*cb_concluido)()) {
     lv_obj_align(btn_sub, LV_ALIGN_CENTER, 170, 0);
     lv_obj_set_style_bg_color(btn_sub, COR_AMARELO, 0);
     lv_obj_t* lbl_sub = lv_label_create(btn_sub);
-    lv_label_set_text(lbl_sub, "SUBSTITUICAO");
+    lv_label_set_text(lbl_sub, "TROCOU O DISPLAY");
     lv_obj_set_style_text_font(lbl_sub, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(lbl_sub, lv_color_hex(0x000000), 0);
     lv_obj_center(lbl_sub);
     lv_obj_add_event_cb(btn_sub, boot_ir_subst, LV_EVENT_CLICKED, nullptr);
+
+    // Troca de CÂMERA — este display já tem identidade salva de antes, e é
+    // ele quem empurra ela pra câmera nova (ver boot_idpush_enviar acima).
+    lv_obj_t* btn_cam = lv_btn_create(scr_boot_tipo);
+    lv_obj_set_size(btn_cam, 300, 60);
+    lv_obj_align(btn_cam, LV_ALIGN_CENTER, 0, 100);
+    lv_obj_set_style_bg_color(btn_cam, COR_ATIVO, 0);
+    lv_obj_t* lbl_cam = lv_label_create(btn_cam);
+    lv_label_set_text(lbl_cam, "TROCOU A CAMERA");
+    lv_obj_center(lbl_cam);
+    lv_obj_add_event_cb(btn_cam, boot_ir_idpush, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t* btn_v2 = lv_btn_create(scr_boot_tipo);
     lv_obj_set_size(btn_v2, 120, 44);
@@ -704,6 +861,42 @@ void tela_boot_criar(void (*cb_concluido)()) {
     lv_label_set_text(lblv4, LV_SYMBOL_LEFT " Voltar");
     lv_obj_center(lblv4);
     lv_obj_add_event_cb(btn_v4, boot_ir_tipo, LV_EVENT_CLICKED, nullptr);
+
+    // ---- TROCOU A CÂMERA: display empurra sua identidade já salva ----
+    scr_boot_idpush = lv_obj_create(nullptr);
+    lv_obj_set_style_bg_color(scr_boot_idpush, COR_FUNDO, 0);
+    lv_obj_clear_flag(scr_boot_idpush, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t* t5 = lv_label_create(scr_boot_idpush);
+    lv_label_set_text(t5, "TROCA DE CAMERA");
+    lv_obj_set_style_text_color(t5, COR_DESTAQUE, 0);
+    lv_obj_set_style_text_font(t5, &lv_font_montserrat_18, 0);
+    lv_obj_align(t5, LV_ALIGN_TOP_MID, 0, 30);
+
+    lbl_boot_idpush_status = lv_label_create(scr_boot_idpush);
+    lv_label_set_text(lbl_boot_idpush_status, "");
+    lv_obj_set_style_text_color(lbl_boot_idpush_status, COR_TEXTO, 0);
+    lv_obj_set_style_text_align(lbl_boot_idpush_status, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(lbl_boot_idpush_status, 700);
+    lv_obj_align(lbl_boot_idpush_status, LV_ALIGN_CENTER, 0, -20);
+
+    lv_obj_t* btn_reenv = lv_btn_create(scr_boot_idpush);
+    lv_obj_set_size(btn_reenv, 260, 60);
+    lv_obj_align(btn_reenv, LV_ALIGN_CENTER, 0, 90);
+    lv_obj_set_style_bg_color(btn_reenv, COR_VERDE, 0);
+    lv_obj_t* lbl_reenv = lv_label_create(btn_reenv);
+    lv_label_set_text(lbl_reenv, "REENVIAR");
+    lv_obj_center(lbl_reenv);
+    lv_obj_add_event_cb(btn_reenv, cb_boot_idpush_reenviar, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t* btn_v5 = lv_btn_create(scr_boot_idpush);
+    lv_obj_set_size(btn_v5, 120, 44);
+    lv_obj_align(btn_v5, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_set_style_bg_color(btn_v5, COR_BORDA, 0);
+    lv_obj_t* lblv5 = lv_label_create(btn_v5);
+    lv_label_set_text(lblv5, LV_SYMBOL_LEFT " Voltar");
+    lv_obj_center(lblv5);
+    lv_obj_add_event_cb(btn_v5, [](lv_event_t* e) { espnow_cacar_cancelar(); boot_ir_tipo(e); }, LV_EVENT_CLICKED, nullptr);
 }
 
 void tela_boot_ativar() { lv_scr_load(scr_boot); }

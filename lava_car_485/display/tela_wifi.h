@@ -38,6 +38,8 @@ static volatile bool   g_scan_novo_dado = false; // uma página nova chegou (pro
 
 void tela_wifi_atualizar_status(); // definida mais abaixo; usada em tela_wifi_scan_tick()
 
+static bool g_wifi_aguardando_caca = false;   // true enquanto o "modo caça" roda em background
+
 static void _wifi_fazer_scan() {
     lv_label_set_text(lbl_wifi_status, "Buscando redes (via câmera)...");
     g_scan_count = 0;
@@ -81,6 +83,16 @@ void tela_wifi_scan_tick() {
         t_status = millis();
         tela_wifi_atualizar_status();
     }
+    if (g_wifi_aguardando_caca) {
+        if (espnow_cacando()) {
+            lv_label_set_text_fmt(lbl_wifi_status, "Procurando a camera (volta %d pelos 13 canais)...", espnow_cacar_volta());
+            return;
+        }
+        g_wifi_aguardando_caca = false;
+        if (espnow_cacar_achou()) _wifi_fazer_scan();
+        else lv_label_set_text(lbl_wifi_status, "Camera nao encontrada. Toque em Buscar pra tentar de novo.");
+        return;
+    }
     if (!g_scan_novo_dado) return;
     g_scan_novo_dado = false;
     if (g_scan_count == 0) {
@@ -107,6 +119,12 @@ static void cb_wifi_ver_senha(lv_event_t* e) {
 // Callbacks
 // -----------------------------------------------------------------------
 static void cb_wifi_scan(lv_event_t* e) {
+    if (espnow_camera_perdida()) {
+        g_wifi_aguardando_caca = true;
+        lv_label_set_text(lbl_wifi_status, "Procurando a camera (volta 1 pelos 13 canais)...");
+        espnow_cacar_iniciar();
+        return;
+    }
     _wifi_fazer_scan();
 }
 static void cb_wifi_salvar(lv_event_t* e) {
@@ -128,6 +146,7 @@ static void cb_wifi_salvar(lv_event_t* e) {
 }
 static void cb_wifi_voltar(lv_event_t* e) {
     if (kb_wifi) { lv_obj_del(kb_wifi); kb_wifi = nullptr; }
+    if (g_wifi_aguardando_caca) { espnow_cacar_cancelar(); g_wifi_aguardando_caca = false; }
     wifi_pausar_auto(false);                // retoma o auto-connect ao sair
     if (_cb_wifi_voltar) _cb_wifi_voltar();
 }

@@ -433,6 +433,7 @@ void loop() {
 
     // --- App / backend (roda sempre, mesmo bloqueado por licenca) ---
     comm_espnow_canal_tick();      // Opção A: segue o canal anunciado pela câmera (MSG_CANAL)
+    espnow_cacar_tick();           // "modo caça": varre os 13 canais em background quando pedido
     // Waveshares agora são RS-485 cabeado — sem keepalive/resgate de canal
     // de rádio (isso era só pro ESP-NOW). O alarme de comunicação delas
     // roda sozinho dentro da task de poll (modbus_waveshares.h).
