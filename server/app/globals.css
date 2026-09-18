@@ -80,3 +80,25 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 
 .login-card { max-width: 380px; margin: 12vh auto 0; background: linear-gradient(180deg, var(--verniz3) 0%, var(--verniz2) 26%); border: 1px solid var(--linha); border-radius: 20px; padding: 30px; display: grid; gap: 14px; }
 .err-msg { color: var(--erro); font-size: 14px; }
+
+/* Abas de máquinas (lado a lado) — /admin/maquinas */
+.maq-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.maq-tab {
+  appearance: none; cursor: pointer; text-align: left; flex: 0 0 auto;
+  background: var(--verniz2); border: 1px solid var(--linha); border-radius: 14px;
+  padding: 10px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 150px;
+}
+.maq-tab:hover { border-color: var(--jato); }
+.maq-tab.active { background: linear-gradient(180deg, var(--verniz3) 0%, var(--verniz2) 26%); border-color: var(--jato); }
+.maq-tab-titulo { font-size: 12px; font-weight: 600; color: var(--aco-d); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.maq-tab-sub { font-size: 14px; font-weight: 700; color: var(--cromo); display: flex; align-items: center; gap: 8px; }
+.maq-dot { width: 8px; height: 8px; border-radius: 99px; display: inline-block; }
+.maq-dot.ok { background: var(--ok); }
+.maq-dot.at { background: var(--atencao); }
+.maq-dot.err { background: var(--erro); }
+
+.maq-painel {
+  border: 1px solid var(--linha); border-radius: 16px; padding: 22px;
+  background: linear-gradient(180deg, var(--verniz3) 0%, var(--verniz2) 26%);
+}
+.maq-painel-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
