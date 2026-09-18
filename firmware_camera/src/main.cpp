@@ -127,6 +127,8 @@ static void hardResetRadio() { WiFi.persistent(false); WiFi.mode(WIFI_OFF); dela
 #define MSG_PROV_RESP 14  // câmera -> display: resultado do cadastro
 #define MSG_IDENT_REQ 15  // display -> câmera: "quem é você?" (troca de peça)
 #define MSG_IDENT_RESP 16 // câmera -> display: identidade já conhecida (ou nenhuma)
+#define MSG_UNI_REQ   17  // display -> câmera: busca unidades já cadastradas nesta cidade
+#define MSG_UNI_RESP  18  // câmera -> display: uma página da lista de unidades encontradas
 
 typedef struct __attribute__((packed)) {
   uint8_t tipo, id_maquina, origem, seq;
@@ -185,6 +187,27 @@ typedef struct __attribute__((packed)) {
   char      cidade[32];
   char      rua[40];
 } MsgIdentResp;
+
+// Busca de unidades já cadastradas — DEVE bater byte a byte com tipos.h do display.
+typedef struct __attribute__((packed)) {
+  CabEspNow cab;          // MSG_UNI_REQ
+  char      cidade[32];
+} MsgUniReq;
+#define UNI_STATIONID_LEN 28
+#define UNI_RUA_LEN       40
+#define UNI_POR_PAGINA    3
+typedef struct __attribute__((packed)) {
+  char    stationId[UNI_STATIONID_LEN];
+  char    rua[UNI_RUA_LEN];
+  uint8_t proximoNumero;
+} UniEntry;
+typedef struct __attribute__((packed)) {
+  CabEspNow cab;          // MSG_UNI_RESP
+  uint8_t   pagina;
+  uint8_t   total_paginas;
+  uint8_t   n;
+  UniEntry  unidades[UNI_POR_PAGINA];
+} MsgUniResp;
 
 // Lista de redes achadas no scan, paginada (ESP-NOW <= 250 bytes por pacote).
 // Só a câmera varre canais pra montar isso — o display nunca escaneia, só
@@ -277,6 +300,8 @@ static bool          g_identificada = false;   // já foi cadastrada com sucesso
 static volatile bool g_prov_pedido = false;    // recebeu MSG_PROV_REQ (faz o POST no loop)
 static volatile MsgProvReq g_prov_req;
 static volatile bool g_ident_pedido = false;   // recebeu MSG_IDENT_REQ (responde no loop)
+static volatile bool g_uni_pedido = false;     // recebeu MSG_UNI_REQ (faz o GET no loop)
+static volatile MsgUniReq g_uni_req;
 
 /* ===== LED ===== */
 static void blink(int n, int ms = 120) {
@@ -353,6 +378,11 @@ static void onRecvImpl(const uint8_t* mac, const uint8_t* data, int len) {
     }
   } else if (cab->tipo == MSG_IDENT_REQ) {
     g_ident_pedido = true;   // resposta é local (NVS já carregada), mas ainda assim só no loop
+  } else if (cab->tipo == MSG_UNI_REQ && len >= (int)sizeof(MsgUniReq)) {
+    if (!g_uni_pedido) {   // 1 por vez; se travar, técnico repete a busca na tela
+      memcpy((void*)&g_uni_req, data, sizeof(MsgUniReq));
+      g_uni_pedido = true;
+    }
   }
 }
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
@@ -414,7 +444,7 @@ static void processarEvento() {
   body += "}";
 
   HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
-  WiFiClientSecure tls; tls.setInsecure();
+  WiFiClientSecure tls; tls.setInsecure(); tls.setHandshakeTimeout(PILI_HTTP_TIMEOUT / 1000);
   int code = -1;
   if (http.begin(tls, g_api_url + path)) {
     http.addHeader("Content-Type", "application/json");
@@ -464,7 +494,7 @@ static void processarProvisionamento() {
   body += "}";
 
   HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
-  WiFiClientSecure tls; tls.setInsecure();
+  WiFiClientSecure tls; tls.setInsecure(); tls.setHandshakeTimeout(PILI_HTTP_TIMEOUT / 1000);
   int code = -1; String respBody;
   if (http.begin(tls, g_api_url + "/api/machine/provisionar")) {
     http.addHeader("Content-Type", "application/json");
@@ -665,6 +695,52 @@ static void atenderScanRequest() {
   Serial.printf("[scan] %d rede(s) encontrada(s), enviado em %d pagina(s)\n", n < 0 ? 0 : n, totalPaginas);
 }
 
+/* Atende um MSG_UNI_REQ do display: busca unidades já cadastradas pra essa
+ * cidade no backend (GET /api/machine/unidades) e manda a lista de volta
+ * paginada por ESP-NOW — mesmo padrão do atenderScanRequest() de Wi-Fi. */
+static void atenderUniRequest() {
+  MsgUniReq req; memcpy(&req, (const void*)&g_uni_req, sizeof(req));
+  String cidade = String((const char*)req.cidade);
+  Serial.printf("[uni] pedido do display -> buscando '%s'...\n", cidade.c_str());
+
+  StaticJsonDocument<2048> doc;
+  bool ok = false;
+  if (WiFi.status() == WL_CONNECTED && g_api_url.length() >= 8) {
+    HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
+    WiFiClientSecure tls; tls.setInsecure(); tls.setHandshakeTimeout(PILI_HTTP_TIMEOUT / 1000);
+    String url = g_api_url + "/api/machine/unidades?cidade=" + cidade;
+    if (http.begin(tls, url)) {
+      if (strlen(PILI_PROVISION_SECRET)) http.addHeader("x-provision-secret", PILI_PROVISION_SECRET);
+      int code = http.GET();
+      if (code == 200) ok = (deserializeJson(doc, http.getString()) == DeserializationError::Ok);
+      http.end();
+    }
+  }
+
+  JsonArray unidades = ok ? doc["unidades"].as<JsonArray>() : JsonArray();
+  int n = unidades.size();
+  uint8_t totalPaginas = (n <= 0) ? 1 : (uint8_t)((n + UNI_POR_PAGINA - 1) / UNI_POR_PAGINA);
+
+  for (uint8_t pg = 0; pg < totalPaginas; pg++) {
+    MsgUniResp r = {};
+    r.cab.tipo = MSG_UNI_RESP; r.cab.id_maquina = ID_MAQUINA;
+    r.cab.origem = ORIGEM_CAMERA; r.cab.seq = 0;
+    r.pagina = pg; r.total_paginas = totalPaginas;
+    uint8_t cnt = 0;
+    for (int i = pg * UNI_POR_PAGINA; i < n && cnt < UNI_POR_PAGINA; i++) {
+      JsonObject u = unidades[i];
+      strncpy(r.unidades[cnt].stationId, u["stationId"] | "", UNI_STATIONID_LEN - 1);
+      strncpy(r.unidades[cnt].rua,       u["rua"]       | "", UNI_RUA_LEN - 1);
+      r.unidades[cnt].proximoNumero = (uint8_t)(u["proximoNumero"] | 1);
+      cnt++;
+    }
+    r.n = cnt;
+    esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&r, sizeof(r));
+    delay(50);
+  }
+  Serial.printf("[uni] %d unidade(s) encontrada(s), enviado em %d pagina(s)\n", n < 0 ? 0 : n, totalPaginas);
+}
+
 static uint32_t g_tReconn = 0;   // usado pelo loop() (!conectada) e por aplicarCfgNovo() p/ forçar retry imediato
 
 /* Aplica credenciais novas recebidas do display (MSG_WIFI_CFG). */
@@ -691,7 +767,7 @@ static void fazerHeartbeat() {
   if (g_api_url.length() < 8) return;
   String url = g_api_url + PILI_HB_PATH;
   HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
-  WiFiClientSecure tls; tls.setInsecure();
+  WiFiClientSecure tls; tls.setInsecure(); tls.setHandshakeTimeout(PILI_HTTP_TIMEOUT / 1000);
   if (!http.begin(tls, url)) return;
   http.addHeader("Content-Type", "application/json");
   if (g_dev_key.length()) http.addHeader("x-device-key", g_dev_key);
@@ -789,6 +865,7 @@ static bool enviarFrame(camera_fb_t *fb) {
   if (g_api_url.length() < 8) return false;
   WiFiClientSecure client;
   client.setInsecure();               // TODO produção: pinning
+  client.setHandshakeTimeout(PILI_LPR_HTTP_TIMEOUT / 1000);
   HTTPClient http;
   http.setTimeout(PILI_LPR_HTTP_TIMEOUT);
   if (!http.begin(client, g_api_url + PILI_LPR_PATH)) return false;
@@ -897,6 +974,8 @@ void loop() {
   if (g_cfg_novo) { g_cfg_novo = false; aplicarCfgNovo(); }
   // (0b) Display pediu a lista de redes (tela de config) -> escaneia e responde
   if (g_scan_pedido) { g_scan_pedido = false; atenderScanRequest(); }
+  // (0b2) Display pediu unidades já cadastradas nesta cidade (tela de cadastro)
+  if (g_uni_pedido) { g_uni_pedido = false; atenderUniRequest(); }
   // (0c) Substituição de peça: responde de imediato, SEM depender de Wi-Fi/
   // internet — é a câmera local, não a nuvem, que confirma a identidade.
   responderIdentidade();

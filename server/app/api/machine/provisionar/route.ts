@@ -30,6 +30,13 @@ function normalizarEndereco(s: string): string {
     .toLowerCase().trim().replace(/\s+/g, " ");
 }
 
+/** Além de acento/maiúscula, ignora também o prefixo do logradouro (rua, av,
+ *  avenida, tv, travessa, r.) — achado em teste real: "Joao Carlon" (técnico
+ *  digitou sem "Rua") duplicou a unidade "Rua João Carlon" já cadastrada. */
+function normalizarRua(s: string): string {
+  return normalizarEndereco(s).replace(/^(rua|r\.|av|av\.|avenida|tv|tv\.|travessa)\s+/, "");
+}
+
 const Body = z
   .object({
     provisionSecret: z.string().optional(),
@@ -63,9 +70,9 @@ export async function POST(req: NextRequest) {
         // trazer todas e comparar em memória é simples e cobre "joao" ==
         // "João" — o que uma comparação só de maiúsculas não pegaria.
         const todas = await prisma.washStation.findMany();
-        const alvo = normalizarEndereco(cidadeAparada) + "|" + normalizarEndereco(ruaAparada);
+        const alvo = normalizarEndereco(cidadeAparada) + "|" + normalizarRua(ruaAparada);
         const existente = todas.find(
-          (s) => normalizarEndereco(s.city) + "|" + normalizarEndereco(s.address) === alvo
+          (s) => normalizarEndereco(s.city) + "|" + normalizarRua(s.address) === alvo
         );
         return existente ?? prisma.washStation.create({
           data: { name: ruaAparada, city: cidadeAparada, address: ruaAparada },

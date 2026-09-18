@@ -216,6 +216,17 @@ void cb_ir_boot_tipo() {
     lv_scr_load(scr_boot_tipo);
 }
 
+// Botão "ACESSO TÉCNICO" da tela de CADASTRO (scr_boot) — achado em teste
+// real: levar pro mesmo formulário de cadastro que o botão "CADASTRAR
+// MÁQUINA" (sem senha nenhuma) já abre tornava a senha inútil ali. Aqui a
+// senha dá acesso à tela de OPERAÇÃO normal (de onde já dá pra entrar em
+// Configuração > Wi-Fi) — ela é a relevância real de pedir senha nesse ponto.
+void cb_ir_boot() { navegar_para(TELA_BOOT); }
+void cb_ir_senha_tec_boot() {
+    tela_senha_configurar(SENHA_MODO_TEC, cb_ir_manual, cb_ir_boot);
+    navegar_para(TELA_SENHA);
+}
+
 // -----------------------------------------------------------------------
 // Setup
 // -----------------------------------------------------------------------

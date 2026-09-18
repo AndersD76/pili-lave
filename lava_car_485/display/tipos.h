@@ -141,6 +141,8 @@ extern void cb_ir_velocidades();
 extern void cb_ir_modelos();
 extern void cb_ir_manual();
 extern void cb_ir_senha_tec();   // botão TÉCNICO da tela manual — ver tela_boot.h
+extern void cb_ir_senha_tec_boot(); // botão ACESSO TÉCNICO da tela de cadastro — leva pra operação, não pro cadastro
+extern void cb_ir_wifi();        // botão CONFIGURAR WI-FI da tela de cadastro — ver tela_boot.h
 
 // -----------------------------------------------------------------------
 // Endereços Modbus
@@ -234,6 +236,8 @@ enum : uint8_t {
     MSG_PROV_RESP = 14,  // câmera -> display: resultado do cadastro
     MSG_IDENT_REQ = 15,  // display -> câmera: "quem é você?" (troca de peça — SUBSTITUIÇÃO)
     MSG_IDENT_RESP= 16,  // câmera -> display: identidade já conhecida (ou nenhuma)
+    MSG_UNI_REQ   = 17,  // display -> câmera: busca unidades já cadastradas nesta cidade
+    MSG_UNI_RESP  = 18,  // câmera -> display: uma página da lista de unidades encontradas
 };
 
 typedef struct __attribute__((packed)) {
@@ -366,6 +370,31 @@ typedef struct __attribute__((packed)) {      // Câmera -> Display
     char      cidade[32];
     char      rua[40];
 } MsgIdentResp;
+
+// ----- Busca de unidades já cadastradas (tela "Cadastrar" -> "Nova"), ANTES
+// de deixar o técnico digitar cidade/rua livre — evita duplicar unidade só
+// porque o endereço foi digitado um pouco diferente da vez anterior (achado
+// em teste real: "Joao Carlon" x "Rua João Carlon" criaram unidades
+// separadas). DEVE bater byte a byte com o firmware da câmera.
+typedef struct __attribute__((packed)) {      // Display -> Câmera
+    CabEspNow cab;           // tipo = MSG_UNI_REQ
+    char      cidade[32];    // ao menos 2 letras
+} MsgUniReq;
+#define UNI_STATIONID_LEN 28
+#define UNI_RUA_LEN       40
+#define UNI_POR_PAGINA    3
+typedef struct __attribute__((packed)) {
+    char    stationId[UNI_STATIONID_LEN];
+    char    rua[UNI_RUA_LEN];
+    uint8_t proximoNumero;   // próximo número livre nesta unidade (pré-preenche o spinbox)
+} UniEntry;
+typedef struct __attribute__((packed)) {      // Câmera -> Display
+    CabEspNow cab;                            // tipo = MSG_UNI_RESP
+    uint8_t   pagina;                         // 0-based
+    uint8_t   total_paginas;                  // 0 = nenhuma unidade encontrada
+    uint8_t   n;                              // entradas válidas nesta página
+    UniEntry  unidades[UNI_POR_PAGINA];
+} MsgUniResp;   // sizeof = 4+3+3*68 = 211 bytes
 
 #define HEARTBEAT_MS    200   // periodo do heartbeat da waveshare
 #define COMM_TIMEOUT_MS 700   // sem heartbeat por isso -> comunicacao perdida (erro seguro)
