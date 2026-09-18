@@ -121,8 +121,6 @@ static void hardResetRadio() { WiFi.persistent(false); WiFi.mode(WIFI_OFF); dela
 #define MSG_HB_RESP   8   // câmera -> display: resposta do backend
 #define MSG_EVT       9   // display -> câmera: evento p/ a nuvem (car-entered/wash-complete/fault)
 #define MSG_EVT_ACK  10   // câmera -> display: confirmação do evento (200 OK)
-#define MSG_SCAN_REQ 11   // display -> câmera: "escaneia as redes e me diga"
-#define MSG_SCAN_RESP 12  // câmera -> display: uma página da lista de redes encontradas
 
 typedef struct __attribute__((packed)) {
   uint8_t tipo, id_maquina, origem, seq;
@@ -137,8 +135,6 @@ typedef struct __attribute__((packed)) {
   uint8_t   prog;      // programId (wash-complete)
   char      res[40];   // reservationId ("" = sem reserva)
   char      source[8]; // "" (app) ou "remote"
-  char      errcode[64]; // código/msg do erro (só usado em fault; "" senão) — era
-                          // 24, curto demais pras mensagens reais de auto_erro()
 } MsgEvt;
 
 typedef struct __attribute__((packed)) {
@@ -149,26 +145,6 @@ typedef struct __attribute__((packed)) {
 } MsgEvtAck;
 
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal; } MsgCanal;
-
-typedef struct __attribute__((packed)) { CabEspNow cab; } MsgScanReq;
-
-// Lista de redes achadas no scan, paginada (ESP-NOW <= 250 bytes por pacote).
-// Só a câmera varre canais pra montar isso — o display nunca escaneia, só
-// fica parado no canal 1 recebendo essa lista e o MSG_CANAL de sempre.
-#define SCAN_SSID_LEN 24
-#define SCAN_POR_PAGINA 4
-typedef struct __attribute__((packed)) {
-  char    ssid[SCAN_SSID_LEN];
-  uint8_t canal;
-  int8_t  rssi;
-} ScanEntry;
-typedef struct __attribute__((packed)) {
-  CabEspNow cab;                        // tipo = MSG_SCAN_RESP
-  uint8_t   pagina;                     // 0-based
-  uint8_t   total_paginas;              // 0 = nenhuma rede encontrada
-  uint8_t   n;                          // entradas válidas nesta página
-  ScanEntry redes[SCAN_POR_PAGINA];
-} MsgScanResp;   // sizeof = 4+3+4*26 = 111 bytes
 
 // ESP-NOW <= 250 bytes. Este struct = 231 bytes (DEVE bater com o display).
 typedef struct __attribute__((packed)) {
@@ -218,7 +194,6 @@ static String        g_ssid, g_pass, g_api_url, g_dev_key;
 static uint8_t       g_canal_radio = ESPNOW_CANAL;   // canal atual do rádio (1 em CONFIG)
 static bool          g_cam_ok      = false;          // módulo da câmera inicializado?
 static volatile bool g_cfg_novo    = false;          // recebeu MSG_WIFI_CFG (aplica no loop)
-static volatile bool g_scan_pedido = false;          // recebeu MSG_SCAN_REQ (faz no loop)
 
 // Estado recebido do display p/ o heartbeat
 static volatile char     g_hb_state[12] = "FREE";
@@ -278,8 +253,6 @@ static void onRecvImpl(const uint8_t* mac, const uint8_t* data, int len) {
       memcpy((void*)&g_evt, data, sizeof(MsgEvt));
       g_evt_pende = true;
     }
-  } else if (cab->tipo == MSG_SCAN_REQ) {
-    g_scan_pedido = true;   // faz o scan de verdade no loop (é lento, não trava callback)
   } else if (cab->tipo == MSG_WIFI_CFG && len >= (int)sizeof(MsgWifiCfg)) {
     const MsgWifiCfg* m = (const MsgWifiCfg*)data;
     strncpy((char*)g_cfg_ssid, m->ssid,    sizeof(g_cfg_ssid) - 1);
@@ -340,11 +313,7 @@ static void processarEvento() {
     if (sep) body += ",";
     body += String("\"programId\":") + ev.prog; sep = true;
   }
-  if (strlen(ev.source)) { if (sep) body += ","; body += String("\"source\":\"") + ev.source + "\""; sep = true; }
-  if (ev.evt_tipo == 3 && strlen(ev.errcode)) {   // fault: código/msg do erro
-    if (sep) body += ",";
-    body += String("\"errorCode\":\"") + ev.errcode + "\"";
-  }
+  if (strlen(ev.source)) { if (sep) body += ","; body += String("\"source\":\"") + ev.source + "\""; }
   body += "}";
 
   HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
@@ -370,40 +339,10 @@ static void processarEvento() {
 }
 
 /* Anuncia MSG_CANAL no canal atual (pacote minúsculo, não mexe no Wi-Fi). */
-// Watchdog do ESP-NOW — encontrado em teste real: a câmera continuava 100%
-// normal no Wi-Fi/streaming/nuvem, mas o ESP-NOW simplesmente parou de sair
-// (display nunca mais recebia MSG_CANAL nem heartbeat). Como esp_now_send()
-// era "manda e esquece" (sem checar retorno), isso não deixava rastro
-// nenhum — só um reset manual resolvia. Agora conta falhas consecutivas de
-// envio; se ficar tempo demais sem NENHUM envio bem-sucedido, reinicia o
-// chip sozinho (esp_restart() limpa qualquer estado de rádio corrompido).
-#define ESPNOW_WD_MS 60000UL   // sem nenhum envio OK por esse tempo -> reinicia
-static uint32_t g_espnow_ultimo_ok = 0;
-
 static void anunciarCanal() {
   MsgCanal m; m.cab.tipo = MSG_CANAL; m.cab.id_maquina = ID_MAQUINA;
   m.cab.origem = ORIGEM_CAMERA; m.cab.seq = 0; m.canal = g_canal_radio;
-  esp_err_t r = esp_now_send((uint8_t*)MAC_BROADCAST, (uint8_t*)&m, sizeof(m));
-  if (r == ESP_OK) {
-    if (g_espnow_ultimo_ok == 0) Serial.println("[ESP-NOW-WD] voltou a enviar OK");
-    g_espnow_ultimo_ok = millis();
-  } else {
-    Serial.printf("[ESP-NOW-WD] falha ao enviar MSG_CANAL: 0x%x\n", (int)r);
-  }
-}
-
-// Chamar 1x/loop. Só age se JÁ tivemos pelo menos 1 envio OK desde o boot
-// (evita reiniciar em loop se o rádio nunca chegou a subir de verdade —
-// esse caso já tem o próprio hard-reset de boot cuidando).
-static void espnowWatchdogTick() {
-  if (g_espnow_ultimo_ok == 0) return;
-  if (millis() - g_espnow_ultimo_ok > ESPNOW_WD_MS) {
-    Serial.printf("[ESP-NOW-WD] sem envio OK ha %lums -> reiniciando\n",
-                  (unsigned long)(millis() - g_espnow_ultimo_ok));
-    Serial.flush();
-    delay(100);
-    esp_restart();
-  }
+  esp_now_send((uint8_t*)MAC_BROADCAST, (uint8_t*)&m, sizeof(m));
 }
 
 static void irParaCanal(uint8_t ch) {
@@ -412,55 +351,12 @@ static void irParaCanal(uint8_t ch) {
   g_canal_radio = ch;
 }
 
-/* Descobre o canal da rede por SCAN (NÃO conecta, não move o rádio de canal
- * de forma permanente) e anuncia MSG_CANAL(X) ainda no canal atual (1, onde
- * display/waveshares já estão esperando) ANTES de sair pra conectar de
- * verdade. Sem isso, WiFi.begin() já pula fisicamente pro canal do roteador
- * antes de qualquer anúncio sair — o handoff dependia só de sorte de hunt. */
-/* Retorna o canal encontrado (1-13) ou -1 se a rede não apareceu no scan. */
-static int8_t anunciarCanalAntesDeConectar() {
-  Serial.printf("[wifi] escaneando %s...\n", g_ssid.c_str());
-  int n = WiFi.scanNetworks();
-  int8_t canalAlvo = -1;
-  for (int i = 0; i < n; i++) {
-    if (WiFi.SSID(i) == g_ssid) { canalAlvo = WiFi.channel(i); break; }
-  }
-  WiFi.scanDelete();
-  if (canalAlvo < 1 || canalAlvo > 13) {
-    Serial.println("[wifi] rede nao apareceu no scan -> conecta direto (sem handoff)");
-    return -1;
-  }
-  // O scan pode ter deixado o radio em outro canal — volta pro canal atual
-  // (ESPNOW_CANAL/g_canal_radio) antes de anunciar, pra display+waveshares
-  // (que comecam nesse mesmo canal) ouvirem. O radio NÃO sai do canal 1 até
-  // aqui — só depois de anunciar é que migra, e migra DIRETO pro canal certo
-  // (sem passar pelos outros: nem no scan — que so LÊ os beacons de todos os
-  // canais sem entrar neles de fato — nem depois, indo direto pro alvo).
-  esp_wifi_set_channel(g_canal_radio, WIFI_SECOND_CHAN_NONE);
-  Serial.printf("[wifi] rede encontrada no canal %d (scan) -> anunciando no canal %d antes de migrar\n",
-                canalAlvo, g_canal_radio);
-  MsgCanal m; m.cab.tipo = MSG_CANAL; m.cab.id_maquina = ID_MAQUINA;
-  m.cab.origem = ORIGEM_CAMERA; m.cab.seq = 0; m.canal = (uint8_t)canalAlvo;
-  for (int i = 0; i < 5; i++) {   // repete pra dar chance de quem estiver ouvindo pegar
-    esp_now_send((uint8_t*)MAC_BROADCAST, (uint8_t*)&m, sizeof(m));
-    delay(200);
-  }
-  irParaCanal((uint8_t)canalAlvo);   // agora sim migra o proprio radio, DIRETO pro alvo
-  return canalAlvo;
-}
-
 static bool conectarWifi(uint32_t timeout_ms) {
   if (!temCreds()) return false;
-  int8_t canalAlvo = anunciarCanalAntesDeConectar();
   Serial.printf("[wifi] conectando em %s\n", g_ssid.c_str());
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
-  // Passa o canal já descoberto pro WiFi.begin() — sem isso, o driver faz o
-  // PRÓPRIO scan interno pra achar o roteador, podendo passear por outros
-  // canais durante a associação (quebra a garantia de "vai direto pro canal
-  // certo"). Com o canal na mão, ele associa direto, sem procurar de novo.
-  if (canalAlvo >= 1 && canalAlvo <= 13) WiFi.begin(g_ssid.c_str(), g_pass.c_str(), canalAlvo);
-  else                                   WiFi.begin(g_ssid.c_str(), g_pass.c_str());
+  WiFi.begin(g_ssid.c_str(), g_pass.c_str());
   uint32_t t = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t < timeout_ms) { blink(1, 250); Serial.print("."); delay(250); }
   if (WiFi.status() == WL_CONNECTED) {
@@ -472,43 +368,6 @@ static bool conectarWifi(uint32_t timeout_ms) {
   return false;
 }
 
-/* Atende um MSG_SCAN_REQ do display: escaneia as redes (só a câmera escaneia
- * — o display nunca mexe no próprio rádio pra isso) e manda a lista de volta
- * paginada por ESP-NOW. Roda no loop (fora do callback), é lento (~2-4s). */
-static void atenderScanRequest() {
-  Serial.println("[scan] pedido do display -> escaneando...");
-  int n = WiFi.scanNetworks();
-  uint8_t totalPaginas = (n <= 0) ? 0 : (uint8_t)((n + SCAN_POR_PAGINA - 1) / SCAN_POR_PAGINA);
-  if (totalPaginas == 0) totalPaginas = 1;  // manda 1 página vazia pra avisar "nada encontrado"
-
-  for (uint8_t pg = 0; pg < totalPaginas; pg++) {
-    MsgScanResp r = {};
-    r.cab.tipo = MSG_SCAN_RESP; r.cab.id_maquina = ID_MAQUINA;
-    r.cab.origem = ORIGEM_CAMERA; r.cab.seq = 0;
-    r.pagina = pg; r.total_paginas = totalPaginas;
-    uint8_t cnt = 0;
-    for (int i = pg * SCAN_POR_PAGINA; i < n && cnt < SCAN_POR_PAGINA; i++) {
-      strncpy(r.redes[cnt].ssid, WiFi.SSID(i).c_str(), SCAN_SSID_LEN - 1);
-      r.redes[cnt].canal = (uint8_t)WiFi.channel(i);
-      r.redes[cnt].rssi  = (int8_t)WiFi.RSSI(i);
-      cnt++;
-    }
-    r.n = cnt;
-    esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&r, sizeof(r));
-    delay(50);   // não afoga o rádio mandando tudo de uma vez
-  }
-  WiFi.scanDelete();
-  // O scan pode deixar o rádio "esquecido" em outro canal (ex: parado no
-  // último visitado, tipicamente 13) se a câmera não estiver 100% estável
-  // no momento — sem isso, ela para de anunciar o canal certo pro
-  // display/waveshares até cair e reconectar de novo. Garante explicitamente,
-  // como já é feito em anunciarCanalAntesDeConectar().
-  esp_wifi_set_channel(g_canal_radio, WIFI_SECOND_CHAN_NONE);
-  Serial.printf("[scan] %d rede(s) encontrada(s), enviado em %d pagina(s)\n", n < 0 ? 0 : n, totalPaginas);
-}
-
-static uint32_t g_tReconn = 0;   // usado pelo loop() (!conectada) e por aplicarCfgNovo() p/ forçar retry imediato
-
 /* Aplica credenciais novas recebidas do display (MSG_WIFI_CFG). */
 static void aplicarCfgNovo() {
   g_ssid = String((const char*)g_cfg_ssid);
@@ -518,13 +377,9 @@ static void aplicarCfgNovo() {
   nvsSalvar();
   Serial.printf("[cfg] novas credenciais: ssid='%s' (pass_len=%d) url='%s'\n",
                 g_ssid.c_str(), g_pass.length(), g_api_url.c_str());
-  // NÃO conecta aqui de forma bloqueante (isso travava o loop() por até ~24s —
-  // scan + espera de conexão — deixando o rádio mudo sem anunciar MSG_CANAL,
-  // e o display mostrava "sem contato" mesmo sem ter perdido o canal de
-  // verdade). Só desconecta e força o mecanismo de retry do loop() (que já
-  // existe, limitado a 8s por tentativa) a tentar já na próxima passagem.
   WiFi.disconnect();
-  g_tReconn = 0;   // "vencido" -> o ramo (!conectada) do loop() tenta de novo imediatamente
+  delay(100);
+  conectarWifi(20000);   // se conectar, o loop passa a anunciar o canal real
 }
 
 /* Heartbeat: POST <url>/api/machine/heartbeat com o estado vindo do display. */
@@ -568,8 +423,7 @@ static void fazerHeartbeat() {
       blink(2, 60);
     }
   } else {
-    Serial.printf("[hb] falha code=%d | rssi=%d heap=%u max_bloco=%u\n",
-                  code, (int)WiFi.RSSI(), (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+    Serial.printf("[hb] falha code=%d\n", code);
     blink(4, 60);
   }
   esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&r, sizeof(r));
@@ -596,20 +450,13 @@ static bool cameraInit() {
   c.jpeg_quality = PILI_JPEG_QUALITY;
   c.fb_count = psramFound() ? 2 : 1; // 2 buffers na PSRAM evitam FB-OVF em UXGA
   c.grab_mode = CAMERA_GRAB_LATEST;
-  Serial.printf("[cam] iniciando (psram=%d, heap=%u max_bloco=%u)...\n",
-                psramFound(), (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+  Serial.printf("[cam] iniciando (psram=%d, heap=%u)...\n", psramFound(), (unsigned)ESP.getFreeHeap());
   esp_err_t err = esp_camera_init(&c);
   if (err != ESP_OK) { Serial.printf("[cam] esp_camera_init FALHOU: 0x%x\n", err); return false; }
-  Serial.printf("[cam] iniciada OK (heap=%u max_bloco=%u)\n",
-                (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+  Serial.println("[cam] iniciada OK");
 
   sensor_t *s = esp_camera_sensor_get();
   if (s) { // placa refletiva: reforça contraste/nitidez
-    // hmirror NÃO mexido — o backend (vision.ts) já é calibrado pra câmera
-    // SEM espelho (rot=90 sem flop lê 0.996 pra essa montagem física; foi
-    // até testado com a placa RYD1E43, medido ao vivo). Ligar o hmirror
-    // aqui inverte o que o LPR já esperava, e ele passa a não reconhecer
-    // nada até estourar o orçamento de tentativas de orientação por foto.
     s->set_contrast(s, 2);
     s->set_sharpness(s, 2);
     s->set_saturation(s, 0);
@@ -622,73 +469,43 @@ static bool cameraInit() {
   return true;
 }
 
-/* Envia o frame cru pro /api/lpr/frame; resposta {plate, light} é só logada.
- * Timeout curto (PILI_LPR_HTTP_TIMEOUT) de propósito: quem controla as
- * tentativas/repouso é a máquina de estados em enviarFotoPeriodica(), que
- * nunca deixa isso travar o loop() por muito tempo de uma vez. */
+/* Envia o frame cru pro /api/lpr/frame; resposta {plate, light} é só logada. */
 static bool enviarFrame(camera_fb_t *fb) {
   if (WiFi.status() != WL_CONNECTED) return false;
   if (g_api_url.length() < 8) return false;
   WiFiClientSecure client;
   client.setInsecure();               // TODO produção: pinning
   HTTPClient http;
-  http.setTimeout(PILI_LPR_HTTP_TIMEOUT);
+  http.setTimeout(PILI_HTTP_TIMEOUT);
   if (!http.begin(client, g_api_url + PILI_LPR_PATH)) return false;
   http.addHeader("Content-Type", "image/jpeg");
   if (g_dev_key.length()) http.addHeader("x-device-key", g_dev_key.c_str());
 
-  Serial.printf("[dbg] heap %u (max_bloco=%u) | frame %uKB\n",
-                (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap(), (unsigned)(fb->len / 1024));
+  Serial.printf("[dbg] heap %u | frame %uKB\n", (unsigned)ESP.getFreeHeap(), (unsigned)(fb->len / 1024));
   int code = http.POST(fb->buf, fb->len);
   bool ok = (code >= 200 && code < 300); // 202 = aceito p/ análise em segundo plano
   if (ok) Serial.printf("[lpr] %uKB -> %s\n", (unsigned)(fb->len / 1024), http.getString().substring(0, 140).c_str());
-  else    Serial.printf("[lpr] envio falhou (%d: %s) | rssi=%d heap=%u max_bloco=%u\n",
-                         code, http.errorToString(code).c_str(), (int)WiFi.RSSI(),
-                         (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+  else    Serial.printf("[lpr] envio falhou (%d: %s)\n", code, http.errorToString(code).c_str());
   http.end();
   blink(ok ? 1 : 3);
   return ok;
 }
 
 /* Sem detecção de chegada, sem sensor: manda uma foto a cada PILI_ENVIO_INTERVALO_MS,
- * sempre. A nuvem decide o que fazer com cada frame (tem carro, tem placa, etc).
- *
- * Máquina de estados NÃO-BLOQUEANTE: no máximo UMA tentativa HTTP por
- * passagem de loop(). Entre tentativas o loop() volta a rodar inteiro
- * (anunciarCanal/heartbeat/etc continuam vivos) — antes disso, até 3
- * tentativas de 15s + delays cabiam numa única chamada e podiam travar o
- * rádio por ~47s, fazendo o display "perder contato" sem o canal ter
- * mudado de verdade. */
-static bool     g_lprEmAndamento = false;
-static camera_fb_t *g_lprFb      = nullptr;
-static int      g_lprTentativa   = 0;
-static uint32_t g_lprProxTentativaMs = 0;
-
+ * sempre. A nuvem decide o que fazer com cada frame (tem carro, tem placa, etc). */
 static void enviarFotoPeriodica() {
   static uint32_t tUltimoEnvio = 0;
+  if (millis() - tUltimoEnvio < PILI_ENVIO_INTERVALO_MS) return;
+  tUltimoEnvio = millis();
 
-  if (!g_lprEmAndamento) {
-    if (millis() - tUltimoEnvio < PILI_ENVIO_INTERVALO_MS) return;
-    tUltimoEnvio = millis();
-    g_lprFb = esp_camera_fb_get();
-    if (!g_lprFb) return;
-    g_lprTentativa = 0;
-    g_lprProxTentativaMs = millis();     // primeira tentativa: já, mas só na próxima volta do loop()
-    g_lprEmAndamento = true;
-    return;
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb) return;
+  bool ok = false;
+  for (int t = 0; t < 3 && !ok; t++) {             // até 3 tentativas, com folga crescente
+    if (t > 0) delay(800 * t);
+    ok = enviarFrame(fb);
   }
-
-  if ((int32_t)(millis() - g_lprProxTentativaMs) < 0) return;   // ainda não é hora desta tentativa
-
-  bool ok = enviarFrame(g_lprFb);
-  g_lprTentativa++;
-  if (ok || g_lprTentativa >= 3) {
-    esp_camera_fb_return(g_lprFb);
-    g_lprFb = nullptr;
-    g_lprEmAndamento = false;
-  } else {
-    g_lprProxTentativaMs = millis() + (PILI_LPR_RETRY_DELAY_MS * g_lprTentativa);
-  }
+  esp_camera_fb_return(fb);
 }
 
 /* HARD RESET do sensor: ciclo de energia via PWDN (alto = desligado -> baixo) e
@@ -733,34 +550,26 @@ void setup() {
 }
 
 void loop() {
-  static uint32_t tHb = 0, tCanal = 0;
+  static uint32_t tHb = 0, tCanal = 0, tReconn = 0;
 
   // (0) Aplica credenciais novas que chegaram do display
   if (g_cfg_novo) { g_cfg_novo = false; aplicarCfgNovo(); }
-  // (0b) Display pediu a lista de redes (tela de config) -> escaneia e responde
-  if (g_scan_pedido) { g_scan_pedido = false; atenderScanRequest(); }
 
   bool conectada = (WiFi.status() == WL_CONNECTED);
 
   // (1) Anuncia o canal SEMPRE (conectada = canal do roteador; config = canal 1),
   //     pra display+waveshares acharem a câmera pelo hunt.
   if (millis() - tCanal >= PILI_CANAL_ANUNCIO_MS) { tCanal = millis(); anunciarCanal(); }
-  espnowWatchdogTick();   // reinicia sozinha se o ESP-NOW parar de sair (ver comentario acima)
 
   if (!conectada) {
-    // MODO CONFIG (sem credenciais): rádio no canal 1, anunciando, PEDINDO
-    // credenciais e ouvindo MSG_WIFI_CFG. Só vale ir pro canal 1 aqui —
-    // se JÁ TEM credenciais e só caiu passageiramente (sinal fraco, por
-    // exemplo), ir pro canal 1 é um bug: muda o que anunciarCanal() manda
-    // pra "canal=1" a cada 1s, arrancando o display (que estava travado
-    // certo no canal do roteador) pra um canal errado, mesmo a queda sendo
-    // curta e a câmera prestes a reconectar no MESMO canal de sempre.
+    // MODO CONFIG: rádio no canal 1, anunciando, PEDINDO credenciais e
+    // ouvindo MSG_WIFI_CFG.
     static uint32_t tReq = 0;
     blink(1, 250);
-    if (!temCreds()) irParaCanal(1);
+    irParaCanal(1);
     if (!temCreds() && millis() - tReq > 3000) { tReq = millis(); pedirCredenciais(); }
-    if (temCreds() && millis() - g_tReconn > 15000) {   // tem creds mas caiu -> retenta
-      g_tReconn = millis();
+    if (temCreds() && millis() - tReconn > 15000) {   // tem creds mas caiu -> retenta
+      tReconn = millis();
       conectarWifi(8000);
     }
     return;

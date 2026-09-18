@@ -40,17 +40,3 @@
 //   competindo com o anúncio ESP-NOW de canal a cada 1s no mesmo rádio) ->
 //   falhas crescentes e frames perdidos. 8s dá fôlego pro handshake.
 #define PILI_ENVIO_INTERVALO_MS 8000
-
-// ── LPR: não-bloqueante, mas SEM cortar o timeout ─────────────
-//   Tentativa de otimização que deu errado (03/09): tinha posto esse timeout
-//   em 6000ms achando que "liberava o rádio mais rápido" — só que o handshake
-//   TLS com o Railway pra ~50KB de imagem às vezes passa legitimamente de 6s
-//   (mas quase sempre fica dentro de 15s). Resultado: matava handshakes que
-//   iam funcionar, e o LPR passou a falhar quase sempre (heartbeat, que ficou
-//   com 15s, continuava funcionando de vez em quando — foi essa diferença que
-//   entregou o bug). Voltou a bater com PILI_HTTP_TIMEOUT porque a máquina de
-//   estados em enviarFotoPeriodica() (uma tentativa por passagem de loop())
-//   já resolve o problema de travar o rádio por várias tentativas empilhadas
-//   — não precisa mais cortar o timeout de UMA tentativa pra isso.
-#define PILI_LPR_HTTP_TIMEOUT   PILI_HTTP_TIMEOUT  // 15000ms, igual ao heartbeat
-#define PILI_LPR_RETRY_DELAY_MS  800  // ms, multiplicado pelo nº da tentativa
