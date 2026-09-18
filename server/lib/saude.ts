@@ -11,7 +11,7 @@
  */
 import { prisma } from "./prisma";
 import { HEARTBEAT_OFFLINE_S, machineAvailability } from "./reservations";
-import { avisarAdmins } from "./push";
+import { avisarAdmins, avisarCliente } from "./push";
 
 /** Sem foto por este tempo = câmera caiu (ela manda ~1 a cada 8s). */
 export const CAMERA_OFFLINE_S = 180;
@@ -32,6 +32,9 @@ export type Diagnostico = {
   maquinaStatus: string;
   displaySegundos: number | null;
   cameraSegundos: number | null;
+  /** Máquina diagnosticada e o lavador dela (se houver) — pra avisar só quem cuida dela. */
+  machineId: string | null;
+  operadorId: string | null;
 };
 
 const AVISO_PADRAO = "Máquina não disponível no momento. Tente novamente em alguns minutos.";
@@ -125,6 +128,8 @@ export async function diagnosticar(): Promise<Diagnostico> {
     maquinaStatus: m ? machineAvailability(m) : "DOWN",
     displaySegundos,
     cameraSegundos,
+    machineId: m?.id ?? null,
+    operadorId: m?.operadorId ?? null,
   };
 }
 
@@ -135,42 +140,57 @@ export async function diagnosticar(): Promise<Diagnostico> {
  */
 const JANELA_REPETICAO_MS = 10 * 60_000;
 
-export async function alertarAdmin(tipo: string, mensagem: string, extra?: unknown) {
-  /* Procura ESTE tipo na janela — antes olhava só o alerta mais recente, e
-   * dois problemas simultâneos (display + câmera) se anulavam: cada um via o
-   * outro no topo e gravava de novo a cada verificação. */
+export async function alertarAdmin(
+  tipo: string,
+  mensagem: string,
+  extra?: unknown,
+  machineId?: string | null,
+  operadorId?: string | null
+) {
+  /* Procura ESTE tipo NESTA máquina na janela — antes olhava só o tipo
+   * (sem distinguir máquina), e com mais de uma máquina no sistema o erro
+   * de uma abafava o aviso da outra: a primeira gravava o "MAQUINA_FALHA" e
+   * a segunda, mesmo sendo outra máquina, era descartada como repetição. */
   const desde = new Date(Date.now() - JANELA_REPETICAO_MS);
   const recentes = await prisma.event.findMany({
     where: { type: "alerta_admin", createdAt: { gte: desde } },
     orderBy: { createdAt: "desc" },
     take: 20,
   });
-  if (recentes.some((e) => (e.payload as { tipo?: string } | null)?.tipo === tipo)) return;
+  const chave = (e: { payload: unknown }) => {
+    const p = e.payload as { tipo?: string; machineId?: string | null } | null;
+    return `${p?.tipo}|${p?.machineId ?? ""}`;
+  };
+  if (recentes.some((e) => chave(e) === `${tipo}|${machineId ?? ""}`)) return;
 
   await prisma.event.create({
-    data: { type: "alerta_admin", payload: { tipo, mensagem, extra: extra ?? null } as object },
+    data: { type: "alerta_admin", payload: { tipo, mensagem, extra: extra ?? null, machineId: machineId ?? null } as object },
   });
   console.error(`[ALERTA ADMIN] ${tipo}: ${mensagem}`);
-  // no painel já aparece; o push é para o admin saber sem estar olhando
-  void avisarAdmins({ titulo: "PILI CLEAN — alerta", corpo: mensagem, url: "/admin", tag: `alerta-${tipo}` });
+  // no painel já aparece; o push é para alguém saber sem estar olhando
+  void avisarAdmins({ titulo: "PILI CLEAN — alerta", corpo: mensagem, url: "/admin", tag: `alerta-${tipo}-${machineId ?? ""}` });
+  // Lavador responsável por ESTA máquina também é avisado — é ele quem
+  // toma a providência no local; o admin nem sempre está por perto.
+  if (operadorId)
+    void avisarCliente(operadorId, { titulo: "Sua máquina precisa de atenção", corpo: mensagem, url: "/app", tag: `alerta-${tipo}` });
 }
 
-/** Verifica a saúde e alerta o admin quando houver problema. */
+/** Verifica a saúde e alerta o admin (+ o lavador da máquina) quando houver problema. */
 export async function verificarEAlertar(): Promise<Diagnostico> {
   const d = await diagnosticar();
   if (d.problemas.includes("MAQUINA_FALHA"))
-    await alertarAdmin("MAQUINA_FALHA", "A máquina reportou falha e parou.", d.detalhe);
+    await alertarAdmin("MAQUINA_FALHA", "A máquina reportou falha e parou.", d.detalhe, d.machineId, d.operadorId);
   if (d.problemas.includes("DISPLAY_OFFLINE"))
     await alertarAdmin(
       "DISPLAY_OFFLINE",
       "O display parou de se comunicar (queda de internet ou energia na máquina).",
-      d.detalhe
+      d.detalhe, d.machineId, d.operadorId
     );
   if (d.problemas.includes("CAMERA_OFFLINE"))
     await alertarAdmin(
       "CAMERA_OFFLINE",
       "A câmera parou de enviar fotos — o reconhecimento de placa está fora.",
-      d.detalhe
+      d.detalhe, d.machineId, d.operadorId
     );
   return d;
 }

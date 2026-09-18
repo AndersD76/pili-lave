@@ -104,3 +104,17 @@ export type Arrival = {
 export type WalletResp = {
   walletCents: number; reservedCents: number; availableCents: number; txs: WalletTx[];
 };
+
+/** Painel do lavador — só as máquinas que ele administra (ver /api/lavador/painel). */
+export type PeriodoLavador = { lavagens: number; faturamentoCents: number };
+export type MaquinaLavador = {
+  id: string;
+  numero: number;
+  unidade: { cidade: string; rua: string };
+  status: "FREE" | "WASHING" | "FAULT" | "OFFLINE" | "MAINTENANCE";
+  emFalha: boolean;
+  emManutencao: boolean;
+  hoje: PeriodoLavador;
+  semana: PeriodoLavador;
+  mes: PeriodoLavador;
+};

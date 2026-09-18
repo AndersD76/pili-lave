@@ -44,11 +44,25 @@ async function alternarManutencao(formData: FormData) {
   revalidatePath("/admin/maquinas");
 }
 
+async function definirOperador(formData: FormData) {
+  "use server";
+  if (!(await isAdmin())) return;
+  const id = String(formData.get("id"));
+  const operadorId = String(formData.get("operadorId") || "");
+  await prisma.machine.update({ where: { id }, data: { operadorId: operadorId || null } });
+  revalidatePath("/admin/maquinas");
+}
+
 export default async function AdminMaquinas() {
   await requireAdminPage();
   const machines = await prisma.machine.findMany({
-    include: { station: true },
+    include: { station: true, operador: true },
     orderBy: [{ station: { city: "asc" } }, { numero: "asc" }],
+  });
+  const lavadores = await prisma.user.findMany({
+    where: { role: "LAVADOR" },
+    select: { id: true, name: true, phone: true },
+    orderBy: { name: "asc" },
   });
 
   return (
@@ -60,7 +74,7 @@ export default async function AdminMaquinas() {
           <thead>
             <tr>
               <th>Unidade</th><th>Nº</th><th>Status</th><th>Última batida</th>
-              <th>Sensores</th><th>Licença</th><th>Ações</th>
+              <th>Sensores</th><th>Licença</th><th>Lavador</th><th>Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -94,6 +108,25 @@ export default async function AdminMaquinas() {
                     ) : (
                       <span className="chip ok">em dia ({dias}d)</span>
                     )}
+                  </td>
+                  <td>
+                    <form action={definirOperador} style={{ display: "flex", gap: 6 }}>
+                      <input type="hidden" name="id" value={m.id} />
+                      <select
+                        name="operadorId"
+                        defaultValue={m.operadorId ?? ""}
+                        className="field"
+                        style={{ height: 32, fontSize: 12, padding: "0 6px" }}
+                      >
+                        <option value="">— sem lavador —</option>
+                        {lavadores.map((l) => (
+                          <option key={l.id} value={l.id}>{l.name ?? l.phone}</option>
+                        ))}
+                      </select>
+                      <button className="btn ghost" type="submit" style={{ height: 32, padding: "0 10px", fontSize: 12 }}>
+                        Salvar
+                      </button>
+                    </form>
                   </td>
                   <td style={{ display: "flex", gap: 8 }}>
                     <form action={marcarPagamento}>

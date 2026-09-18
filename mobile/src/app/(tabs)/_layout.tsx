@@ -51,6 +51,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="minha-maquina"
+        options={{
+          title: "Minha Máquina",
+          // só existe pra quem é LAVADOR — pra todo mundo, a aba nem aparece
+          href: me?.role === "LAVADOR" ? undefined : null,
+          tabBarIcon: ({ color, size }) => <Ionicons name="build" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="perfil"
         options={{
           title: "Perfil",

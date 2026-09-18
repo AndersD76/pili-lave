@@ -111,13 +111,24 @@ export async function POST(req: NextRequest) {
     url: "/admin",
     tag: "alerta",
   });
+  // Lavador responsável por ESTA máquina é quem está por perto pra agir —
+  // não pode depender só do admin ver o painel.
+  if (auth.machine.operadorId)
+    void avisarCliente(auth.machine.operadorId, {
+      titulo: "Sua máquina parou por falha",
+      corpo: "Veja o motivo no display. Lavagens em andamento foram estornadas.",
+      url: "/app",
+      tag: "alerta",
+    });
 
   await alertarAdmin(
     "MAQUINA_FALHA",
     body.errorCode
       ? `A máquina parou por falha (${body.errorCode}). Veja o motivo no display.`
       : "A máquina parou por falha. O motivo aparece na tela do display.",
-    { errorCode: body.errorCode ?? null, estornadas, estornoCents }
+    { errorCode: body.errorCode ?? null, estornadas, estornoCents },
+    auth.machine.id,
+    auth.machine.operadorId
   );
 
   return NextResponse.json({
