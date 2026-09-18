@@ -57,6 +57,7 @@
 #include "lampada_app.h"
 #include "licenca.h"
 #include "tela_wifi.h"
+#include "tela_boot.h"   // cadastro da máquina (Nova/Substituição) + acesso técnico
 #include "esp_heap_caps.h"
 
 // Label global de status Wi-Fi — a funcao esta definida antes de setup()
@@ -78,6 +79,7 @@ typedef enum {
     TELA_SENHA       = 6,  // teclado numérico genérico
     TELA_SENHAS_CFG  = 7,  // alterar senhas (dentro de Config)
     TELA_WIFI        = 8,  // configuração Wi-Fi (dentro de Config)
+    TELA_BOOT        = 9,  // cadastro da máquina (1ª ligada, ou acesso técnico)
 } TelaAtiva;
 
 static TelaAtiva tela_atual = TELA_NONE;
@@ -151,6 +153,7 @@ void navegar_para(TelaAtiva destino) {
         case TELA_SENHA:       tela_senha_ativar();       break;
         case TELA_SENHAS_CFG:  tela_senhas_cfg_ativar();  break;
         case TELA_WIFI:        tela_wifi_ativar();        break;
+        case TELA_BOOT:        tela_boot_ativar();        break;
         default: break;
     }
     lvgl_port_unlock();
@@ -199,6 +202,18 @@ void cb_pagamento_sucesso() {
 void cb_ir_senha_pag() {
     tela_senha_configurar(SENHA_MODO_PAG, cb_pagamento_sucesso, cb_ir_manual);
     navegar_para(TELA_SENHA);
+}
+
+// Botão "TÉCNICO" da tela manual — mesma senha do acesso técnico do boot,
+// leva pro menu de cadastro (recadastrar unidade, repetir substituição).
+void cb_ir_boot_tipo();   // forward decl — usada aqui embaixo antes da própria definição
+void cb_ir_senha_tec() {
+    tela_senha_configurar(SENHA_MODO_TEC, cb_ir_boot_tipo, cb_ir_manual);
+    navegar_para(TELA_SENHA);
+}
+void cb_ir_boot_tipo() {
+    tela_atual = TELA_BOOT;   // pula o "lock" do navegar_para: sub-telas do boot usam lv_scr_load direto
+    lv_scr_load(scr_boot_tipo);
 }
 
 // -----------------------------------------------------------------------
@@ -344,10 +359,18 @@ void setup() {
     tela_wifi_criar(cb_ir_config);        // tela de configuracao Wi-Fi (Bloco 8.6)
     log_mem("after_screen_8_wifi");
 
+    log_mem("before_screen_9_boot");
+    tela_boot_criar(cb_ir_manual);        // cadastro da maquina (Nova/Substituicao)
+    log_mem("after_screen_9_boot");
+
     tela_config_set_wifi_cb(cb_ir_wifi);  // liga o botao Wi-Fi da tela de config
     lvgl_port_unlock();
 
-    navegar_para(TELA_MANUAL);
+    // Máquina ainda sem cadastro (1ª ligada, ou NVS apagada): entra direto
+    // na tela de cadastro — ela não tem serventia sem isso (não sabe pra
+    // qual unidade mandar heartbeat). Já cadastrada, segue igual sempre foi.
+    if (nvs_get_provisionado()) navegar_para(TELA_MANUAL);
+    else                        navegar_para(TELA_BOOT);
 
     Serial.printf("[LAVADORA] Display iniciado (heap livre pos-boot: %u bytes, maior bloco: %u bytes)\n",
                   (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
@@ -403,6 +426,7 @@ void loop() {
     // de rádio (isso era só pro ESP-NOW). O alarme de comunicação delas
     // roda sozinho dentro da task de poll (modbus_waveshares.h).
     tela_wifi_scan_tick();      // aplica a lista de redes assim que a câmera responde o scan
+    tela_boot_tick();           // cadastro da máquina (Nova/Substituição) — barato, só age nas telas próprias
     wifi_tick();                // Opção A: no-op (display sem Wi-Fi)
     backend_tick();
     licenca_tick();

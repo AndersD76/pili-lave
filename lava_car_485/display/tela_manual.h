@@ -482,6 +482,9 @@ void tela_manual_criar(void (*cb_config)(), void (*cb_auto)(), void (*cb_pagamen
     lv_obj_set_style_text_color(lbl_alarme, COR_VERMELHO, 0);
     lv_obj_set_pos(lbl_alarme, 452, 432);
 
+    lv_obj_t* btn_tecnico = criar_btn(scr_manual, "Tecnico", 580, 428, 100, 44);
+    lv_obj_add_event_cb(btn_tecnico, [](lv_event_t*) { cb_ir_senha_tec(); }, LV_EVENT_CLICKED, nullptr);
+
     btn_config = criar_btn(scr_manual, "Config", 690, 428, 105, 44);
     lv_obj_add_event_cb(btn_config, cb_btn_config, LV_EVENT_CLICKED, nullptr);
 

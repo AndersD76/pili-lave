@@ -21,6 +21,8 @@ bool wifi_espnow_handle(const uint8_t* mac, const uint8_t* data, int len);
 bool backend_espnow_handle(const uint8_t* mac, const uint8_t* data, int len);
 bool espnow_pode_varrer();
 void wifi_scan_espnow_handle(const uint8_t* data, int len);
+void boot_prov_espnow_handle(const uint8_t* data, int len);   // definida em tela_boot.h (incluído depois)
+void boot_ident_espnow_handle(const uint8_t* data, int len);
 
 static volatile uint8_t  g_canal_novo   = 0;   // Opção A: canal pedido pela câmera (aplica no loop)
 static volatile uint32_t g_cam_last_ms  = 0;   // última vez que ouvimos a câmera (p/ o alarme)
@@ -38,6 +40,12 @@ static void espnow_on_recv(const esp_now_recv_info_t* info, const uint8_t* data,
     }
     if (cab->tipo == MSG_SCAN_RESP) {
         g_cam_last_ms = millis(); wifi_scan_espnow_handle(data, len); return;
+    }
+    if (cab->tipo == MSG_PROV_RESP) {
+        g_cam_last_ms = millis(); boot_prov_espnow_handle(data, len); return;
+    }
+    if (cab->tipo == MSG_IDENT_RESP) {
+        g_cam_last_ms = millis(); boot_ident_espnow_handle(data, len); return;
     }
     // Opção A: a CÂMERA é a mestre de canal (Wi-Fi dela, não tem relação com
     // o barramento RS-485 das waveshares). MSG_CANAL avisa o canal do

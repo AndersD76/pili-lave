@@ -6,6 +6,7 @@
 
 #define SENHA_MODO_PAG 0
 #define SENHA_MODO_CFG 1
+#define SENHA_MODO_TEC 2   // acesso técnico (tela de boot: Cadastrar/Substituição)
 
 static lv_obj_t* scr_senha         = nullptr;
 static lv_obj_t* lbl_senha_display = nullptr;
@@ -60,7 +61,9 @@ static void cb_tecla_del(lv_event_t* e) {
 }
 
 static void cb_tecla_ok(lv_event_t* e) {
-    String esperada = (_senha_modo == SENHA_MODO_PAG) ? nvs_get_senha_pag() : nvs_get_senha_cfg();
+    String esperada = (_senha_modo == SENHA_MODO_PAG) ? nvs_get_senha_pag()
+                     : (_senha_modo == SENHA_MODO_TEC) ? nvs_get_senha_tec()
+                     : nvs_get_senha_cfg();
     if (esperada == String(_senha_digitada)) {
         limpa_senha();
         lv_label_set_text(lbl_senha_erro, "");

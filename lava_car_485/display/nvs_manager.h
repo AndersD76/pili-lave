@@ -42,6 +42,14 @@
 // Backend
 #define NVS_API_BASE        "api_base"      // string — URL base do backend
 #define NVS_DEVICE_KEY      "device_key"    // string — chave única desta máquina
+// Cadastro da máquina (unidade + número) — ver tela_boot.h
+#define NVS_PROVISIONADO    "provisionado"  // bool   — já passou pela tela de cadastro?
+#define NVS_UNI_CIDADE      "uni_cidade"    // string
+#define NVS_UNI_RUA         "uni_rua"       // string
+#define NVS_MAQ_NUMERO      "maq_numero"    // uint16 — posição desta máquina na unidade
+// Senha de acesso técnico (boot: "Cadastrar"/"Técnico"). TODO futuro: uma
+// senha por técnico (tabela no backend), pra saber quem mexeu.
+#define NVS_SENHA_TEC       "senha_tec"     // padrão "2828"
 // Heartbeat / licença
 #define NVS_LAST_HB_OK      "last_hb_ok"   // uint32 — timestamp Unix último heartbeat 200 OK
 #define NVS_LIC_DAYS        "lic_days"      // uint16 — último daysWithoutPayment recebido
@@ -113,6 +121,12 @@ void nvs_init() {
     if (!_nvs.isKey(NVS_LAST_RES_ID)) _nvs.putString(NVS_LAST_RES_ID, "");
     if (!_nvs.isKey(NVS_EVT_HEAD))    _nvs.putUChar(NVS_EVT_HEAD,     0);
     if (!_nvs.isKey(NVS_EVT_TAIL))    _nvs.putUChar(NVS_EVT_TAIL,     0);
+
+    if (!_nvs.isKey(NVS_PROVISIONADO)) _nvs.putBool(NVS_PROVISIONADO, false);
+    if (!_nvs.isKey(NVS_UNI_CIDADE))   _nvs.putString(NVS_UNI_CIDADE, "");
+    if (!_nvs.isKey(NVS_UNI_RUA))      _nvs.putString(NVS_UNI_RUA,    "");
+    if (!_nvs.isKey(NVS_MAQ_NUMERO))   _nvs.putUShort(NVS_MAQ_NUMERO, 0);
+    if (!_nvs.isKey(NVS_SENHA_TEC))    _nvs.putString(NVS_SENHA_TEC,  "2828");
 }
 
 static const char* _nvs_prog_key(int prog) {
@@ -267,6 +281,21 @@ String nvs_get_api_base()                { return _nvs.getString(NVS_API_BASE, "
 String nvs_get_device_key()              { return _nvs.getString(NVS_DEVICE_KEY, ""); }
 void   nvs_set_api_base(String s)        { _nvs.putString(NVS_API_BASE, s); }
 void   nvs_set_device_key(String s)      { _nvs.putString(NVS_DEVICE_KEY, s); }
+// =======================================================================
+// NVS — Cadastro da máquina (unidade + número) — ver tela_boot.h
+// =======================================================================
+bool    nvs_get_provisionado()           { return _nvs.getBool(NVS_PROVISIONADO, false); }
+void    nvs_set_provisionado(bool v)     { _nvs.putBool(NVS_PROVISIONADO, v); }
+String  nvs_get_uni_cidade()             { return _nvs.getString(NVS_UNI_CIDADE, ""); }
+String  nvs_get_uni_rua()                { return _nvs.getString(NVS_UNI_RUA, ""); }
+uint16_t nvs_get_maq_numero()            { return _nvs.getUShort(NVS_MAQ_NUMERO, 0); }
+void    nvs_set_identidade(String cidade, String rua, uint16_t numero) {
+    _nvs.putString(NVS_UNI_CIDADE, cidade);
+    _nvs.putString(NVS_UNI_RUA, rua);
+    _nvs.putUShort(NVS_MAQ_NUMERO, numero);
+    _nvs.putBool(NVS_PROVISIONADO, true);
+}
+String  nvs_get_senha_tec()              { return _nvs.getString(NVS_SENHA_TEC, "2828"); }
 // =======================================================================
 // NVS — Heartbeat / licença
 // =======================================================================

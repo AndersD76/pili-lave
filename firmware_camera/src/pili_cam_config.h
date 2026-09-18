@@ -22,6 +22,14 @@
 //   DISPLAY por ESP-NOW (MSG_WIFI_CFG) e ficam salvos no NVS da câmera.
 //   Os PADRÕES editáveis (URL/device-key pré-preenchidos) ficam na tela do display.
 
+// ── Cadastro de máquina (Nova/Substituição) ──────────────────
+//   Senha de FÁBRICA — a MESMA em todo firmware que vocês gravam (não é por
+//   instalação). Autoriza o POST /api/machine/provisionar; sem ela, qualquer
+//   um com uma câmera destas poderia plantar máquina falsa no seu sistema.
+//   Deixe vazio só em bancada de teste — igual PROVISION_SECRET vazio no
+//   servidor.
+#define PILI_PROVISION_SECRET ""
+
 // ── LPR ─────────────────────────────────────────────────────
 //   Sempre ativo, sem detecção: a câmera manda 1 foto pro backend
 //   (/api/lpr/frame) a cada PILI_ENVIO_INTERVALO_MS, o tempo todo (tenha

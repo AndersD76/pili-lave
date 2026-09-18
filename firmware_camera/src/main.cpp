@@ -123,6 +123,10 @@ static void hardResetRadio() { WiFi.persistent(false); WiFi.mode(WIFI_OFF); dela
 #define MSG_EVT_ACK  10   // câmera -> display: confirmação do evento (200 OK)
 #define MSG_SCAN_REQ 11   // display -> câmera: "escaneia as redes e me diga"
 #define MSG_SCAN_RESP 12  // câmera -> display: uma página da lista de redes encontradas
+#define MSG_PROV_REQ  13  // display -> câmera: cadastra máquina NOVA (unidade+número)
+#define MSG_PROV_RESP 14  // câmera -> display: resultado do cadastro
+#define MSG_IDENT_REQ 15  // display -> câmera: "quem é você?" (troca de peça)
+#define MSG_IDENT_RESP 16 // câmera -> display: identidade já conhecida (ou nenhuma)
 
 typedef struct __attribute__((packed)) {
   uint8_t tipo, id_maquina, origem, seq;
@@ -151,6 +155,36 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal; } MsgCanal;
 
 typedef struct __attribute__((packed)) { CabEspNow cab; } MsgScanReq;
+
+// Cadastro de máquina NOVA — DEVE bater byte a byte com tipos.h do display.
+typedef struct __attribute__((packed)) {
+  CabEspNow cab;          // MSG_PROV_REQ
+  char      deviceKey[24];
+  char      cidade[32];
+  char      rua[40];
+  uint16_t  numero;
+  char      stationId[28];
+} MsgProvReq;
+typedef struct __attribute__((packed)) {
+  CabEspNow cab;          // MSG_PROV_RESP
+  uint8_t   ok;
+  uint16_t  numero;
+  char      cidade[32];
+  char      rua[40];
+  char      erro[48];
+} MsgProvResp;
+
+// Identidade (troca de peça) — a câmera responde com o que já tem salvo,
+// sem precisar de internet nem consultar o backend de novo.
+typedef struct __attribute__((packed)) { CabEspNow cab; } MsgIdentReq;
+typedef struct __attribute__((packed)) {
+  CabEspNow cab;          // MSG_IDENT_RESP
+  uint8_t   temIdentidade;
+  char      deviceKey[24];
+  uint16_t  numero;
+  char      cidade[32];
+  char      rua[40];
+} MsgIdentResp;
 
 // Lista de redes achadas no scan, paginada (ESP-NOW <= 250 bytes por pacote).
 // Só a câmera varre canais pra montar isso — o display nunca escaneia, só
@@ -234,6 +268,16 @@ static volatile char     g_cfg_pass[65] = {0};
 static volatile char     g_cfg_url[128] = {0};
 static volatile char     g_cfg_key[64]  = {0};
 
+// Identidade da máquina (cadastro Nova/Substituição) — persistida na NVS,
+// sobrevive a troca de display (é a câmera que fica com a "memória boa").
+static String        g_cidade, g_rua;
+static uint16_t      g_numero = 0;
+static bool          g_identificada = false;   // já foi cadastrada com sucesso alguma vez?
+
+static volatile bool g_prov_pedido = false;    // recebeu MSG_PROV_REQ (faz o POST no loop)
+static volatile MsgProvReq g_prov_req;
+static volatile bool g_ident_pedido = false;   // recebeu MSG_IDENT_REQ (responde no loop)
+
 /* ===== LED ===== */
 static void blink(int n, int ms = 120) {
 #ifdef LED_STATUS
@@ -251,6 +295,10 @@ static void nvsCarregar() {
   g_pass    = prefs.getString("pass",   "");
   g_api_url = prefs.getString("apiurl", "");
   g_dev_key = prefs.getString("devkey", "");
+  g_cidade       = prefs.getString("cidade", "");
+  g_rua          = prefs.getString("rua",    "");
+  g_numero       = prefs.getUShort("numero", 0);
+  g_identificada = prefs.getBool("identific", false);
   prefs.end();
 }
 static void nvsSalvar() {
@@ -259,6 +307,17 @@ static void nvsSalvar() {
   prefs.putString("pass",   g_pass);
   prefs.putString("apiurl", g_api_url);
   prefs.putString("devkey", g_dev_key);
+  prefs.end();
+}
+// Salva só a identidade (separado de nvsSalvar pra não reescrever wifi
+// toda vez que reconfirmar/recadastrar a máquina).
+static void nvsSalvarIdentidade() {
+  prefs.begin("cam", false);
+  prefs.putString("cidade", g_cidade);
+  prefs.putString("rua", g_rua);
+  prefs.putUShort("numero", g_numero);
+  prefs.putBool("identific", g_identificada);
+  prefs.putString("devkey", g_dev_key);   // mesma chave usada como x-device-key nas outras rotas
   prefs.end();
 }
 static bool temCreds() { return g_ssid.length() > 0; }
@@ -287,6 +346,13 @@ static void onRecvImpl(const uint8_t* mac, const uint8_t* data, int len) {
     strncpy((char*)g_cfg_url,  m->api_url, sizeof(g_cfg_url)  - 1);
     strncpy((char*)g_cfg_key,  m->dev_key, sizeof(g_cfg_key)  - 1);
     g_cfg_novo = true;   // aplica no loop (fora do callback)
+  } else if (cab->tipo == MSG_PROV_REQ && len >= (int)sizeof(MsgProvReq)) {
+    if (!g_prov_pedido) {   // 1 por vez; se travar, técnico manda de novo pela tela
+      memcpy((void*)&g_prov_req, data, sizeof(MsgProvReq));
+      g_prov_pedido = true;
+    }
+  } else if (cab->tipo == MSG_IDENT_REQ) {
+    g_ident_pedido = true;   // resposta é local (NVS já carregada), mas ainda assim só no loop
   }
 }
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
@@ -367,6 +433,98 @@ static void processarEvento() {
     esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&a, sizeof(a));
   }
   g_evt_pende = false;   // falhou? o display reenvia no próximo ciclo de heartbeat
+}
+
+/* Cadastro de máquina NOVA: o display manda cidade/rua/número (ou stationId
+ * de uma unidade já existente) + a identidade que ele mesmo gerou; a câmera
+ * só faz o POST porque é quem tem HTTPS. Usa x-provision-secret (senha de
+ * fábrica, NÃO é o x-device-key — a máquina ainda não existe no backend). */
+static void processarProvisionamento() {
+  if (!g_prov_pedido) return;
+  g_prov_pedido = false;
+  MsgProvReq req; memcpy(&req, (const void*)&g_prov_req, sizeof(req));
+
+  MsgProvResp resp = {};
+  resp.cab.tipo = MSG_PROV_RESP; resp.cab.id_maquina = ID_MAQUINA;
+  resp.cab.origem = ORIGEM_CAMERA; resp.cab.seq = 0;
+
+  if (WiFi.status() != WL_CONNECTED || g_api_url.length() < 8) {
+    strncpy(resp.erro, "Camera sem internet no momento", sizeof(resp.erro) - 1);
+    esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&resp, sizeof(resp));
+    return;
+  }
+
+  String body = "{\"deviceKey\":\"" + String(req.deviceKey) + "\"";
+  if (strlen(req.stationId)) body += ",\"stationId\":\"" + String(req.stationId) + "\"";
+  else {
+    body += ",\"cidade\":\"" + String(req.cidade) + "\"";
+    body += ",\"rua\":\"" + String(req.rua) + "\"";
+  }
+  if (req.numero > 0) body += ",\"numero\":" + String(req.numero);
+  body += "}";
+
+  HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
+  WiFiClientSecure tls; tls.setInsecure();
+  int code = -1; String respBody;
+  if (http.begin(tls, g_api_url + "/api/machine/provisionar")) {
+    http.addHeader("Content-Type", "application/json");
+    if (strlen(PILI_PROVISION_SECRET)) http.addHeader("x-provision-secret", PILI_PROVISION_SECRET);
+    code = http.POST(body);
+    respBody = http.getString();
+    http.end();
+  }
+  Serial.printf("[prov] -> %d %s\n", code, respBody.substring(0, 160).c_str());
+
+  if (code >= 200 && code < 300) {
+    StaticJsonDocument<384> doc;
+    if (deserializeJson(doc, respBody) == DeserializationError::Ok) {
+      resp.ok = 1;
+      resp.numero = doc["numero"] | 0;
+      String cidade = doc["unidade"]["cidade"] | "";
+      String rua    = doc["unidade"]["rua"]    | "";
+      strncpy(resp.cidade, cidade.c_str(), sizeof(resp.cidade) - 1);
+      strncpy(resp.rua,    rua.c_str(),    sizeof(resp.rua)    - 1);
+      // Sucesso: esta câmera passa a se identificar com essa deviceKey daqui
+      // pra frente (heartbeat, LPR, eventos) — igual o dev_key vindo do
+      // MSG_WIFI_CFG normal, só que agora gerado pelo próprio display.
+      g_dev_key      = String(req.deviceKey);
+      g_cidade       = resp.cidade;
+      g_rua          = resp.rua;
+      g_numero       = resp.numero;
+      g_identificada = true;
+      nvsSalvarIdentidade();
+    } else {
+      strncpy(resp.erro, "Resposta da nuvem invalida", sizeof(resp.erro) - 1);
+    }
+  } else {
+    StaticJsonDocument<192> doc;
+    if (deserializeJson(doc, respBody) == DeserializationError::Ok && doc["error"].is<const char*>())
+      strncpy(resp.erro, (const char*)doc["error"], sizeof(resp.erro) - 1);
+    else
+      strncpy(resp.erro, "Falha ao cadastrar (sem detalhe)", sizeof(resp.erro) - 1);
+  }
+  esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&resp, sizeof(resp));
+}
+
+/* Substituição de peça: o display NOVO (NVS em branco) pergunta "quem é
+ * você?" — responde com o que JÁ ESTÁ SALVO localmente, sem tocar na nuvem.
+ * Sem resposta = câmera fora do alcance do rádio (outra máquina, prédio,
+ * cidade); é essa distância física que impede pegar a máquina errada. */
+static void responderIdentidade() {
+  if (!g_ident_pedido) return;
+  g_ident_pedido = false;
+
+  MsgIdentResp resp = {};
+  resp.cab.tipo = MSG_IDENT_RESP; resp.cab.id_maquina = ID_MAQUINA;
+  resp.cab.origem = ORIGEM_CAMERA; resp.cab.seq = 0;
+  resp.temIdentidade = g_identificada ? 1 : 0;
+  if (g_identificada) {
+    strncpy(resp.deviceKey, g_dev_key.c_str(), sizeof(resp.deviceKey) - 1);
+    resp.numero = g_numero;
+    strncpy(resp.cidade, g_cidade.c_str(), sizeof(resp.cidade) - 1);
+    strncpy(resp.rua, g_rua.c_str(), sizeof(resp.rua) - 1);
+  }
+  esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&resp, sizeof(resp));
 }
 
 /* Anuncia MSG_CANAL no canal atual (pacote minúsculo, não mexe no Wi-Fi). */
@@ -739,6 +897,9 @@ void loop() {
   if (g_cfg_novo) { g_cfg_novo = false; aplicarCfgNovo(); }
   // (0b) Display pediu a lista de redes (tela de config) -> escaneia e responde
   if (g_scan_pedido) { g_scan_pedido = false; atenderScanRequest(); }
+  // (0c) Substituição de peça: responde de imediato, SEM depender de Wi-Fi/
+  // internet — é a câmera local, não a nuvem, que confirma a identidade.
+  responderIdentidade();
 
   bool conectada = (WiFi.status() == WL_CONNECTED);
 
@@ -769,6 +930,7 @@ void loop() {
   // CONECTADA: heartbeat + LPR + relay de eventos.
   if (millis() - tHb >= PILI_HB_INTERVALO_MS) { tHb = millis(); fazerHeartbeat(); }
   processarEvento();
+  processarProvisionamento();
 
   if (!g_cam_ok) {
     static uint32_t tCamRetry = 0;

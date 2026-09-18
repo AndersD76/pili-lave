@@ -140,6 +140,7 @@ extern void cb_ir_config();
 extern void cb_ir_velocidades();
 extern void cb_ir_modelos();
 extern void cb_ir_manual();
+extern void cb_ir_senha_tec();   // botão TÉCNICO da tela manual — ver tela_boot.h
 
 // -----------------------------------------------------------------------
 // Endereços Modbus
@@ -229,6 +230,10 @@ enum : uint8_t {
     MSG_EVT_ACK   = 10,  // câmera -> display: evento entregue (200 OK) -> pop da fila NVS
     MSG_SCAN_REQ  = 11,  // display -> câmera: "escaneia as redes e me diga"
     MSG_SCAN_RESP = 12,  // câmera -> display: uma página da lista de redes encontradas
+    MSG_PROV_REQ  = 13,  // display -> câmera: cadastra máquina NOVA (unidade+número)
+    MSG_PROV_RESP = 14,  // câmera -> display: resultado do cadastro
+    MSG_IDENT_REQ = 15,  // display -> câmera: "quem é você?" (troca de peça — SUBSTITUIÇÃO)
+    MSG_IDENT_RESP= 16,  // câmera -> display: identidade já conhecida (ou nenhuma)
 };
 
 typedef struct __attribute__((packed)) {
@@ -324,6 +329,43 @@ typedef struct __attribute__((packed)) {      // Câmera -> Display
     uint8_t   n;                              // entradas válidas nesta página
     ScanEntry redes[SCAN_POR_PAGINA];
 } MsgScanResp;   // sizeof = 4+3+4*26 = 111 bytes
+
+// ----- Cadastro de máquina NOVA (tela "Cadastrar" -> "Nova" no display) —
+// o display gera e guarda o deviceKey (identidade desta máquina) UMA vez;
+// a câmera só relaya pro backend (POST /api/machine/provisionar) porque é
+// ela quem tem HTTPS. DEVE bater byte a byte com o firmware da câmera.
+typedef struct __attribute__((packed)) {      // Display -> Câmera
+    CabEspNow cab;           // tipo = MSG_PROV_REQ
+    char      deviceKey[24]; // identidade única desta máquina (gerada 1x pelo display)
+    char      cidade[32];    // "" quando stationId já identifica a unidade
+    char      rua[40];
+    uint16_t  numero;        // 0 = deixa o backend escolher o próximo livre
+    char      stationId[28]; // "" = unidade NOVA (usa cidade/rua acima)
+} MsgProvReq;
+typedef struct __attribute__((packed)) {      // Câmera -> Display
+    CabEspNow cab;           // tipo = MSG_PROV_RESP
+    uint8_t   ok;
+    uint16_t  numero;
+    char      cidade[32];
+    char      rua[40];
+    char      erro[48];      // preenchido só quando ok=0
+} MsgProvResp;
+
+// ----- Identidade (tela "Cadastrar" -> "Substituição") — o display NOVO
+// (peça de troca, NVS em branco) pergunta pra câmera JÁ INSTALADA "quem é
+// você?", em vez de escolher numa lista vinda da nuvem. Só existe resposta
+// se houver uma câmera de verdade ao alcance do rádio local (ESP-NOW não
+// atravessa cidade nenhuma) — é essa distância física que evita pegar a
+// máquina errada, não uma senha.
+typedef struct __attribute__((packed)) { CabEspNow cab; } MsgIdentReq;   // Display -> Câmera
+typedef struct __attribute__((packed)) {      // Câmera -> Display
+    CabEspNow cab;            // tipo = MSG_IDENT_RESP
+    uint8_t   temIdentidade;  // 0 = esta câmera nunca foi cadastrada ainda
+    char      deviceKey[24];
+    uint16_t  numero;
+    char      cidade[32];
+    char      rua[40];
+} MsgIdentResp;
 
 #define HEARTBEAT_MS    200   // periodo do heartbeat da waveshare
 #define COMM_TIMEOUT_MS 700   // sem heartbeat por isso -> comunicacao perdida (erro seguro)
