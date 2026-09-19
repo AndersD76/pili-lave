@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { signToken } from "@/lib/auth";
 import { verifyPassword } from "@/lib/password";
+import { meComSolicitacoes } from "@/lib/meShape";
 
 const Body = z.object({
   email: z.string().trim().toLowerCase().email(),
@@ -21,12 +22,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: ERRO_GENERICO }, { status: 401 });
 
   const token = await signToken({ id: user.id, phone: user.phone, role: user.role });
-  return NextResponse.json({
-    token,
-    user: {
-      id: user.id, phone: user.phone, email: user.email, name: user.name,
-      cpf: user.cpf, role: user.role, walletCents: user.walletCents,
-      cadastroPendente: user.cadastroPendente, cadastroTipoSolicitado: user.cadastroTipoSolicitado,
-    },
-  });
+  return NextResponse.json({ token, user: await meComSolicitacoes(user) });
 }

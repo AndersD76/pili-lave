@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import type { ComponentProps } from "react";
-import { Linking, Pressable, ScrollView, Text, View } from "react-native";
-import { API_URL } from "@/lib/api";
+import { useState } from "react";
+import { Alert, Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { api, API_URL, type TipoParceiro } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { Btn, Card, Label, Screen, Sub } from "@/ui";
 import { C, F } from "@/theme";
@@ -43,10 +44,65 @@ function Divider() {
 const LABEL_TIPO: Record<string, string> = {
   LAVADOR: "Lavador", COMISSAO1: "Vendedor 1", COMISSAO2: "Vendedor 2", ALUGUEL: "Aluguel",
 };
+const TIPOS: TipoParceiro[] = ["LAVADOR", "COMISSAO1", "COMISSAO2", "ALUGUEL"];
+
+function SecaoParticipacao() {
+  const { me, refresh } = useSession();
+  const [enviando, setEnviando] = useState<TipoParceiro | null>(null);
+  const solicitacoes = me?.solicitacoes ?? [];
+
+  async function pedir(tipo: TipoParceiro) {
+    setEnviando(tipo);
+    try {
+      await api("/api/parceiro/solicitar", { body: { tipo } });
+      await refresh();
+    } catch (e) {
+      Alert.alert("Não deu", e instanceof Error ? e.message : "Não foi possível enviar o pedido");
+    } finally {
+      setEnviando(null);
+    }
+  }
+
+  return (
+    <View>
+      <Label>Também é lavador, vendedor ou aluguel?</Label>
+      <Card style={{ gap: 10 }}>
+        {TIPOS.map((tipo) => {
+          const s = solicitacoes.find((x) => x.tipo === tipo);
+          return (
+            <View key={tipo} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Text style={{ fontFamily: F.bodyBold, fontSize: 14, color: C.cromo }}>{LABEL_TIPO[tipo]}</Text>
+              {s?.status === "APROVADA" ? (
+                <View style={{ backgroundColor: "rgba(80,200,120,0.15)", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
+                  <Text style={{ fontFamily: F.bodyBold, fontSize: 12, color: C.ok }}>Aprovado</Text>
+                </View>
+              ) : s?.status === "PENDENTE" ? (
+                <View style={{ backgroundColor: "rgba(230,180,60,0.15)", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
+                  <Text style={{ fontFamily: F.bodyBold, fontSize: 12, color: C.atencao }}>Em análise</Text>
+                </View>
+              ) : (
+                <Pressable
+                  onPress={() => pedir(tipo)}
+                  disabled={enviando === tipo}
+                  style={{ borderWidth: 1.5, borderColor: C.jato, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, opacity: enviando === tipo ? 0.5 : 1 }}
+                >
+                  <Text style={{ fontFamily: F.bodyBold, fontSize: 12, color: C.jato }}>
+                    {enviando === tipo ? "Enviando..." : s?.status === "REJEITADA" ? "Pedir de novo" : "Pedir"}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          );
+        })}
+      </Card>
+    </View>
+  );
+}
 
 export default function Perfil() {
   const { me, signOut } = useSession();
   const isLavador = me?.role === "LAVADOR" || me?.role === "ADMIN";
+  const pendentes = (me?.solicitacoes ?? []).filter((s) => s.status === "PENDENTE");
 
   return (
     <Screen>
@@ -63,12 +119,12 @@ export default function Perfil() {
           </View>
         </Card>
 
-        {me?.cadastroPendente && (
+        {pendentes.length > 0 && (
           <Card style={{ borderColor: C.atencao, borderWidth: 1.5 }}>
             <Text style={{ fontFamily: F.bodyBold, fontSize: 14, color: C.cromo }}>
-              Cadastro como {LABEL_TIPO[me.cadastroTipoSolicitado ?? ""] ?? "parceiro"} em análise
+              Pedido{pendentes.length > 1 ? "s" : ""} em análise: {pendentes.map((s) => LABEL_TIPO[s.tipo]).join(", ")}
             </Text>
-            <Sub>O admin ainda vai aprovar seu pedido. Enquanto isso você usa o app normalmente como cliente.</Sub>
+            <Sub>O admin ainda vai aprovar. Enquanto isso você usa o app normalmente como cliente.</Sub>
           </Card>
         )}
 
@@ -106,6 +162,8 @@ export default function Perfil() {
             <Row icon="finger-print" text="Biometria" disabled suffix="em breve" />
           </Card>
         </View>
+
+        <SecaoParticipacao />
 
         {isLavador && (
           <Pressable

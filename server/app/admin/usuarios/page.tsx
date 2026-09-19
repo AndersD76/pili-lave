@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireAdminPage } from "@/lib/admin";
 import { AdminNav } from "../nav";
-import { definirPapel, aprovarCadastro, rejeitarCadastro } from "./actions";
+import { definirPapel, aprovarSolicitacao, rejeitarSolicitacao } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,12 +19,16 @@ const LABEL_TIPO: Record<string, string> = {
 export default async function AdminUsuarios() {
   await requireAdminPage();
   const [pendentes, users] = await Promise.all([
-    prisma.user.findMany({
-      where: { cadastroPendente: true },
+    prisma.solicitacaoParceiro.findMany({
+      where: { status: "PENDENTE" },
+      include: { user: true },
       orderBy: { createdAt: "asc" },
     }),
     prisma.user.findMany({
-      include: { _count: { select: { orders: true, vehicles: true } } },
+      include: {
+        _count: { select: { orders: true, vehicles: true } },
+        solicitacoes: { where: { status: "PENDENTE" } },
+      },
       orderBy: { createdAt: "desc" },
       take: 200,
     }),
@@ -38,8 +42,9 @@ export default async function AdminUsuarios() {
         <>
           <h2 className="section-title">Cadastros a aprovar ({pendentes.length})</h2>
           <p style={{ color: "var(--aco-d)", fontSize: 13, marginBottom: 14 }}>
-            Essas pessoas se cadastraram pedindo pra virar Lavador, Comissão 1/2 ou Aluguel — continuam Cliente normal
-            até você aprovar. Só depois de aprovadas elas aparecem pra vincular numa máquina.
+            Pedidos pra virar Lavador, Comissão 1/2 ou Aluguel — a pessoa continua Cliente normal até você aprovar, e
+            pode ter mais de um pedido ao mesmo tempo (ex: Lavador de uma máquina e Aluguel de outra). Só depois de
+            aprovada ela aparece pra vincular numa máquina.
           </p>
           <div className="tbl-wrap" style={{ marginBottom: 30 }}>
             <table className="tbl">
@@ -47,19 +52,19 @@ export default async function AdminUsuarios() {
                 <tr><th>Telefone</th><th>Nome</th><th>Pediu para ser</th><th>Desde</th><th></th></tr>
               </thead>
               <tbody>
-                {pendentes.map((u) => (
-                  <tr key={u.id}>
-                    <td>{u.phone}</td>
-                    <td>{u.name ?? "—"}</td>
-                    <td><span className="chip at">{LABEL_TIPO[u.cadastroTipoSolicitado ?? ""] ?? u.cadastroTipoSolicitado}</span></td>
-                    <td>{u.createdAt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
+                {pendentes.map((s) => (
+                  <tr key={s.id}>
+                    <td>{s.user.phone}</td>
+                    <td>{s.user.name ?? "—"}</td>
+                    <td><span className="chip at">{LABEL_TIPO[s.tipo] ?? s.tipo}</span></td>
+                    <td>{s.createdAt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
                     <td style={{ display: "flex", gap: 6 }}>
-                      <form action={aprovarCadastro}>
-                        <input type="hidden" name="id" value={u.id} />
+                      <form action={aprovarSolicitacao}>
+                        <input type="hidden" name="id" value={s.id} />
                         <button className="btn ghost" type="submit" style={{ height: 32, padding: "0 10px", fontSize: 12 }}>Aprovar</button>
                       </form>
-                      <form action={rejeitarCadastro}>
-                        <input type="hidden" name="id" value={u.id} />
+                      <form action={rejeitarSolicitacao}>
+                        <input type="hidden" name="id" value={s.id} />
                         <button className="btn ghost" type="submit" style={{ height: 32, padding: "0 10px", fontSize: 12 }}>Rejeitar</button>
                       </form>
                     </td>
@@ -87,11 +92,11 @@ export default async function AdminUsuarios() {
                   {u.role === "LAVADOR" && <span className="chip ok">Lavador</span>}
                   {u.role === "PARCEIRO" && <span className="chip at">Parceiro</span>}
                   {u.role === "CLIENT" && <span className="chip off">Cliente</span>}
-                  {u.cadastroPendente && (
-                    <span className="chip at" style={{ marginLeft: 6 }}>
-                      pediu {LABEL_TIPO[u.cadastroTipoSolicitado ?? ""] ?? u.cadastroTipoSolicitado}
+                  {u.solicitacoes.map((s) => (
+                    <span key={s.id} className="chip at" style={{ marginLeft: 6 }}>
+                      pediu {LABEL_TIPO[s.tipo] ?? s.tipo}
                     </span>
-                  )}
+                  ))}
                 </td>
                 <td>{money(u.walletCents)}</td>
                 <td>{u._count.orders}</td>

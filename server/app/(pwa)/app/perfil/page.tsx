@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, fmtPlate, money, setToken, type Me, type Vehicle } from "../client";
+import { api, fmtPlate, money, setToken, type Me, type TipoParceiro, type Vehicle } from "../client";
 import { Nav } from "../nav";
 import { AvisosPush } from "../AvisosPush";
 
@@ -19,6 +19,9 @@ export default function Perfil() {
   const [atual, setAtual] = useState("");
   const [nova, setNova] = useState("");
   const [msgSenha, setMsgSenha] = useState("");
+
+  const [enviandoTipo, setEnviandoTipo] = useState<TipoParceiro | null>(null);
+  const [erroSolicitacao, setErroSolicitacao] = useState("");
 
   const carregar = () => {
     api<Me>("/api/me").then((m) => { setMe(m); setName(m.name ?? ""); })
@@ -64,17 +67,32 @@ export default function Perfil() {
   const LABEL_TIPO: Record<string, string> = {
     LAVADOR: "Lavador", COMISSAO1: "Vendedor 1", COMISSAO2: "Vendedor 2", ALUGUEL: "Aluguel",
   };
+  const TIPOS: TipoParceiro[] = ["LAVADOR", "COMISSAO1", "COMISSAO2", "ALUGUEL"];
+  const solicitacoes = me?.solicitacoes ?? [];
+  const pendentes = solicitacoes.filter((s) => s.status === "PENDENTE");
+
+  async function pedirParticipacao(tipo: TipoParceiro) {
+    setErroSolicitacao(""); setEnviandoTipo(tipo);
+    try {
+      await api("/api/parceiro/solicitar", { body: { tipo } });
+      carregar();
+    } catch (e) {
+      setErroSolicitacao(e instanceof Error ? e.message : "Não foi possível enviar o pedido");
+    } finally {
+      setEnviandoTipo(null);
+    }
+  }
 
   return (
     <>
       <h1>Perfil</h1>
 
-      {me?.cadastroPendente && (
+      {pendentes.length > 0 && (
         <div className="card">
-          <div className="lab">Cadastro em análise</div>
+          <div className="lab">Pedido{pendentes.length > 1 ? "s" : ""} em análise</div>
           <p className="sub">
-            Seu pedido pra virar {LABEL_TIPO[me.cadastroTipoSolicitado ?? ""] ?? "parceiro"} ainda não foi aprovado
-            pelo admin. Você continua usando o app normalmente como cliente enquanto isso.
+            {pendentes.map((s) => LABEL_TIPO[s.tipo]).join(", ")} ainda não {pendentes.length > 1 ? "foram aprovados" : "foi aprovado"} pelo
+            admin. Você continua usando o app normalmente como cliente enquanto isso.
           </p>
         </div>
       )}
@@ -131,6 +149,28 @@ export default function Perfil() {
           )}
         </div>
       )}
+
+      <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="lab">Também é lavador, vendedor ou aluguel?</div>
+        {TIPOS.map((tipo) => {
+          const s = solicitacoes.find((x) => x.tipo === tipo);
+          return (
+            <div key={tipo} className="item">
+              <span>{LABEL_TIPO[tipo]}</span>
+              {s?.status === "APROVADA" ? (
+                <span className="sub">Aprovado</span>
+              ) : s?.status === "PENDENTE" ? (
+                <span className="sub">Em análise</span>
+              ) : (
+                <button className="btn-mini" onClick={() => pedirParticipacao(tipo)} disabled={enviandoTipo === tipo}>
+                  {enviandoTipo === tipo ? "Enviando…" : s?.status === "REJEITADA" ? "Pedir de novo" : "Pedir"}
+                </button>
+              )}
+            </div>
+          );
+        })}
+        {erroSolicitacao && <p className="err">{erroSolicitacao}</p>}
+      </div>
 
       {isLavador && <Link className="btn" href="/app/scanner">Modo lavador — escanear voucher</Link>}
       {me?.role === "ADMIN" && <Link className="btn ghost" href="/admin">Painel do admin</Link>}

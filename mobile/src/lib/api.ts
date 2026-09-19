@@ -54,11 +54,14 @@ export async function api<T = unknown>(
   return json as T;
 }
 
+export type TipoParceiro = "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL";
+export type StatusSolicitacao = "PENDENTE" | "APROVADA" | "REJEITADA";
+export type Solicitacao = { tipo: TipoParceiro; status: StatusSolicitacao };
+
 export type Me = {
   id: string; phone: string; email?: string | null; name: string | null; cpf?: string | null;
   role: "CLIENT" | "LAVADOR" | "PARCEIRO" | "ADMIN"; walletCents: number;
-  cadastroPendente?: boolean;
-  cadastroTipoSolicitado?: "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL" | null;
+  solicitacoes?: Solicitacao[];
 };
 export type Program = { id: number; nome: string; precoCents: number };
 export type Vehicle = { id: string; plate: string; brand: string | null; model: string | null; defaultProgramId: number | null };

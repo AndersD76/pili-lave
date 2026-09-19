@@ -7,6 +7,14 @@ export default function TabsLayout() {
   const { ready, me } = useSession();
   if (ready && !me) return <Redirect href="/login" />;
 
+  // Cada capacidade (lavador / comissão-aluguel) é independente — dá pra
+  // ter as duas abas ao mesmo tempo se a pessoa tiver aprovação pras duas.
+  const temMinhaMaquina = me?.role === "LAVADOR" || me?.role === "ADMIN"
+    || (me?.solicitacoes ?? []).some((s) => s.tipo === "LAVADOR" && s.status === "APROVADA");
+  const temComissoes = (me?.solicitacoes ?? []).some(
+    (s) => s.tipo !== "LAVADOR" && s.status === "APROVADA"
+  );
+
   return (
     <Tabs
       screenOptions={{
@@ -54,8 +62,7 @@ export default function TabsLayout() {
         name="minha-maquina"
         options={{
           title: "Minha Máquina",
-          // só existe pra quem é LAVADOR — pra todo mundo, a aba nem aparece
-          href: me?.role === "LAVADOR" ? undefined : null,
+          href: temMinhaMaquina ? undefined : null,
           tabBarIcon: ({ color, size }) => <Ionicons name="build" size={size} color={color} />,
         }}
       />
@@ -63,8 +70,7 @@ export default function TabsLayout() {
         name="minhas-comissoes"
         options={{
           title: "Comissões",
-          // só existe pra quem é PARCEIRO (comissão 1/2, aluguel)
-          href: me?.role === "PARCEIRO" ? undefined : null,
+          href: temComissoes ? undefined : null,
           tabBarIcon: ({ color, size }) => <Ionicons name="cash" size={size} color={color} />,
         }}
       />

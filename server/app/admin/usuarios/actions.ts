@@ -17,25 +17,40 @@ export async function definirPapel(formData: FormData) {
   revalidatePath("/admin/usuarios");
 }
 
-/** LAVADOR vira LAVADOR de verdade; qualquer outro tipo pedido (comissão
- *  1/2, aluguel) vira PARCEIRO — o tipo exato só importa por máquina, na
- *  hora de vincular em MachineParticipante (ver admin/maquinas). */
-export async function aprovarCadastro(formData: FormData) {
+/**
+ * Aprova UMA solicitação (não o usuário inteiro) — uma pessoa pode ter
+ * várias pendentes ao mesmo tempo (ex: Lavador de uma máquina + Aluguel de
+ * outra), cada uma aprovada/rejeitada independente. LAVADOR sempre "ganha"
+ * de PARCEIRO no campo role (dá acesso ao scanner de vouchers); role nunca
+ * é rebaixado por essa ação, só promovido.
+ */
+export async function aprovarSolicitacao(formData: FormData) {
   if (!(await isAdmin())) return;
   const id = String(formData.get("id"));
-  const user = await prisma.user.findUnique({ where: { id } });
-  if (!user || !user.cadastroPendente || !user.cadastroTipoSolicitado) return;
-  const role = user.cadastroTipoSolicitado === "LAVADOR" ? "LAVADOR" : "PARCEIRO";
-  await prisma.user.update({ where: { id }, data: { role, cadastroPendente: false } });
+  const solicitacao = await prisma.solicitacaoParceiro.findUnique({ where: { id }, include: { user: true } });
+  if (!solicitacao || solicitacao.status !== "PENDENTE") return;
+
+  const { user } = solicitacao;
+  const novoRole =
+    user.role === "ADMIN" || user.role === "LAVADOR"
+      ? user.role
+      : solicitacao.tipo === "LAVADOR"
+      ? "LAVADOR"
+      : "PARCEIRO";
+
+  await prisma.$transaction([
+    prisma.solicitacaoParceiro.update({ where: { id }, data: { status: "APROVADA", decididoEm: new Date() } }),
+    prisma.user.update({ where: { id: user.id }, data: { role: novoRole } }),
+  ]);
   revalidatePath("/admin/usuarios");
 }
 
-export async function rejeitarCadastro(formData: FormData) {
+export async function rejeitarSolicitacao(formData: FormData) {
   if (!(await isAdmin())) return;
   const id = String(formData.get("id"));
-  await prisma.user.update({
+  await prisma.solicitacaoParceiro.update({
     where: { id },
-    data: { cadastroPendente: false, cadastroTipoSolicitado: null },
+    data: { status: "REJEITADA", decididoEm: new Date() },
   });
   revalidatePath("/admin/usuarios");
 }

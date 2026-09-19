@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 
 export async function AdminNav() {
-  const pendentes = await prisma.user.count({ where: { cadastroPendente: true } });
+  const pendentes = await prisma.solicitacaoParceiro.count({ where: { status: "PENDENTE" } });
 
   return (
     <nav className="admin-nav">

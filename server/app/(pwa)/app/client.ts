@@ -47,11 +47,14 @@ export function fmtPlate(plate: string): string {
   return plate.length === 7 ? `${plate.slice(0, 3)} ${plate.slice(3)}` : plate;
 }
 
+export type TipoParceiro = "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL";
+export type StatusSolicitacao = "PENDENTE" | "APROVADA" | "REJEITADA";
+export type Solicitacao = { tipo: TipoParceiro; status: StatusSolicitacao };
+
 export type Me = {
   id: string; phone: string; email: string | null; name: string | null;
   role: "CLIENT" | "LAVADOR" | "PARCEIRO" | "ADMIN"; walletCents: number;
-  cadastroPendente?: boolean;
-  cadastroTipoSolicitado?: "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL" | null;
+  solicitacoes?: Solicitacao[];
 };
 export type Program = { id: number; nome: string; precoCents: number };
 export type Vehicle = { id: string; plate: string; brand: string | null; model: string | null };

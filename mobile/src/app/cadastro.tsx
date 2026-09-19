@@ -1,15 +1,12 @@
 import { router } from "expo-router";
 import { useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
-import { api, type Me } from "@/lib/api";
+import { api, type Me, type TipoParceiro } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { Btn, ErrText, Input, Screen, Sub } from "@/ui";
 import { C, F } from "@/theme";
 
-type TipoSolicitado = "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL" | null;
-
-const OPCOES_TIPO: { k: TipoSolicitado; label: string }[] = [
-  { k: null, label: "Sou cliente" },
+const OPCOES_TIPO: { k: TipoParceiro; label: string }[] = [
   { k: "LAVADOR", label: "Sou lavador" },
   { k: "COMISSAO1", label: "Sou vendedor 1" },
   { k: "COMISSAO2", label: "Sou vendedor 2" },
@@ -19,6 +16,13 @@ const OPCOES_TIPO: { k: TipoSolicitado; label: string }[] = [
 /**
  * Primeiro acesso: substitui o login por SMS. Cadastro → login automático →
  * onboarding → tela de créditos (ver src/app/onboarding.tsx).
+ *
+ * Todo mundo já vira cliente automaticamente ao criar a conta — não existe
+ * "sou cliente" pra marcar. Os chips abaixo são pedidos ADICIONAIS, e dá pra
+ * marcar mais de um ao mesmo tempo (ex: lavador de uma máquina e também
+ * recebe aluguel de outra) — cada um vira uma solicitação independente,
+ * aprovada uma a uma pelo admin. Quem não marcar nada aqui ainda pode pedir
+ * depois, a qualquer momento, pelo perfil.
  */
 export default function Cadastro() {
   const { signIn } = useSession();
@@ -27,12 +31,16 @@ export default function Cadastro() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [tipoSolicitado, setTipoSolicitado] = useState<TipoSolicitado>(null);
+  const [tiposSolicitados, setTiposSolicitados] = useState<TipoParceiro[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const podeEnviar = name.trim().length >= 2 && phone.replace(/\D/g, "").length >= 10
     && /\S+@\S+\.\S+/.test(email) && password.length > 0 && confirmPassword.length > 0;
+
+  function alternarTipo(tipo: TipoParceiro) {
+    setTiposSolicitados((atual) => (atual.includes(tipo) ? atual.filter((t) => t !== tipo) : [...atual, tipo]));
+  }
 
   async function submit() {
     setError("");
@@ -41,17 +49,18 @@ export default function Cadastro() {
       const r = await api<{ token: string; user: Me }>("/api/auth/register", {
         body: {
           name: name.trim(), phone, email: email.trim().toLowerCase(), password, confirmPassword,
-          tipoSolicitado: tipoSolicitado ?? undefined,
+          tiposSolicitados,
         },
         auth: false,
       });
       await signIn(r.token, r.user);
-      if (r.user.cadastroPendente) {
+      if (tiposSolicitados.length > 0) {
+        const labels = tiposSolicitados
+          .map((t) => OPCOES_TIPO.find((o) => o.k === t)?.label.replace(/^(Sou|Recebo) /, ""))
+          .join(", ");
         Alert.alert(
-          "Cadastro em análise",
-          "Seu pedido pra virar " +
-            (OPCOES_TIPO.find((o) => o.k === tipoSolicitado)?.label.replace("Sou ", "") ?? "parceiro") +
-            " foi enviado. Enquanto isso você já pode usar o app normalmente como cliente."
+          "Pedido enviado",
+          `Seu pedido pra virar ${labels} foi enviado pro admin. Enquanto isso você já usa o app normalmente como cliente.`
         );
       }
       router.replace("/onboarding");
@@ -87,14 +96,16 @@ export default function Cadastro() {
           />
 
           <View>
-            <Text style={{ fontFamily: F.bodyBold, fontSize: 13, color: C.acoD, marginBottom: 8 }}>Tipo de conta</Text>
+            <Text style={{ fontFamily: F.bodyBold, fontSize: 13, color: C.acoD, marginBottom: 8 }}>
+              Também é lavador, vendedor ou recebe aluguel de alguma máquina? (opcional, dá pra marcar mais de um)
+            </Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
               {OPCOES_TIPO.map((op) => {
-                const sel = tipoSolicitado === op.k;
+                const sel = tiposSolicitados.includes(op.k);
                 return (
                   <Pressable
-                    key={op.label}
-                    onPress={() => setTipoSolicitado(op.k)}
+                    key={op.k}
+                    onPress={() => alternarTipo(op.k)}
                     style={{
                       borderWidth: 1.5, borderColor: sel ? C.jato : C.linha,
                       backgroundColor: sel ? "rgba(37,207,222,0.12)" : "transparent",
@@ -106,7 +117,7 @@ export default function Cadastro() {
                 );
               })}
             </View>
-            {tipoSolicitado && (
+            {tiposSolicitados.length > 0 && (
               <Sub>Fica pendente de aprovação do admin — você continua usando o app como cliente enquanto isso.</Sub>
             )}
           </View>

@@ -2,16 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { meComSolicitacoes } from "@/lib/meShape";
 
 export async function GET(req: NextRequest) {
   const auth = await requireUser(req);
   if ("error" in auth) return auth.error;
-  const { user } = auth;
-  return NextResponse.json({
-    id: user.id, phone: user.phone, email: user.email, name: user.name, cpf: user.cpf,
-    role: user.role, walletCents: user.walletCents,
-    cadastroPendente: user.cadastroPendente, cadastroTipoSolicitado: user.cadastroTipoSolicitado,
-  });
+  return NextResponse.json(await meComSolicitacoes(auth.user));
 }
 
 const Body = z.object({ name: z.string().min(2).max(80).optional(), cpf: z.string().regex(/^\d{11}$/).optional() });

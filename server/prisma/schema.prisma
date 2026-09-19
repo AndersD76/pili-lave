@@ -97,13 +97,6 @@ model User {
   walletCents     Int      @default(0) // cache; fonte da verdade = WalletTx
   createdAt       DateTime @default(now())
 
-  /// Pedido feito no cadastro pra virar Lavador/Comissão1/Comissão2/Aluguel
-  /// — continua CLIENT normalmente até um admin aprovar (cadastroPendente).
-  /// Evita a lista de "quem pode ser adicionado numa máquina" virar uma
-  /// busca cega entre milhares de clientes.
-  cadastroTipoSolicitado TipoParticipacao?
-  cadastroPendente       Boolean           @default(false)
-
   vehicles     Vehicle[]
   topups       Topup[]
   orders       Order[]
@@ -118,6 +111,34 @@ model User {
   /// Vínculos de comissão/aluguel em máquinas (role PARCEIRO, ou LAVADOR
   /// com percentual configurado) — só relatório, nunca notificação.
   participacoes MachineParticipante[]
+  /// Pedidos pra virar Lavador/Comissão1/Comissão2/Aluguel — uma pessoa pode
+  /// pedir vários tipos ao mesmo tempo (ex: Lavador de uma máquina E Aluguel
+  /// de outra) e também pedir um tipo novo depois, já sendo cliente há
+  /// tempos. Cada um é aprovado/rejeitado independente pelo admin — nada
+  /// disso bloqueia o uso do app como cliente normal enquanto está pendente.
+  solicitacoes SolicitacaoParceiro[]
+}
+
+enum StatusSolicitacao {
+  PENDENTE
+  APROVADA
+  REJEITADA
+}
+
+model SolicitacaoParceiro {
+  id         String            @id @default(cuid())
+  userId     String
+  tipo       TipoParticipacao
+  status     StatusSolicitacao @default(PENDENTE)
+  createdAt  DateTime          @default(now())
+  decididoEm DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  // Uma pessoa só tem UM pedido "vivo" por tipo — pedir de novo depois de
+  // rejeitado reaproveita a mesma linha (volta pra PENDENTE).
+  @@unique([userId, tipo])
+  @@index([status])
 }
 
 /* Legado: login por SMS. Mantido no schema/rotas por compatibilidade, mas
