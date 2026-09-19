@@ -3,7 +3,7 @@ import { randomBytes } from "crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { HOLD_TTL_MIN, defaultMachine, machineAvailability, setTransientLight } from "@/lib/reservations";
+import { HOLD_TTL_MIN, defaultMachine, machineForStation, machineAvailability, setTransientLight } from "@/lib/reservations";
 import { diagnosticar } from "@/lib/saude";
 import { precoEfetivo } from "@/lib/precos";
 
@@ -28,6 +28,10 @@ export async function GET(req: NextRequest) {
 const Body = z.object({
   programId: z.number().int(),
   vehicleId: z.string().optional(),
+  /** Unidade escolhida pelo cliente antes de comprar — decide o preço e
+   *  qual máquina recebe a reserva. Sem ela (fluxo antigo), cai na
+   *  primeira máquina cadastrada. */
+  stationId: z.string().optional(),
   /** "cheguei": o cliente já está na máquina e a câmera não o reconheceu.
    *  Libera direto, sem esperar a leitura da placa. */
   jaEstouNaMaquina: z.boolean().optional(),
@@ -57,8 +61,12 @@ export async function POST(req: NextRequest) {
   if (parsed.data.vehicleId && !vehicle)
     return NextResponse.json({ error: "Veículo não encontrado" }, { status: 404 });
 
-  const machine = vehicle ? await defaultMachine() : null;
-  const precoCents = await precoEfetivo(program.id, machine?.stationId);
+  const machine = vehicle
+    ? parsed.data.stationId
+      ? await machineForStation(parsed.data.stationId)
+      : await defaultMachine()
+    : null;
+  const precoCents = await precoEfetivo(program.id, machine?.stationId ?? parsed.data.stationId);
 
   /* Máquina parada (falha, manutenção ou display mudo): não deixa pagar por
    * uma lavagem que não vai acontecer. */

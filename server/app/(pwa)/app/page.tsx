@@ -153,10 +153,11 @@ export default function Home() {
         </div>
       </div>
 
-      <Link className="btn" href="/app/lavagem">Nova lavagem</Link>
-      {/* repetir a última: o cliente costuma pedir sempre a mesma */}
+      <Link className="btn" href="/app/unidades">Nova lavagem</Link>
+      {/* repetir a última: o cliente costuma pedir sempre a mesma — mas a
+          unidade continua sendo escolhida antes, o preço pode ter mudado */}
       {ultima && !arrival?.lavagem && (
-        <Link className="btn ghost" href={`/app/lavagem?programa=${ultima.program.id}`}>
+        <Link className="btn ghost" href={`/app/unidades?programa=${ultima.program.id}`}>
           Repetir {ultima.program.nome} · {money(ultima.amountCents)}
         </Link>
       )}

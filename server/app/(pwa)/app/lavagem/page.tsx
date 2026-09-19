@@ -13,6 +13,8 @@ type Saude = { disponivel: boolean; motivo: string | null; cameraOffline: boolea
 function NovaLavagemConteudo() {
   const router = useRouter();
   const params = useSearchParams();
+  const stationId = params.get("stationId");
+  const stationName = params.get("stationName");
   const [programs, setPrograms] = useState<Program[]>([]);
   const [me, setMe] = useState<Me | null>(null);
   const [sel, setSel] = useState<number | null>(null);
@@ -21,7 +23,9 @@ function NovaLavagemConteudo() {
   const [saude, setSaude] = useState<Saude | null>(null);
 
   useEffect(() => {
-    api<Program[]>("/api/programs", { auth: false }).then((ps) => {
+    if (!stationId) return;
+    const qs = `?stationId=${encodeURIComponent(stationId)}`;
+    api<Program[]>(`/api/programs${qs}`, { auth: false }).then((ps) => {
       setPrograms(ps);
       // veio de "repetir a última": já deixa escolhido
       const pre = Number(params.get("programa"));
@@ -33,7 +37,17 @@ function NovaLavagemConteudo() {
     verSaude();
     const t = setInterval(verSaude, 20000);
     return () => clearInterval(t);
-  }, [router]);
+  }, [router, stationId, params]);
+
+  if (!stationId) {
+    return (
+      <>
+        <h1>Escolha a unidade primeiro</h1>
+        <p className="sub">Cada unidade tem seu próprio preço — selecione onde você vai lavar.</p>
+        <Link className="btn" href="/app/unidades">Ver unidades</Link>
+      </>
+    );
+  }
 
   const selected = programs.find((p) => p.id === sel);
   const falta = selected && me ? selected.precoCents - me.walletCents : 0;
@@ -43,7 +57,7 @@ function NovaLavagemConteudo() {
     setError(""); setLoading(true);
     try {
       await api<Order>("/api/orders", {
-        body: { programId: selected.id, jaEstouNaMaquina },
+        body: { programId: selected.id, jaEstouNaMaquina, stationId },
       });
       /* Volta para a tela inicial: é lá que está o acompanhamento da
        * lavagem (status da máquina, progresso, câmera ao vivo e o botão
@@ -59,6 +73,7 @@ function NovaLavagemConteudo() {
   return (
     <>
       <h1>Nova lavagem</h1>
+      {stationName && <p className="sub">Unidade: {stationName}</p>}
       <p className="sub">Saldo: {me ? money(me.walletCents) : "…"}</p>
 
       {saude && !saude.disponivel && (

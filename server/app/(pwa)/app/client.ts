@@ -58,3 +58,8 @@ export type Order = {
   voucherCode: string; createdAt: string;
   program: Program; vehicle: Vehicle | null;
 };
+export type Station = {
+  id: string; name: string; address: string; city: string; state: string;
+  situacao: "ABERTO" | "OCUPADO" | "MANUTENCAO" | "INATIVO";
+  machines: { id: string; name: string; status: string; remainingSec: number }[];
+};
