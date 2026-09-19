@@ -6,7 +6,9 @@ import { api, type Me } from "./client";
 
 const BASE = [
   { href: "/app", label: "Início", ic: "●" },
+  { href: "/app/unidades", label: "Unidades", ic: "📍" },
   { href: "/app/recarga", label: "Carteira", ic: "R$" },
+  { href: "/app/planos", label: "Planos", ic: "📅" },
   { href: "/app/historico", label: "Histórico", ic: "≡" },
 ];
 const PERFIL = { href: "/app/perfil", label: "Perfil", ic: "☺" };

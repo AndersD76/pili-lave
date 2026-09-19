@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { api, type Station } from "../client";
+import { Nav } from "../nav";
 
 const SITUACAO: Record<Station["situacao"], { label: string; cor: string }> = {
   ABERTO: { label: "Aberto", cor: "var(--ok)" },
@@ -56,6 +57,7 @@ function UnidadesConteudo() {
           })}
         </div>
       )}
+      <Nav />
     </>
   );
 }
