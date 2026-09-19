@@ -132,6 +132,20 @@ export default async function AdminMaquinas() {
 
   const lavadoresProps = lavadores.map((l) => ({ id: l.id, label: l.name ?? l.phone }));
 
+  // Preço por unidade — override (StationPrograma) quando existir, senão o
+  // padrão do Program. Uma consulta só de overrides, indexada por unidade.
+  const stationIds = Array.from(new Set(machines.map((m) => m.stationId)));
+  const overrides = await prisma.stationPrograma.findMany({ where: { stationId: { in: stationIds } } });
+  const overrideMap = new Map(overrides.map((o) => [`${o.stationId}:${o.programId}`, o.precoCents]));
+  const precosPorUnidadeProps: Record<string, { programId: number; nome: string; precoCents: number; proprio: boolean }[]> = {};
+  for (const stationId of stationIds) {
+    precosPorUnidadeProps[stationId] = programas.map((p) => {
+      const key = `${stationId}:${p.id}`;
+      const proprio = overrideMap.has(key);
+      return { programId: p.id, nome: p.nome, precoCents: proprio ? overrideMap.get(key)! : p.precoCents, proprio };
+    });
+  }
+
   const totaisProps = {
     valorTotalGeral: money(totalGeralCents),
     porPrograma: Array.from(totalPorProgramaGlobal.entries())
@@ -164,7 +178,7 @@ export default async function AdminMaquinas() {
       </div>
 
       <div style={{ marginTop: 30 }}>
-        <MaquinasTabs maquinas={maquinasProps} lavadores={lavadoresProps} totais={totaisProps} />
+        <MaquinasTabs maquinas={maquinasProps} lavadores={lavadoresProps} totais={totaisProps} precosPorUnidade={precosPorUnidadeProps} />
       </div>
     </main>
   );

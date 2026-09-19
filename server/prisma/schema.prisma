@@ -125,6 +125,7 @@ model Program {
   vehicles     Vehicle[]
   orders       Order[]
   reservations Reservation[]
+  precosPorUnidade StationPrograma[]
 }
 
 model Topup {
@@ -229,6 +230,22 @@ model WashStation {
   machines     Machine[]
   reservations Reservation[]
   arrivals     Arrival[]
+  precos       StationPrograma[]
+}
+
+/// Preço de um tipo de lavagem (Program) NESTA unidade especificamente —
+/// cada unidade pode cobrar diferente. Sem registro aqui = usa o preço
+/// padrão de Program.precoCents (o "modelo" preenchido na aba Preços).
+model StationPrograma {
+  id         String @id @default(cuid())
+  stationId  String
+  programId  Int
+  precoCents Int
+
+  station WashStation @relation(fields: [stationId], references: [id])
+  program Program     @relation(fields: [programId], references: [id])
+
+  @@unique([stationId, programId])
 }
 
 // Máquina física — um ESP32 (deviceKey próprio) por máquina

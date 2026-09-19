@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { HOLD_TTL_MIN, defaultMachine, machineAvailability, setTransientLight } from "@/lib/reservations";
 import { diagnosticar } from "@/lib/saude";
+import { precoEfetivo } from "@/lib/precos";
 
 function voucherCode(): string {
   // 10 chars base32 sem ambíguos (sem 0/O/1/I)
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Veículo não encontrado" }, { status: 404 });
 
   const machine = vehicle ? await defaultMachine() : null;
+  const precoCents = await precoEfetivo(program.id, machine?.stationId);
 
   /* Máquina parada (falha, manutenção ou display mudo): não deixa pagar por
    * uma lavagem que não vai acontecer. */
@@ -127,8 +129,8 @@ export async function POST(req: NextRequest) {
     const order = await prisma.$transaction(async (tx) => {
       // debita com guarda de saldo — falha se ficar negativo
       const debit = await tx.user.updateMany({
-        where: { id: auth.user.id, walletCents: { gte: program.precoCents } },
-        data: { walletCents: { decrement: program.precoCents } },
+        where: { id: auth.user.id, walletCents: { gte: precoCents } },
+        data: { walletCents: { decrement: precoCents } },
       });
       if (debit.count === 0) throw new Error("SALDO");
 
@@ -137,7 +139,7 @@ export async function POST(req: NextRequest) {
           userId: auth.user.id,
           vehicleId: vehicle?.id ?? null,
           programId: program.id,
-          amountCents: program.precoCents,
+          amountCents: precoCents,
           voucherCode: voucherCode(),
         },
         include: { program: true, vehicle: true },
@@ -159,7 +161,7 @@ export async function POST(req: NextRequest) {
             vehicleId: vehicle.id,
             stationId: machine.stationId,
             programId: program.id,
-            amountCents: program.precoCents,
+            amountCents: precoCents,
             orderId: order.id,
             // "cheguei" com a máquina livre: já nasce ACTIVE (verde acende
             // e o display recebe a ordem no próximo heartbeat). Caso normal:
@@ -172,10 +174,10 @@ export async function POST(req: NextRequest) {
         });
       }
       await tx.walletTx.create({
-        data: { userId: auth.user.id, amountCents: -program.precoCents, kind: "WASH", refId: order.id },
+        data: { userId: auth.user.id, amountCents: -precoCents, kind: "WASH", refId: order.id },
       });
       await tx.event.create({
-        data: { type: "order_created", payload: { userId: auth.user.id, programId: program.id, amountCents: program.precoCents } },
+        data: { type: "order_created", payload: { userId: auth.user.id, programId: program.id, amountCents: precoCents } },
       });
       return order;
     });

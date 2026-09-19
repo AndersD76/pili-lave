@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { HOLD_TTL_MIN, expireStale, reservedCents } from "@/lib/reservations";
+import { precoEfetivo } from "@/lib/precos";
 
 const Body = z.object({
   programId: z.number().int(),
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest) {
     where: { id: parsed.data.programId, ativo: true },
   });
   if (!program) return NextResponse.json({ error: "Tipo de lavagem indisponível" }, { status: 404 });
+  const precoCents = await precoEfetivo(program.id, parsed.data.stationId);
 
   const existing = await prisma.reservation.findFirst({
     where: { vehicleId: vehicle.id, status: { in: ["HELD", "ACTIVE", "ENTERED"] } },
@@ -46,7 +48,7 @@ export async function POST(req: NextRequest) {
 
   const held = await reservedCents(auth.user.id);
   const available = auth.user.walletCents - held;
-  if (available < program.precoCents)
+  if (available < precoCents)
     return NextResponse.json(
       { error: "Saldo disponível insuficiente. Adicione saldo para reservar.", availableCents: available },
       { status: 402 }
@@ -58,7 +60,7 @@ export async function POST(req: NextRequest) {
       vehicleId: vehicle.id,
       stationId: parsed.data.stationId ?? null,
       programId: program.id,
-      amountCents: program.precoCents,
+      amountCents: precoCents,
       expiresAt: new Date(Date.now() + HOLD_TTL_MIN * 60_000),
     },
   });

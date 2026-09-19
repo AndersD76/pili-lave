@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { ARRIVAL_TTL_MIN } from "@/lib/device";
 import { HOLD_TTL_MIN, defaultMachine } from "@/lib/reservations";
+import { precoEfetivo } from "@/lib/precos";
 
 const Body = z.object({ programId: z.number().int() });
 
@@ -46,12 +47,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   // Só para vincular a reserva à estação; a liberação é na chegada.
   const machine = await defaultMachine();
+  const precoCents = await precoEfetivo(program.id, machine.stationId);
 
   try {
     const result = await prisma.$transaction(async (tx) => {
       const debit = await tx.user.updateMany({
-        where: { id: auth.user.id, walletCents: { gte: program.precoCents } },
-        data: { walletCents: { decrement: program.precoCents } },
+        where: { id: auth.user.id, walletCents: { gte: precoCents } },
+        data: { walletCents: { decrement: precoCents } },
       });
       if (debit.count === 0) throw new Error("SALDO");
 
@@ -60,7 +62,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           userId: auth.user.id,
           vehicleId: arrival.vehicleId,
           programId: program.id,
-          amountCents: program.precoCents,
+          amountCents: precoCents,
           voucherCode: voucherCode(),
         },
       });
@@ -74,7 +76,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           vehicleId: arrival.vehicleId!,
           stationId: machine.stationId,
           programId: program.id,
-          amountCents: program.precoCents,
+          amountCents: precoCents,
           orderId: order.id,
           status: "HELD",
           expiresAt: new Date(Date.now() + HOLD_TTL_MIN * 60_000),
@@ -88,7 +90,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       if (upd.count === 0) throw new Error("CORRIDA"); // outra solicitação ganhou
 
       await tx.walletTx.create({
-        data: { userId: auth.user.id, amountCents: -program.precoCents, kind: "WASH", refId: order.id },
+        data: { userId: auth.user.id, amountCents: -precoCents, kind: "WASH", refId: order.id },
       });
       await tx.event.create({
         data: {

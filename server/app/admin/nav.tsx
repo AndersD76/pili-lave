@@ -8,6 +8,7 @@ export function AdminNav() {
       <Link href="/admin/lavagens">Lavagens</Link>
       <Link href="/admin/usuarios">Usuários</Link>
       <Link href="/admin/maquinas">Máquinas</Link>
+      <Link href="/admin/precos">Preços</Link>
     </nav>
   );
 }

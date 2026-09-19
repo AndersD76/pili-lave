@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { marcarPagamento, alternarManutencao, definirOperador } from "./actions";
+import { salvarPrecoUnidade, removerPrecoUnidade } from "../precos/actions";
 
 type Lavagem = {
   id: string;
@@ -32,8 +33,55 @@ type Totais = {
   valorTotalGeral: string;
   porPrograma: { programa: string; qtd: number; valor: string }[];
 };
+type PrecoPrograma = { programId: number; nome: string; precoCents: number; proprio: boolean };
 
 const TAB_TOTAIS = "__totais__";
+
+function PrecosUnidade({ stationId, precos }: { stationId: string; precos: PrecoPrograma[] }) {
+  return (
+    <div className="maq-painel" style={{ marginBottom: 14 }}>
+      <h4 className="section-title" style={{ margin: "0 0 10px" }}>
+        Preços desta unidade
+      </h4>
+      <p style={{ color: "var(--aco-d)", fontSize: 13, marginBottom: 14 }}>
+        Sem preço próprio, essa unidade usa o valor padrão (aba Preços). Vale igual pra todas as máquinas dela.
+      </p>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+        {precos.map((p) => (
+          <div key={p.programId} style={{ background: "var(--verniz2)", border: "1px solid var(--linha)", borderRadius: 12, padding: "10px 14px", minWidth: 170 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--aco-d)" }}>{p.nome}</div>
+            <form action={salvarPrecoUnidade} style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6 }}>
+              <input type="hidden" name="stationId" value={stationId} />
+              <input type="hidden" name="programId" value={p.programId} />
+              <span style={{ fontSize: 13 }}>R$</span>
+              <input
+                className="field"
+                style={{ width: 80, height: 30, fontSize: 13, padding: "0 8px" }}
+                name="preco"
+                type="number"
+                step="0.01"
+                min="0"
+                defaultValue={(p.precoCents / 100).toFixed(2)}
+              />
+              <button className="btn ghost" type="submit" style={{ height: 30, padding: "0 10px", fontSize: 12 }}>Salvar</button>
+            </form>
+            {p.proprio ? (
+              <form action={removerPrecoUnidade} style={{ marginTop: 6 }}>
+                <input type="hidden" name="stationId" value={stationId} />
+                <input type="hidden" name="programId" value={p.programId} />
+                <button className="btn ghost" type="submit" style={{ height: 26, padding: "0 8px", fontSize: 11 }}>
+                  Voltar ao padrão
+                </button>
+              </form>
+            ) : (
+              <div style={{ fontSize: 11, color: "var(--aco-d)", marginTop: 6 }}>usando o padrão</div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function PainelMaquina({ m, lavadores }: { m: Maquina; lavadores: Lavador[] }) {
   return (
@@ -119,10 +167,12 @@ export default function MaquinasTabs({
   maquinas,
   lavadores,
   totais,
+  precosPorUnidade,
 }: {
   maquinas: Maquina[];
   lavadores: Lavador[];
   totais: Totais;
+  precosPorUnidade: Record<string, PrecoPrograma[]>;
 }) {
   // Agrupa por unidade (stationId) preservando a ordem que já vem do servidor.
   const unidades: { stationId: string; unidade: string; maquinas: Maquina[] }[] = [];
@@ -228,7 +278,12 @@ export default function MaquinasTabs({
             )}
           </div>
         ) : (
-          maquinaAtiva && <PainelMaquina m={maquinaAtiva} lavadores={lavadores} />
+          grupoAtivo && (
+            <>
+              <PrecosUnidade stationId={grupoAtivo.stationId} precos={precosPorUnidade[grupoAtivo.stationId] ?? []} />
+              {maquinaAtiva && <PainelMaquina m={maquinaAtiva} lavadores={lavadores} />}
+            </>
+          )
         )}
       </div>
     </div>
