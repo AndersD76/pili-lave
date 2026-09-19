@@ -97,6 +97,13 @@ model User {
   walletCents     Int      @default(0) // cache; fonte da verdade = WalletTx
   createdAt       DateTime @default(now())
 
+  /// Pedido feito no cadastro pra virar Lavador/Comissão1/Comissão2/Aluguel
+  /// — continua CLIENT normalmente até um admin aprovar (cadastroPendente).
+  /// Evita a lista de "quem pode ser adicionado numa máquina" virar uma
+  /// busca cega entre milhares de clientes.
+  cadastroTipoSolicitado TipoParticipacao?
+  cadastroPendente       Boolean           @default(false)
+
   vehicles     Vehicle[]
   topups       Topup[]
   orders       Order[]

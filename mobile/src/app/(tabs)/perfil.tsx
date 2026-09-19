@@ -40,6 +40,10 @@ function Divider() {
   return <View style={{ height: 1, backgroundColor: "rgba(37,207,222,0.06)" }} />;
 }
 
+const LABEL_TIPO: Record<string, string> = {
+  LAVADOR: "Lavador", COMISSAO1: "Vendedor 1", COMISSAO2: "Vendedor 2", ALUGUEL: "Aluguel",
+};
+
 export default function Perfil() {
   const { me, signOut } = useSession();
   const isLavador = me?.role === "LAVADOR" || me?.role === "ADMIN";
@@ -58,6 +62,15 @@ export default function Perfil() {
             </Text>
           </View>
         </Card>
+
+        {me?.cadastroPendente && (
+          <Card style={{ borderColor: C.atencao, borderWidth: 1.5 }}>
+            <Text style={{ fontFamily: F.bodyBold, fontSize: 14, color: C.cromo }}>
+              Cadastro como {LABEL_TIPO[me.cadastroTipoSolicitado ?? ""] ?? "parceiro"} em análise
+            </Text>
+            <Sub>O admin ainda vai aprovar seu pedido. Enquanto isso você usa o app normalmente como cliente.</Sub>
+          </Card>
+        )}
 
         <View>
           <Label>Conta</Label>

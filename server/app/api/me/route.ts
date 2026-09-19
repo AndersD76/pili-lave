@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     id: user.id, phone: user.phone, email: user.email, name: user.name, cpf: user.cpf,
     role: user.role, walletCents: user.walletCents,
+    cadastroPendente: user.cadastroPendente, cadastroTipoSolicitado: user.cadastroTipoSolicitado,
   });
 }
 

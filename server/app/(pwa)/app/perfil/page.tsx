@@ -61,9 +61,23 @@ export default function Perfil() {
 
   const isLavador = me?.role === "LAVADOR" || me?.role === "ADMIN";
 
+  const LABEL_TIPO: Record<string, string> = {
+    LAVADOR: "Lavador", COMISSAO1: "Vendedor 1", COMISSAO2: "Vendedor 2", ALUGUEL: "Aluguel",
+  };
+
   return (
     <>
       <h1>Perfil</h1>
+
+      {me?.cadastroPendente && (
+        <div className="card">
+          <div className="lab">Cadastro em análise</div>
+          <p className="sub">
+            Seu pedido pra virar {LABEL_TIPO[me.cadastroTipoSolicitado ?? ""] ?? "parceiro"} ainda não foi aprovado
+            pelo admin. Você continua usando o app normalmente como cliente enquanto isso.
+          </p>
+        </div>
+      )}
 
       <div className="card">
         <div className="lab">Saldo</div>

@@ -57,6 +57,8 @@ export async function api<T = unknown>(
 export type Me = {
   id: string; phone: string; email?: string | null; name: string | null; cpf?: string | null;
   role: "CLIENT" | "LAVADOR" | "PARCEIRO" | "ADMIN"; walletCents: number;
+  cadastroPendente?: boolean;
+  cadastroTipoSolicitado?: "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL" | null;
 };
 export type Program = { id: number; nome: string; precoCents: number };
 export type Vehicle = { id: string; plate: string; brand: string | null; model: string | null; defaultProgramId: number | null };

@@ -1,7 +1,7 @@
-import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { isAdmin, requireAdminPage } from "@/lib/admin";
+import { requireAdminPage } from "@/lib/admin";
 import { AdminNav } from "../nav";
+import { definirPapel, aprovarCadastro, rejeitarCadastro } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -9,31 +9,68 @@ function money(cents: number): string {
   return `R$ ${(cents / 100).toFixed(2).replace(".", ",")}`;
 }
 
-const PAPEIS_ATRIBUIVEIS = ["CLIENT", "LAVADOR", "PARCEIRO"] as const;
-
-async function definirPapel(formData: FormData) {
-  "use server";
-  if (!(await isAdmin())) return;
-  const id = String(formData.get("id"));
-  const role = String(formData.get("role"));
-  if (!PAPEIS_ATRIBUIVEIS.includes(role as (typeof PAPEIS_ATRIBUIVEIS)[number])) return;
-  const user = await prisma.user.findUnique({ where: { id } });
-  if (!user || user.role === "ADMIN") return;
-  await prisma.user.update({ where: { id }, data: { role: role as (typeof PAPEIS_ATRIBUIVEIS)[number] } });
-  revalidatePath("/admin/usuarios");
-}
+const LABEL_TIPO: Record<string, string> = {
+  LAVADOR: "Lavador",
+  COMISSAO1: "Comissão 1",
+  COMISSAO2: "Comissão 2",
+  ALUGUEL: "Aluguel",
+};
 
 export default async function AdminUsuarios() {
   await requireAdminPage();
-  const users = await prisma.user.findMany({
-    include: { _count: { select: { orders: true, vehicles: true } } },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-  });
+  const [pendentes, users] = await Promise.all([
+    prisma.user.findMany({
+      where: { cadastroPendente: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.user.findMany({
+      include: { _count: { select: { orders: true, vehicles: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    }),
+  ]);
 
   return (
     <main>
       <AdminNav />
+
+      {pendentes.length > 0 && (
+        <>
+          <h2 className="section-title">Cadastros a aprovar ({pendentes.length})</h2>
+          <p style={{ color: "var(--aco-d)", fontSize: 13, marginBottom: 14 }}>
+            Essas pessoas se cadastraram pedindo pra virar Lavador, Comissão 1/2 ou Aluguel — continuam Cliente normal
+            até você aprovar. Só depois de aprovadas elas aparecem pra vincular numa máquina.
+          </p>
+          <div className="tbl-wrap" style={{ marginBottom: 30 }}>
+            <table className="tbl">
+              <thead>
+                <tr><th>Telefone</th><th>Nome</th><th>Pediu para ser</th><th>Desde</th><th></th></tr>
+              </thead>
+              <tbody>
+                {pendentes.map((u) => (
+                  <tr key={u.id}>
+                    <td>{u.phone}</td>
+                    <td>{u.name ?? "—"}</td>
+                    <td><span className="chip at">{LABEL_TIPO[u.cadastroTipoSolicitado ?? ""] ?? u.cadastroTipoSolicitado}</span></td>
+                    <td>{u.createdAt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
+                    <td style={{ display: "flex", gap: 6 }}>
+                      <form action={aprovarCadastro}>
+                        <input type="hidden" name="id" value={u.id} />
+                        <button className="btn ghost" type="submit" style={{ height: 32, padding: "0 10px", fontSize: 12 }}>Aprovar</button>
+                      </form>
+                      <form action={rejeitarCadastro}>
+                        <input type="hidden" name="id" value={u.id} />
+                        <button className="btn ghost" type="submit" style={{ height: 32, padding: "0 10px", fontSize: 12 }}>Rejeitar</button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
       <h2 className="section-title">Usuários — promova um telefone a Lavador para ele poder escanear vouchers</h2>
       <div className="tbl-wrap">
         <table className="tbl">
@@ -50,6 +87,11 @@ export default async function AdminUsuarios() {
                   {u.role === "LAVADOR" && <span className="chip ok">Lavador</span>}
                   {u.role === "PARCEIRO" && <span className="chip at">Parceiro</span>}
                   {u.role === "CLIENT" && <span className="chip off">Cliente</span>}
+                  {u.cadastroPendente && (
+                    <span className="chip at" style={{ marginLeft: 6 }}>
+                      pediu {LABEL_TIPO[u.cadastroTipoSolicitado ?? ""] ?? u.cadastroTipoSolicitado}
+                    </span>
+                  )}
                 </td>
                 <td>{money(u.walletCents)}</td>
                 <td>{u._count.orders}</td>

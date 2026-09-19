@@ -49,7 +49,9 @@ export function fmtPlate(plate: string): string {
 
 export type Me = {
   id: string; phone: string; email: string | null; name: string | null;
-  role: "CLIENT" | "LAVADOR" | "ADMIN"; walletCents: number;
+  role: "CLIENT" | "LAVADOR" | "PARCEIRO" | "ADMIN"; walletCents: number;
+  cadastroPendente?: boolean;
+  cadastroTipoSolicitado?: "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL" | null;
 };
 export type Program = { id: number; nome: string; precoCents: number };
 export type Vehicle = { id: string; plate: string; brand: string | null; model: string | null };

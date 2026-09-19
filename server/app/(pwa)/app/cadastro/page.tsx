@@ -5,6 +5,8 @@ import { useState } from "react";
 import { api, setToken, type Me } from "../client";
 import { Logo } from "../Logo";
 
+type TipoSolicitado = "" | "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL";
+
 export default function Cadastro() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -12,17 +14,25 @@ export default function Cadastro() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [tipoSolicitado, setTipoSolicitado] = useState<TipoSolicitado>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [aviso, setAviso] = useState("");
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(""); setLoading(true);
     try {
       const r = await api<{ token: string; user: Me }>("/api/auth/register", {
-        body: { name, phone, email, password, confirmPassword }, auth: false,
+        body: { name, phone, email, password, confirmPassword, tipoSolicitado: tipoSolicitado || undefined },
+        auth: false,
       });
       setToken(r.token);
+      if (r.user.cadastroPendente) {
+        setAviso("Cadastro em análise! Você já pode usar o app como cliente enquanto o admin aprova seu pedido.");
+        setTimeout(() => router.replace("/app/onboarding"), 2500);
+        return;
+      }
       // primeiro acesso: onboarding antes de cair na home
       router.replace("/app/onboarding");
     } catch (err) {
@@ -58,6 +68,25 @@ export default function Cadastro() {
         className="field" type="password" placeholder="Confirmar senha" autoComplete="new-password"
         value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
       />
+      <label className="sub" style={{ display: "block" }}>
+        Tipo de conta
+        <select
+          className="field" style={{ marginTop: 6 }}
+          value={tipoSolicitado} onChange={(e) => setTipoSolicitado(e.target.value as TipoSolicitado)}
+        >
+          <option value="">Sou cliente</option>
+          <option value="LAVADOR">Sou lavador</option>
+          <option value="COMISSAO1">Sou vendedor 1</option>
+          <option value="COMISSAO2">Sou vendedor 2</option>
+          <option value="ALUGUEL">Recebo aluguel</option>
+        </select>
+        {tipoSolicitado && (
+          <span style={{ display: "block", marginTop: 6 }}>
+            Fica pendente de aprovação do admin — você usa o app como cliente enquanto isso.
+          </span>
+        )}
+      </label>
+      {aviso && <p className="sub">{aviso}</p>}
       {error && <p className="err">{error}</p>}
       <button className="btn" disabled={loading || !name || !phone || !email || !password || !confirmPassword}>
         {loading ? "Criando conta…" : "Criar conta"}

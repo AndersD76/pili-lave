@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
     user: {
       id: user.id, phone: user.phone, email: user.email, name: user.name,
       cpf: user.cpf, role: user.role, walletCents: user.walletCents,
+      cadastroPendente: user.cadastroPendente, cadastroTipoSolicitado: user.cadastroTipoSolicitado,
     },
   });
 }
