@@ -4,16 +4,41 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/admin";
 
-const PAPEIS_ATRIBUIVEIS = ["CLIENT", "LAVADOR", "PARCEIRO"] as const;
+const TIPOS_PARCEIRO = ["COMISSAO1", "COMISSAO2", "ALUGUEL"] as const;
 
+/**
+ * Atalho do admin pra promover alguém direto, sem esperar ela pedir pelo
+ * app — útil pra quem já sabe que vai contratar/dar comissão a alguém.
+ * "role" vem como "CLIENT", "LAVADOR" ou "PARCEIRO:<tipo>" (Comissão 1/2 ou
+ * Aluguel) — no caso de Parceiro, cria/atualiza a SolicitacaoParceiro
+ * correspondente já como APROVADA, senão a pessoa virava "Parceiro" sem
+ * nenhum tipo visível em lugar nenhum.
+ */
 export async function definirPapel(formData: FormData) {
   if (!(await isAdmin())) return;
   const id = String(formData.get("id"));
-  const role = String(formData.get("role"));
-  if (!PAPEIS_ATRIBUIVEIS.includes(role as (typeof PAPEIS_ATRIBUIVEIS)[number])) return;
+  const valor = String(formData.get("role"));
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user || user.role === "ADMIN") return;
-  await prisma.user.update({ where: { id }, data: { role: role as (typeof PAPEIS_ATRIBUIVEIS)[number] } });
+
+  if (valor === "CLIENT" || valor === "LAVADOR") {
+    await prisma.user.update({ where: { id }, data: { role: valor } });
+    revalidatePath("/admin/usuarios");
+    return;
+  }
+
+  const [papel, tipo] = valor.split(":");
+  if (papel !== "PARCEIRO" || !TIPOS_PARCEIRO.includes(tipo as (typeof TIPOS_PARCEIRO)[number])) return;
+
+  await prisma.$transaction([
+    prisma.solicitacaoParceiro.upsert({
+      where: { userId_tipo: { userId: id, tipo: tipo as (typeof TIPOS_PARCEIRO)[number] } },
+      update: { status: "APROVADA", decididoEm: new Date() },
+      create: { userId: id, tipo: tipo as (typeof TIPOS_PARCEIRO)[number], status: "APROVADA", decididoEm: new Date() },
+    }),
+    // LAVADOR continua "acima" de Parceiro (já tem acesso ao scanner) — não rebaixa.
+    prisma.user.update({ where: { id }, data: { role: user.role === "LAVADOR" ? "LAVADOR" : "PARCEIRO" } }),
+  ]);
   revalidatePath("/admin/usuarios");
 }
 
