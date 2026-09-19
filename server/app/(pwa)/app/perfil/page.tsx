@@ -63,6 +63,8 @@ export default function Perfil() {
   }
 
   const isLavador = me?.role === "LAVADOR" || me?.role === "ADMIN";
+  const temMinhaMaquina = isLavador || (me?.solicitacoes ?? []).some((s) => s.tipo === "LAVADOR" && s.status === "APROVADA");
+  const temComissoes = (me?.solicitacoes ?? []).some((s) => s.tipo !== "LAVADOR" && s.status === "APROVADA");
 
   const LABEL_TIPO: Record<string, string> = {
     LAVADOR: "Lavador", COMISSAO1: "Vendedor 1", COMISSAO2: "Vendedor 2", ALUGUEL: "Aluguel",
@@ -172,6 +174,8 @@ export default function Perfil() {
         {erroSolicitacao && <p className="err">{erroSolicitacao}</p>}
       </div>
 
+      {temMinhaMaquina && <Link className="btn ghost" href="/app/minha-maquina">Minha Máquina</Link>}
+      {temComissoes && <Link className="btn ghost" href="/app/comissoes">Minhas Comissões</Link>}
       {isLavador && <Link className="btn" href="/app/scanner">Modo lavador — escanear voucher</Link>}
       {me?.role === "ADMIN" && <Link className="btn ghost" href="/admin">Painel do admin</Link>}
       <button className="btn ghost" onClick={() => { setToken(null); router.replace("/app/login"); }}>Sair</button>
