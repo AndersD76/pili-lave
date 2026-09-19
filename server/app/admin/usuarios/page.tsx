@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireAdminPage } from "@/lib/admin";
 import { AdminNav } from "../nav";
@@ -16,8 +17,37 @@ const LABEL_TIPO: Record<string, string> = {
   ALUGUEL: "Aluguel",
 };
 
-export default async function AdminUsuarios() {
+type FiltroTipo = "TODOS" | "CLIENT" | "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL" | "ADMIN";
+
+const FILTROS: { k: FiltroTipo; label: string }[] = [
+  { k: "TODOS", label: "Todos" },
+  { k: "CLIENT", label: "Cliente" },
+  { k: "LAVADOR", label: "Lavador" },
+  { k: "COMISSAO1", label: "Comissão 1" },
+  { k: "COMISSAO2", label: "Comissão 2" },
+  { k: "ALUGUEL", label: "Aluguel" },
+  { k: "ADMIN", label: "Admin" },
+];
+
+/** true se o usuário se encaixa no filtro (aprovado como o tipo, no caso
+ *  de Comissão 1/2/Aluguel — não basta ter pedido, tem que estar aprovado). */
+function bateFiltro(
+  u: { role: string; solicitacoes: { tipo: string; status: string }[] },
+  filtro: FiltroTipo
+): boolean {
+  if (filtro === "TODOS") return true;
+  if (filtro === "CLIENT" || filtro === "LAVADOR" || filtro === "ADMIN") return u.role === filtro;
+  return u.solicitacoes.some((s) => s.status === "APROVADA" && s.tipo === filtro);
+}
+
+export default async function AdminUsuarios({
+  searchParams,
+}: {
+  searchParams: Promise<{ filtro?: string }>;
+}) {
   await requireAdminPage();
+  const { filtro: filtroParam } = await searchParams;
+  const filtro: FiltroTipo = FILTROS.some((f) => f.k === filtroParam) ? (filtroParam as FiltroTipo) : "TODOS";
   const [pendentes, users] = await Promise.all([
     prisma.solicitacaoParceiro.findMany({
       where: { status: "PENDENTE" },
@@ -77,13 +107,31 @@ export default async function AdminUsuarios() {
       )}
 
       <h2 className="section-title">Usuários — promova um telefone a Lavador para ele poder escanear vouchers</h2>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        {FILTROS.map((f) => {
+          const qtd = f.k === "TODOS" ? users.length : users.filter((u) => bateFiltro(u, f.k)).length;
+          const ativo = filtro === f.k;
+          return (
+            <Link
+              key={f.k}
+              href={f.k === "TODOS" ? "/admin/usuarios" : `/admin/usuarios?filtro=${f.k}`}
+              className={"chip" + (ativo ? " ok" : " off")}
+              style={{ textDecoration: "none" }}
+            >
+              {f.label} ({qtd})
+            </Link>
+          );
+        })}
+      </div>
+
       <div className="tbl-wrap">
         <table className="tbl">
           <thead>
             <tr><th>Telefone</th><th>Nome</th><th>Papel</th><th>Saldo</th><th>Lavagens</th><th>Veículos</th><th>Desde</th><th></th></tr>
           </thead>
           <tbody>
-            {users.map((u) => (
+            {users.filter((u) => bateFiltro(u, filtro)).map((u) => (
               <tr key={u.id}>
                 <td>{u.phone}</td>
                 <td>{u.name ?? "—"}</td>
@@ -127,7 +175,9 @@ export default async function AdminUsuarios() {
                 </td>
               </tr>
             ))}
-            {users.length === 0 && <tr><td colSpan={8} style={{ color: "var(--aco-d)" }}>Nenhum usuário ainda.</td></tr>}
+            {users.filter((u) => bateFiltro(u, filtro)).length === 0 && (
+              <tr><td colSpan={8} style={{ color: "var(--aco-d)" }}>Nenhum usuário nesse filtro.</td></tr>
+            )}
           </tbody>
         </table>
       </div>
