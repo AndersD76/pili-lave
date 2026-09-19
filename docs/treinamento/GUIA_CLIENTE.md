@@ -72,16 +72,20 @@ Você também pode definir uma **lavagem padrão** pro veículo, tocando nele na
 
 ## 6. Escolhendo a unidade
 
-Toque na aba **"Unidades"** pra ver o mapa/lista de endereços disponíveis, com o status de cada um (🟢 Aberto · 🟡 Ocupado · 🔴 Manutenção).
+Toque na aba **"Unidades"** (ou no botão **"Reservar lavagem"** da tela inicial, que já leva direto pra lá) pra ver o mapa/lista de endereços disponíveis, com o status de cada um (🟢 Aberto · 🟡 Ocupado · 🔴 Manutenção).
 
 ![Tela de unidades](imagens/cliente/08-unidades.png)
+
+Escolher a unidade é **sempre o primeiro passo**, mesmo quando só existe um endereço disponível — cada unidade pode ter um preço diferente pra mesma lavagem, então o app precisa saber onde você vai antes de mostrar valores e liberar a compra.
+
+Toque na unidade desejada pra ver as máquinas dela e o botão **"Reservar lavagem"** (agora sim, o de verdade).
 
 ---
 
 ## 7. Reservando e pagando uma lavagem
 
-1. Toque em **"Reservar lavagem"**.
-2. Escolha o veículo e o tipo de lavagem (programa).
+1. Depois de escolher a unidade (passo anterior), toque em **"Reservar lavagem"**.
+2. Escolha o veículo e o tipo de lavagem (programa) — os preços mostrados já são os **dessa unidade específica**.
 3. Confirme — o valor é debitado do seu saldo na hora e a reserva fica valendo por **1 hora**.
 
 ![Escolhendo o programa de lavagem](imagens/cliente/09-nova-lavagem.png)

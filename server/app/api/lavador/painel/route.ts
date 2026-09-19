@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { HEARTBEAT_OFFLINE_S, machineAvailability } from "@/lib/reservations";
+import { parteLavador } from "@/lib/comissao";
 
 /**
  * Painel do lavador: só as máquinas que ELE administra (Machine.operadorId).
@@ -13,9 +14,12 @@ import { HEARTBEAT_OFFLINE_S, machineAvailability } from "@/lib/reservations";
  *
  * Cada máquina traz a quebra por tipo de lavagem (1-4) x origem (presencial
  * = pago em dinheiro nos botões X1-X6 da máquina, app = pelo aplicativo) —
- * o percentual do lavador em cima disso ainda não foi definido, então só
- * mostra quantidade e valor de cada coluna por enquanto.
+ * o valor mostrado em CADA coluna já é a PARTE DELE (não o total bruto):
+ * no presencial é quanto ele fica pra si mesmo (o resto vai pro admin), no
+ * app é quanto o admin tem que repassar pra ele. Só "Total no período" (lá
+ * na tela) continua sendo o bruto, sem divisão nenhuma.
  */
+
 export async function GET(req: NextRequest) {
   const auth = await requireUser(req);
   if ("error" in auth) return auth.error;
@@ -66,13 +70,17 @@ export async function GET(req: NextRequest) {
         totalGeralCents += appCents + presCents;
         return {
           programId,
-          app: { lavagens: app?._count._all ?? 0, valorCents: appCents },
-          presencial: { lavagens: pres?._count._all ?? 0, valorCents: presCents },
+          app: { lavagens: app?._count._all ?? 0, valorCents: parteLavador(appCents) },
+          presencial: { lavagens: pres?._count._all ?? 0, valorCents: parteLavador(presCents) },
         };
       });
 
       const offline =
         !m.lastHeartbeat || Date.now() - m.lastHeartbeat.getTime() > HEARTBEAT_OFFLINE_S * 1000;
+
+      // Só o valor final dele sai pra fora — percentual e o corte do admin
+      // ficam só aqui no servidor, não vão pro app do lavador.
+      const suaParticipacaoCents = parteLavador(totalGeralCents);
 
       return {
         id: m.id,
@@ -83,6 +91,7 @@ export async function GET(req: NextRequest) {
         emManutencao: m.status === "MAINTENANCE",
         periodo: { inicio: inicio.toISOString(), fim: fim.toISOString() },
         totalGeralCents,
+        suaParticipacaoCents,
         porTipo,
       };
     })

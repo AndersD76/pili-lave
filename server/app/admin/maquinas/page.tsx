@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdminPage } from "@/lib/admin";
 import { AdminNav } from "../nav";
 import MaquinasTabs from "./MaquinasTabs";
+import { parteLavador, parteAdmin, acertoFinal } from "@/lib/comissao";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +81,19 @@ export default async function AdminMaquinas() {
       })
     )
   );
+  // Mesma janela (desde o último fechamento), mas do lado presencial — pra
+  // alimentar a divisão admin/lavador por máquina (só faz sentido pra quem
+  // já tem lavador designado).
+  const presencialPorProgramaPorMaquina = await Promise.all(
+    machines.map((m) =>
+      prisma.lavagemPresencial.groupBy({
+        by: ["programId"],
+        where: { machineId: m.id, completedAt: { gte: m.lastPaymentDate ?? new Date(0) } },
+        _sum: { amountCents: true },
+        _count: { _all: true },
+      })
+    )
+  );
   const programas = await prisma.program.findMany({ orderBy: { ordem: "asc" } });
   const nomePrograma = new Map(programas.map((p) => [p.id, p.nome]));
 
@@ -107,6 +121,39 @@ export default async function AdminMaquinas() {
 
   const maquinasProps = machines.map((m, i) => {
     const offline = !m.lastHeartbeat || Date.now() - m.lastHeartbeat.getTime() > HEARTBEAT_OFFLINE_S * 1000;
+
+    // Divisão admin/lavador por tipo, só relevante quando há lavador
+    // designado. presencial = dinheiro que o lavador já tem na mão; app =
+    // dinheiro que o admin já tem na conta.
+    let divisao: {
+      porTipo: { programId: number; presencial: { admin: number; lavador: number }; app: { admin: number; lavador: number } }[];
+      totalPresencialCents: number;
+      totalAppCents: number;
+      acerto: ReturnType<typeof acertoFinal>;
+    } | null = null;
+    if (m.operadorId) {
+      const appMap = new Map(porProgramaPorMaquina[i].map((g) => [g.programId, g._sum.amountCents ?? 0]));
+      const presMap = new Map(presencialPorProgramaPorMaquina[i].map((g) => [g.programId, g._sum.amountCents ?? 0]));
+      let totalPresencialCents = 0, totalAppCents = 0;
+      const porTipoDivisao = [1, 2, 3, 4].map((programId) => {
+        const presCents = presMap.get(programId) ?? 0;
+        const appCents = appMap.get(programId) ?? 0;
+        totalPresencialCents += presCents;
+        totalAppCents += appCents;
+        return {
+          programId,
+          presencial: { admin: parteAdmin(presCents), lavador: parteLavador(presCents) },
+          app: { admin: parteAdmin(appCents), lavador: parteLavador(appCents) },
+        };
+      });
+      divisao = {
+        porTipo: porTipoDivisao,
+        totalPresencialCents,
+        totalAppCents,
+        acerto: acertoFinal(totalPresencialCents, totalAppCents),
+      };
+    }
+
     return {
       id: m.id,
       numero: m.numero,
@@ -120,6 +167,19 @@ export default async function AdminMaquinas() {
       licenca: licencaDe(m.lastPaymentDate),
       operadorId: m.operadorId,
       valorDesdeFechamento: money(totalDesdeFechamentoPorMaquina[i]),
+      divisao: divisao && {
+        porTipo: divisao.porTipo.map((t) => ({
+          programId: t.programId,
+          presencial: { admin: money(t.presencial.admin), lavador: money(t.presencial.lavador) },
+          app: { admin: money(t.app.admin), lavador: money(t.app.lavador) },
+        })),
+        totalPresencial: money(divisao.totalPresencialCents),
+        totalApp: money(divisao.totalAppCents),
+        lavadorDeve: money(divisao.acerto.lavadorDeveCents),
+        adminDeve: money(divisao.acerto.adminDeveCents),
+        netCents: divisao.acerto.netCents,
+        netAbs: money(Math.abs(divisao.acerto.netCents)),
+      },
       historico: historicos[i].map((r) => ({
         id: r.id,
         quando: r.completedAt ? fmtData(r.completedAt) : "—",

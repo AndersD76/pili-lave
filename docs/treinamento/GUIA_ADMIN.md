@@ -1,6 +1,6 @@
 # Guia do Administrador — PILI CLEAN
 
-> Como usar o painel administrativo: acompanhar vendas, gerenciar usuários, cadastrar lavadores e cuidar das máquinas.
+> Como usar o painel administrativo: acompanhar vendas, gerenciar usuários, definir preços, cadastrar lavadores e cuidar das máquinas.
 
 **Endereço:** `https://pili-lave-production.up.railway.app/admin`
 
@@ -26,12 +26,12 @@ Mostra o retrato da operação:
 - Recargas de saldo feitas pelos clientes.
 - **Passivo**: quanto de saldo os clientes têm guardado (dinheiro que ainda vai ser usado).
 - Total de usuários e veículos cadastrados.
-- Lavagens por tipo de programa (Simples, Completa, etc.).
+- Lavagens por tipo de programa.
 - Lista das últimas transações.
 
 ![Visão geral do admin](imagens/admin/02-visao-geral.png)
 
-No topo, o menu vai te levar pras outras 3 seções: **Lavagens**, **Usuários**, **Máquinas**.
+No topo, o menu vai te levar pras outras seções: **Lavagens**, **Usuários**, **Preços**, **Máquinas**.
 
 ---
 
@@ -48,6 +48,8 @@ Histórico das últimas 200 lavagens compradas, com:
 
 **Quando usar:** pra conferir se uma lavagem específica de um cliente foi processada, ou pra investigar reclamação ("paguei e não lavou").
 
+> ⚠️ Essa lista mostra só as lavagens compradas **pelo app**. Lavagens pagas em dinheiro na hora (pelos botões da própria máquina) aparecem na tela de Máquinas, coluna "Presencial" (seção 6).
+
 ---
 
 ## 4. Usuários (`/admin/usuarios`)
@@ -60,7 +62,7 @@ Lista todos os usuários cadastrados: telefone, nome, papel (Cliente/Lavador/Adm
 
 1. Encontre a pessoa na lista (pelo telefone ou nome).
 2. Na coluna de ações, clique no botão pra alternar o papel dela entre **Cliente** e **Lavador**.
-3. Pronto — agora essa pessoa já pode ser vinculada a uma máquina (próximo passo, na tela de Máquinas).
+3. Pronto — agora essa pessoa já pode ser vinculada a uma máquina (seção 6).
 
 ![Promovendo um usuário a lavador](imagens/admin/05-promover-lavador.png)
 
@@ -68,48 +70,64 @@ Lista todos os usuários cadastrados: telefone, nome, papel (Cliente/Lavador/Adm
 
 ---
 
-## 5. Máquinas (`/admin/maquinas`)
+## 5. Preços (`/admin/precos`)
 
-A tela mais importante pro dia a dia. Mostra, por máquina:
+Essa aba só define o **nome** dos 4 tipos de lavagem (ex.: "Limpeza leve/Poeira", "Limpeza média/chassi"...) — o nome vale igual pra todas as unidades. **Não tem preço nenhum aqui.**
 
-| Coluna | O que significa |
-|---|---|
-| Unidade | Cidade + Rua onde a máquina está instalada |
-| Nº | Número da máquina naquele endereço (1, 2, 3… quando há mais de uma no mesmo lugar) |
-| Status | Livre / Lavando / **OFFLINE** (sem contato há mais de 1 min) / Manutenção |
-| Última batida | Há quanto tempo a máquina "avisou" que está viva (deve ser sempre poucos segundos) |
-| Sensores | Estado dos sensores de presença de carro (X14/X15) e tempo restante de ciclo |
-| Licença | Situação de pagamento: 🟢 em dia · 🟡 aviso (40+ dias sem marcar pagamento) · 🔴 bloqueada (50+ dias) |
-| **Lavador** | Quem é o responsável por essa máquina (ver abaixo) |
-| Ações | Marcar pagamento em dia / Pôr ou tirar de manutenção |
+![Tela de preços — nomes dos tipos](imagens/admin/08-precos-nomes.png)
 
-![Tela de máquinas](imagens/admin/06-maquinas.png)
-
-### Como vincular um lavador a uma máquina
-
-1. Na linha da máquina, ache a coluna **Lavador**.
-2. Escolha o nome na caixinha de seleção (só aparecem ali usuários que já têm o papel Lavador — ver seção 4).
-3. Clique em **Salvar**.
-
-A partir daí, essa pessoa:
-- Passa a ver essa máquina no app dela, na aba **"Minha Máquina"** (ver o *Guia do Lavador*).
-- Recebe **notificação no celular automaticamente** se a máquina der erro, ficar offline, ou parar de funcionar — mesmo que você (admin) não esteja de olho no painel.
-
-![Vinculando lavador a uma máquina](imagens/admin/07-vincular-lavador.png)
-
-### Marcar pagamento em dia
-
-Quando o lavador/dono da máquina fizer o pagamento da licença/taxa, clique em **"Marcar pago hoje"** na linha dela. Isso zera a contagem de dias sem pagar (evita o bloqueio automático aos 50 dias).
-
-### Pôr em manutenção
-
-Se precisar tirar a máquina de operação temporariamente (manutenção física, por exemplo), clique em **"Pôr em manutenção"**. Isso impede novas reservas naquela máquina até você clicar em **"Tirar de manutenção"**.
+O valor em R$ de cada tipo é definido **dentro de cada unidade**, na tela de Máquinas (próxima seção) — porque cada unidade pode cobrar um valor diferente pela mesma lavagem.
 
 ---
 
-## 6. O que fazer quando um alerta chegar
+## 6. Máquinas (`/admin/maquinas`)
 
-Se uma máquina falhar, ficar sem internet, ou a câmera parar de mandar foto, você recebe uma **notificação push** (a mesma que o lavador recebe) com o resumo do problema. O alerta também fica registrado — pra investigar, vá em **Máquinas** e confira o status/última batida daquela unidade específica.
+A tela mais importante pro dia a dia. No topo, cards mostram o resumo: total de máquinas, quantas estão offline agora, quantas em manutenção, quantas com licença bloqueada.
+
+![Cards de resumo no topo](imagens/admin/06-maquinas-resumo.png)
+
+Embaixo, uma **aba por unidade** (endereço) — a primeira aba, **"Resumo geral"**, mostra o total de todas as unidades juntas, por tipo de lavagem.
+
+![Abas por unidade](imagens/admin/06-maquinas-abas.png)
+
+Quando uma unidade tem **mais de uma máquina**, aparecem sub-abas (Máquina 1, Máquina 2...) — clique pra ver cada uma separadamente.
+
+![Sub-abas de máquinas na mesma unidade](imagens/admin/06-maquinas-subabas.png)
+
+### Dentro de cada unidade
+
+- **Preços da unidade**: os 4 tipos com um campo pra preencher o valor em R$ — cada unidade começa vazia, você define quanto ela cobra.
+- **Status da máquina selecionada**: Livre / Lavando / OFFLINE (sem contato há mais de 1 min) / Manutenção, e a licença (🟢 em dia · 🟡 aviso 40+ dias · 🔴 bloqueada 50+ dias).
+- **Valor acumulado desde o último fechamento** — soma tudo (presencial + app) desde a última vez que você clicou em "Marcar pago hoje".
+- **Lavador responsável** — escolha na caixinha (só aparecem quem já é Lavador) e clique em Salvar. A partir daí essa pessoa vê a máquina no app dela e recebe notificação automática se ela der erro.
+- **Histórico de lavagens** — as últimas concluídas naquela máquina, com cliente/programa/valor.
+
+![Painel de uma máquina](imagens/admin/07-painel-maquina.png)
+
+**Marcar pago hoje**: zera a contagem de dias sem pagar a licença — clique quando o pagamento for feito.
+
+**Pôr em manutenção**: impede novas reservas naquela máquina até você clicar em "Tirar de manutenção".
+
+---
+
+## 7. Divisão com o lavador
+
+Quando uma máquina tem um lavador designado, aparece uma seção extra no painel dela: **"Divisão com o lavador"**.
+
+![Tabela de divisão admin/lavador](imagens/admin/09-divisao-lavador.png)
+
+A ideia: **presencial** (dinheiro pago na hora, direto na máquina) fica automaticamente na mão do lavador; **app** (pago pela carteira do cliente) cai automaticamente pra conta do admin. Como o percentual de cada um é dividido (por enquanto uma regra fixa, ainda em fase de simulação), alguém sempre fica devendo a diferença pro outro — a tela já mostra esse **resultado líquido final**:
+
+- Se o valor da coluna App (que ficou com o admin) supera o que o lavador teria direito, aparece **"Admin deve pagar o lavador: R$ X"**.
+- Se o valor da coluna Presencial (que ficou com o lavador) supera o que o admin teria direito, aparece **"Lavador deve repassar pro admin: R$ X"**.
+
+Isso poupa você de fazer conta na mão — é só olhar esse número na hora de acertar com cada lavador.
+
+---
+
+## 8. O que fazer quando um alerta chegar
+
+Se uma máquina falhar, ficar sem internet, ou a câmera parar de mandar foto, você recebe uma **notificação push** (a mesma que o lavador recebe) com o resumo do problema. O alerta também fica registrado — pra investigar, vá em **Máquinas**, escolha a unidade/máquina certa e confira o status/última batida.
 
 ---
 
@@ -117,7 +135,8 @@ Se uma máquina falhar, ficar sem internet, ou a câmera parar de mandar foto, v
 
 ```
 Login -> Visão geral (números do negócio)
-       -> Lavagens (histórico, investigar reclamação)
+       -> Lavagens (histórico app, investigar reclamação)
        -> Usuários (promover a Lavador)
-       -> Máquinas (status, licença, vincular lavador)
+       -> Preços (nome dos 4 tipos)
+       -> Máquinas (aba por unidade -> preço, status, lavador, divisão, histórico)
 ```

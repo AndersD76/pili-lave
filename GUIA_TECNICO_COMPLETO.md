@@ -1,6 +1,6 @@
 # PILI CLEAN — Guia Técnico Completo
 
-> Documento de referência de tudo que existe no sistema até 2026-09-18: firmware (display, Waveshares, câmera), backend, app mobile, PWA, painel admin e banco de dados. Escrito a partir da leitura completa do código-fonte — quando algo é uma limitação conhecida ou pendência, está marcado explicitamente.
+> Documento de referência de tudo que existe no sistema até 2026-09-19: firmware (display, Waveshares, câmera), backend, app mobile, PWA, painel admin e banco de dados. Escrito a partir da leitura completa do código-fonte — quando algo é uma limitação conhecida ou pendência, está marcado explicitamente.
 
 ---
 
@@ -18,9 +18,11 @@ PILI CLEAN é um sistema de lavagem automática de carros **sem operador fixo no
 - **App mobile** (Expo/React Native) — cliente final: cadastro, compra de lavagem, acompanhamento.
 - **PWA** (Next.js, dentro do próprio `server/`) — versão web do app, mesma função.
 - **Backend** (Next.js API Routes + Prisma + Postgres) — cérebro de tudo: pagamento, fila, reconhecimento de placa (IA), heartbeat das máquinas, admin.
-- **Painel admin** (dentro do `server/`) — visão gerencial, cadastro de lavadores, controle de licença/pagamento por máquina.
+- **Painel admin** (dentro do `server/`) — visão gerencial, cadastro de lavadores, preço por unidade, divisão admin/lavador, controle de licença/pagamento por máquina.
 
 **Hospedagem:** backend no **Railway** (`pili-lave-production.up.railway.app`), banco Postgres no **Neon**.
+
+**Ambiente de teste local:** desde 2026-09-18 existe um Postgres local (`pililave_dev`) pra testar sem tocar em produção — `server/.env` aponta pra ele por padrão; `server/.env.production` guarda as credenciais reais (nunca carregado por `next dev`). Migrações precisam ser aplicadas **manualmente** nos dois lados (`npx prisma migrate deploy`, trocando o `.env` temporariamente pra produção) — o deploy do Railway **não roda migração sozinho**.
 
 ---
 
@@ -44,6 +46,7 @@ Pontos importantes:
 - **A câmera é o gateway de nuvem**: é ela quem conecta no Wi-Fi, é a "mestre de canal" (avisa display+Waveshares em qual canal do rádio ela está), e faz todo o HTTPS (heartbeat, envio de fotos LPR, eventos, provisionamento).
 - **ESP-NOW é rádio de curto alcance** (dezenas de metros) — isso é usado deliberadamente como trava de segurança na troca de peça (ver seção 3.9).
 - **Waveshares migraram de ESP-NOW pra RS-485 cabeado** (mudança que deu nome à pasta `lava_car_485`) — só a câmera continua em ESP-NOW com o display.
+- **Achado real em teste de bancada (09-19)**: quando a câmera muda de rede Wi-Fi (e portanto de canal) enquanto já está em operação, o display **não tinha como descobrir sozinho** o canal novo — os dois ficavam "surdos" um pro outro até um reset manual. Corrigido com o "modo caça" (ver 3.4).
 
 ---
 
@@ -51,12 +54,19 @@ Pontos importantes:
 
 Projeto Arduino (`display.ino` + vários `.h`). Board: ESP32S3 Dev Module, Flash 16MB, PSRAM OPI 8MB, tela Waveshare ESP32-S3-Touch-LCD-7 (800×480, LVGL 8.4).
 
+FQBN validado (**importante — outras combinações já causaram tela branca**):
+```
+esp32:esp32:esp32s3:CDCOnBoot=default,FlashMode=qio,FlashSize=16M,PartitionScheme=default_8MB,PSRAM=opi,CPUFreq=240
+```
+
 ### 3.1 `tipos.h`
 Definições compartilhadas: enums de processo (`Processo`) e estado automático (`EstadoAuto`), todo o **protocolo ESP-NOW** (tipos de mensagem `MSG_*` e as structs `Msg*` — precisam bater **byte a byte** com a câmera), mapeamento de saídas físicas (Y1–Y15), endereços Modbus, cores da interface.
 
 Mapeamento de saídas (motor/solenoides):
 - Waveshare 1: Y1 (solenoide Cor Mágica), Y2 (Espuma A), Y3 (Espuma B), Y4 (giro do braço — trava mútua com Y14), Y5 (compressor secagem), Y6 (entrada pneumática), Y7 (bomba espuma), Y11 (lâmpada verde).
 - Waveshare 2: Y10 (bomba espuma baixo), Y12 (luz vermelha), Y13 (bomba alta pressão), Y14 (deslocamento — trava mútua com Y4), Y0 (junto com Cor Mágica).
+
+Botões físicos de início manual (presencial, pago em dinheiro): **X1=modelo1, X2=modelo2, X5=modelo3, X6=modelo4** (X3=manual/auto, X4=pause). Ver seção 6.6 pra como isso vira registro na nuvem.
 
 ### 3.2 `maquina_estados.h` + `processos.h`
 A **máquina de estados do ciclo automático**:
@@ -74,13 +84,19 @@ Sensores (nomes herdados do CLP original):
 
 **Recuperação no boot**: se a máquina perder energia no meio de um ciclo, ao religar ela detecta se está "fora do zero" e faz um HOME automático (com luz piscando avisando), sem intervenção manual — a menos que tenha um carro em cima (aí só pisca vermelho até tirarem).
 
+Ao concluir um ciclo (`AUTO_CONCLUIDO`), o firmware já sabe se a lavagem foi iniciada pelo app (tem `reservationId` salvo) ou pelos botões físicos (X1-X6, sem reserva) — manda `backend_evt_wash_complete()` com `source="remote"` no segundo caso, e incrementa contadores locais separados por origem (NVS `p1_pres`/`p1_app` etc, só pra exibição na tela — ver 6.6 pra como isso também alimenta a nuvem).
+
 ### 3.3 `modbus_waveshares.h` + `vfd_rs485.h`
 Comunicação RS-485 Modbus RTU com as 2 Waveshares + o inversor, num barramento único e compartilhado (mutex serializa tudo). Leitura de sensores é feita com **latch por interrupção + read-and-clear** (a Waveshare captura o pulso no hardware, o display consome e zera) — resolve o problema antigo de pulsos curtos se perderem entre leituras.
 
 Task de polling roda no **core 0** (separado da UI, que fica no core 1) pra não competir com o LVGL.
 
 ### 3.4 `comm_espnow.h`
-ESP-NOW só com a câmera agora (não fala mais com as Waveshares). Roteia as mensagens recebidas pros handlers certos (Wi-Fi config, heartbeat, eventos, scan de redes, provisionamento — ver 3.9). Tem alarme de "câmera sem contato" (60s) e mecanismo de "estacionar no canal 1" se ficar isolado por muito tempo (5 min) esperando reencontrar a câmera.
+ESP-NOW só com a câmera agora (não fala mais com as Waveshares). Roteia as mensagens recebidas pros handlers certos (Wi-Fi config, heartbeat, eventos, scan de redes, provisionamento, busca de unidade, troca de câmera — ver 3.9).
+
+**"Modo caça" (adicionado 09-19)**: quando o técnico aperta Buscar/Enviar numa das telas de cadastro e não há contato recente com a câmera (`espnow_camera_perdida()`, >3s sem ouvir nada dela), o display varre os 13 canais em **background, sem travar o toque/LVGL** (`espnow_cacar_tick()`, chamado todo `loop()`), ficando 1,3s em cada um (tem que ser maior que o intervalo de anúncio da câmera, que é 1s) e repetindo as voltas até achar ou o técnico cancelar saindo da tela. Substitui a lógica antiga de "isolado → estaciona no canal 1", que era passiva e só funcionava se o display por acaso já estivesse parado no canal certo no momento exato do anúncio da câmera.
+
+Alarme de "câmera sem contato" continua em 60s (só informativo, mostra na tela).
 
 ### 3.5 `backend_client.h` + `licenca.h`
 Como o display não tem internet, ele manda seu estado (`FREE`/`WASHING`) pra câmera a cada 10s (`MSG_HB_STATE`), e ela relay o POST `/api/machine/heartbeat` de verdade, devolvendo a resposta (`MSG_HB_RESP`) com: estado da lâmpada, dados de licença, e comando de início (`start`) quando há uma reserva paga esperando.
@@ -95,31 +111,31 @@ Fila de eventos (car-entered / wash-complete / fault) fica em **ring buffer na N
 Controla a lâmpada bicolor (Y11 verde / Y12 vermelho) segundo o `lightState` que vem do backend, com prioridade: recuperação de boot > bloqueio de licença > erro local (sempre pisca vermelho) > estado do app > processo de lavagem em andamento.
 
 ### 3.7 `wifi_manager.h`
-O display **não conecta no Wi-Fi** — só guarda as credenciais (SSID/senha/URL/device-key) e manda pra câmera por ESP-NOW quando ela pede (`MSG_WIFI_REQ`/`MSG_WIFI_CFG`), ou quando alguém salva pela tela de configuração.
+O display **não conecta no Wi-Fi** — só guarda as credenciais (SSID/senha/URL/device-key) e manda pra câmera por ESP-NOW quando ela pede (`MSG_WIFI_REQ`/`MSG_WIFI_CFG`), ou quando alguém salva pela tela de configuração. `enviar_cfg_camera()` varre os 13 canais pra ENVIAR a config nova (garante que a câmera receba onde quer que esteja) e se estaciona no canal 1 esperando ela confirmar o canal novo.
 
 ### 3.8 Telas (LVGL)
-- `tela_manual.h`: tela padrão — controles manuais, contadores, status do inversor, diagnóstico dos 16 sensores.
+- `tela_manual.h`: tela padrão — controles manuais, contadores, status do inversor, diagnóstico dos 16 sensores. Botão "Técnico" leva pro menu de recadastro (`scr_boot_tipo`).
 - `tela_auto.h`: seleção de programa automático + painel temporário de ajuste fino do giro (tuning ao vivo).
 - `tela_config.h` / `tela_velocidades.h` / `tela_modelos.h`: parâmetros do sistema, velocidades por etapa, sequência de processos por modelo.
 - `tela_senha.h`: teclado numérico genérico — 3 modos: `PAG` (senha de pagamento/acerto, padrão 3462), `CFG` (senha de config, padrão 1111), `TEC` (acesso técnico, padrão **2828** — ver 3.9).
 - `tela_senhas_cfg.h`: alterar as senhas acima.
-- `tela_wifi.h`: configuração Wi-Fi — a câmera é quem escaneia redes (o display nunca mexe no próprio rádio pra isso).
+- `tela_wifi.h`: configuração Wi-Fi — a câmera é quem escaneia redes (o display nunca mexe no próprio rádio pra isso). Acessível direto da tela inicial de cadastro (botão "Configurar Wi-Fi", 09-19) pra locais onde a rede padrão do firmware não existe.
 
-### 3.9 `tela_boot.h` — Cadastro da máquina (implementado em 2026-09-18, **NÃO TESTADO EM HARDWARE**)
+### 3.9 `tela_boot.h` — Cadastro da máquina (testado em bancada 09-19)
 
-Na **primeira ligada** com essa versão de firmware (NVS ainda sem `provisionado=true`), o display entra direto nessa tela em vez da tela normal:
+Na **primeira ligada** (NVS ainda sem `provisionado=true`), o display entra direto nessa tela em vez da tela normal. O botão **"ACESSO TÉCNICO"** foi corrigido em 09-19: antes levava pro mesmo formulário que "CADASTRAR MÁQUINA" já abria sem senha nenhuma (tornando a senha inútil ali); agora leva pra tela de **operação normal** (de onde já dá pra entrar em Configurar Wi-Fi).
 
 ```
-[CADASTRAR MÁQUINA]  ->  [NOVA]  ou  [SUBSTITUIÇÃO]
-[ACESSO TÉCNICO]      ->  pede senha (padrão 2828)
+[CADASTRAR MÁQUINA] -> [NOVA] ou [TROCOU O DISPLAY] ou [TROCOU A CÂMERA]
+[ACESSO TÉCNICO]     -> pede senha (padrão 2828) -> tela de OPERAÇÃO normal
+[CONFIGURAR WI-FI]   -> direto, sem senha
 ```
 
-- **NOVA**: técnico digita Cidade + Rua + Número da máquina. O display **gera sua própria identidade** (deviceKey = ID único do chip ESP32, `ESP.getEfuseMac()` — nunca escolhido por ninguém, nunca se repete) e manda pra câmera por ESP-NOW (`MSG_PROV_REQ`); a câmera faz o POST `/api/machine/provisionar` (protegido por uma senha de fábrica, `PILI_PROVISION_SECRET`, gravada igual em todo firmware).
-- **SUBSTITUIÇÃO** (só o display quebrou, a câmera continua a mesma): o display **não consulta a nuvem**. Ele pergunta pra câmera local "quem é você?" (`MSG_IDENT_REQ`) — como o ESP-NOW é rádio de curto alcance, só existe resposta se a câmera estiver **fisicamente por perto**. É essa distância física que impede pegar a máquina errada, não uma senha ou lista escolhida na tela. A câmera guarda a identidade na própria NVS (sobrevive à troca do display sozinha).
+- **NOVA**: primeiro passo é uma **busca de unidades já cadastradas** por cidade (`MSG_UNI_REQ`/`MSG_UNI_RESP`, câmera consulta `GET /api/machine/unidades`) — evita duplicar unidade quando o endereço é digitado diferente da vez anterior (achado real: "Joao Carlon" x "Rua João Carlon" viraram duas unidades antes desse fix). Se encontrar, o técnico escolhe da lista e o **número da máquina já vem pré-preenchido** com o próximo livre daquela unidade (`proximoNumero`, calculado no backend). Se não encontrar (ou "Nenhuma dessas"), cai no formulário livre de sempre (cidade+rua+número). Em qualquer um dos dois casos, o display **gera sua própria identidade** (deviceKey = `ESP.getEfuseMac()`, nunca escolhido por ninguém) e manda pra câmera por ESP-NOW (`MSG_PROV_REQ`); a câmera faz o POST `/api/machine/provisionar` (protegido por `PILI_PROVISION_SECRET`).
+- **TROCOU O DISPLAY** (só o display quebrou, a câmera continua a mesma): o display **não consulta a nuvem**. Ele pergunta pra câmera local "quem é você?" (`MSG_IDENT_REQ`) — como o ESP-NOW é rádio de curto alcance, só existe resposta se a câmera estiver **fisicamente por perto**. É essa distância física que impede pegar a máquina errada, não uma senha ou lista escolhida na tela.
+- **TROCOU A CÂMERA** (novidade 09-19, só a câmera quebrou, o display continua o mesmo): o display **já sabe sua própria identidade** (salva desde o cadastro original) e empurra ela pra câmera nova por ESP-NOW (`MSG_IDPUSH_REQ`/`MSG_IDPUSH_RESP`) — sem tocar na nuvem, o registro da máquina não muda, só a câmera física aprende quem ela é. Se o display não tiver identidade salva (NVS em branco também), avisa pra usar "NOVA" primeiro.
 
-Depois de cadastrada, a tela nunca mais aparece sozinha — a máquina liga direto na operação normal. Um botão **"Técnico"** na tela manual (perto do "Config") reabre o menu sob demanda (recadastrar, repetir substituição).
-
-**Pendência conhecida**: a tela "NOVA" ainda não tem uma lista pra escolher uma unidade **já existente** (evitaria digitar o endereço de novo) — hoje sempre digita cidade+rua na hora. O backend já resolve duplicidade por comparação sem acento/maiúscula (ver seção 6.7), mas uma lista seria mais seguro ainda. Fica pra uma próxima passada.
+Depois de cadastrada, a tela nunca mais aparece sozinha — a máquina liga direto na operação normal.
 
 ### 3.10 `hard_reset.h`
 Reinicia o chip inteiro **uma vez** ao energizar (não em loop) — a ESP32-S3 é conhecida por subir com o painel/PSRAM em estado inconsistente no boot frio. Tem uma flag `HARD_RESET_APAGA_NVS` (normalmente 0) que, se ligada, também zera toda a NVS (reset de fábrica) — só pra usar propositalmente numa bancada.
@@ -149,10 +165,14 @@ Roda num ESP32-CAM (AI-Thinker, sensor OV2640). Arquivo único `src/main.cpp` + 
 Funções principais:
 - **Modo CONFIG vs CONECTADA**: sem credenciais salvas (NVS vazia), fica no canal 1 pedindo config (`MSG_WIFI_REQ`) até o display responder. Com credenciais, conecta e vira mestre de canal.
 - **Heartbeat** a cada 10s: `POST /api/machine/heartbeat` com o estado que o display mandou; relay da resposta (lâmpada/licença/start) de volta pro display.
-- **LPR**: máquina de estados não-bloqueante — no máximo 1 tentativa HTTP por passagem do `loop()`, timeout de 15s (`PILI_LPR_HTTP_TIMEOUT`), até 3 tentativas antes de descartar o frame. *(Nota histórica: um timeout de 6s tinha sido testado e causou queda no reconhecimento por matar handshakes TLS que ainda iam funcionar — corrigido voltando a 15s.)*
-- **Relay de eventos** (car-entered/wash-complete/fault): recebe do display por ESP-NOW, faz o POST, e só confirma (`MSG_EVT_ACK`) quando o backend responde 200 — garante que o débito nunca se perde.
-- **Watchdog de ESP-NOW**: se ficar 60s sem NENHUM envio bem-sucedido (não só falha de resposta — falha ao enviar mesmo), reinicia o chip sozinho — achado real em campo onde o ESP-NOW "morria" silenciosamente sem derrubar o Wi-Fi/streaming.
-- **Provisionamento** (`MSG_PROV_REQ`/`MSG_IDENT_REQ`, ver 3.9): faz o POST de cadastro e guarda a identidade (cidade/rua/número/deviceKey) na própria NVS — é essa cópia que permite a "Substituição" funcionar sem depender da nuvem.
+- **LPR**: máquina de estados não-bloqueante — no máximo 1 tentativa HTTP por passagem do `loop()`, timeout de 15s (`PILI_LPR_HTTP_TIMEOUT`), até 3 tentativas antes de descartar o frame.
+- **Relay de eventos** (car-entered/wash-complete/fault): recebe do display por ESP-NOW, faz o POST, e só confirma (`MSG_EVT_ACK`) quando o backend responde 200 — garante que o débito nunca se perde. `wash-complete` com `source="remote"` (lavagem presencial, sem reserva) vira um registro de `LavagemPresencial` na nuvem (ver 6.6) em vez de ser descartado como "órfão".
+- **Watchdog de ESP-NOW**: se ficar 60s sem NENHUM envio bem-sucedido (não só falha de resposta — falha ao enviar mesmo), reinicia o chip sozinho.
+- **Timeout de handshake TLS (adicionado 09-19)**: `tls.setHandshakeTimeout()` em **todas** as chamadas HTTPS. Achado real em teste de bancada: com Wi-Fi fraco/instável, o handshake TLS podia ficar pendurado indefinidamente e travava o chip inteiro (só um reset físico recuperava) — o `HTTPClient.setTimeout()` sozinho não cobria essa fase.
+- **Provisionamento** (`MSG_PROV_REQ`): faz o POST de cadastro e guarda a identidade (cidade/rua/número/deviceKey) na própria NVS.
+- **Identidade** (`MSG_IDENT_REQ`, troca de display): responde com o que já tem salvo, sem tocar na nuvem.
+- **Busca de unidades** (`MSG_UNI_REQ`, 09-19): faz `GET /api/machine/unidades?cidade=X` e devolve a lista paginada por ESP-NOW.
+- **Recebe identidade** (`MSG_IDPUSH_REQ`, troca de câmera, 09-19): aplica localmente o que o display mandou (`aplicarIdPush()`), sem chamada nenhuma pra nuvem.
 
 ---
 
@@ -167,68 +187,94 @@ Três sistemas de auth **separados e independentes**:
 ### 6.2 Modelo de dados (Prisma) — visão geral
 - **User**: cliente, lavador ou admin (`role`). `walletCents` é um cache — a fonte da verdade é `WalletTx`.
 - **Vehicle**: placa normalizada, programa padrão.
-- **Program**: os 4 tipos de lavagem (preço, duração).
+- **Program**: os 4 tipos de lavagem — hoje só o **nome** é editável de forma centralizada (aba `/admin/precos`); o `precoCents` do Program é o valor de fábrica, praticamente não usado desde que o preço passou a ser por unidade (ver `StationPrograma`).
+- **StationPrograma** (nova, 09-19): preço de um tipo de lavagem **numa unidade específica** — cada unidade cobra o valor que quiser, preenchido do zero (não herda de nenhum "padrão" central). `lib/precos.ts` (`precoEfetivo()`) resolve o preço certo na hora de cobrar.
 - **WashStation**: a **unidade** (endereço — cidade + rua).
-- **Machine**: a máquina física, pertence a uma `WashStation`, tem `numero` (posição na unidade), `deviceKey`, status ao vivo, sensores X14/X15, contadores de lavagem, controle de licença (`lastPaymentDate`), e **`operadorId`** (o lavador responsável).
+- **Machine**: a máquina física, pertence a uma `WashStation`, tem `numero` (posição na unidade), `deviceKey`, status ao vivo, sensores X14/X15, contadores de lavagem, controle de licença (`lastPaymentDate` — também serve de ponto de "fechamento" pro lavador), e **`operadorId`** (o lavador responsável).
 - **Order**: a compra (voucher). Status `PAID` → `REDEEMED` (lavagem concluída) ou `CANCELED` (estorno).
 - **Reservation**: o motor real da fila — `HELD` (pago, esperando 1h) → `ACTIVE` (placa reconhecida, máquina livre, verde aceso) → `ENTERED` (X14 confirmou) → `COMPLETED` (**único ponto de débito de verdade**) / `EXPIRED` / `CANCELED` / `FAILED`.
+- **LavagemPresencial** (nova, 09-19): uma linha por lavagem paga em dinheiro nos botões físicos X1-X6 — valor em R$ e data/hora exatos (o firmware só contava localmente, sem valor nem timestamp).
 - **Arrival**: registro de cada leitura de câmera, pra exibição no app (`WAITING_DRIVER`, `SUGGESTED` quando a leitura foi de baixa confiança e bate com a fila).
 - **WalletTx**: extrato real da carteira (TOPUP/WASH/REFUND/ADJUST).
 - **PushSubscription**: inscrições de notificação push (Web Push/VAPID).
 - **Event**: log genérico de auditoria (praticamente tudo relevante gera um Event).
+- **Capture**: fotos que a câmera manda pro LPR + o que a IA leu (usado em `/capturas`).
 
 ### 6.3 Fluxo de reserva e pagamento
-1. Cliente compra pelo app (`POST /api/orders`) → debita a carteira na hora, cria `Order` (PAID) + `Reservation` (HELD, válida por 1h).
+1. Cliente escolhe a **unidade primeiro** (obrigatório desde 09-19, ver 7 e 8), depois compra pelo app (`POST /api/orders`) → debita a carteira na hora, cria `Order` (PAID) + `Reservation` (HELD, válida por 1h). O preço já é o **da unidade escolhida** (`precoEfetivo`).
 2. Quando o carro chega, a câmera lê a placa → `handlePlateRead()` promove `HELD` → `ACTIVE` (se a máquina estiver livre) ou mantém na fila com o relógio congelado (se estiver ocupada — não queima o tempo do cliente por culpa da operação).
 3. Sensor X14 confirma o carro entrando → `ENTERED`.
-4. Máquina reporta conclusão (`wash-complete`) → `COMPLETED` — **é aqui, e só aqui, que o valor é debitado de verdade** (a reserva só "segurava" o saldo).
-5. **Estorno automático**: se a reserva vence (1h) sem ser usada, o valor volta sozinho pro saldo (implementado em 2026-09-17 — antes ficava preso). Se a máquina travar durante a lavagem (2× a duração do programa sem concluir), também estorna sozinho.
+4. Máquina reporta conclusão (`wash-complete`) → `COMPLETED` — **é aqui, e só aqui, que o valor é debitado de verdade** (a reserva só "segurava" o saldo). Se veio dos botões físicos (sem reserva), vira `LavagemPresencial` em vez de debitar carteira de ninguém.
+5. **Estorno automático**: se a reserva vence (1h) sem ser usada, o valor volta sozinho pro saldo. Se a máquina travar durante a lavagem (2× a duração do programa sem concluir), também estorna sozinho.
 
 **Alternativas de liberação sem câmera:**
 - **"Cheguei" na compra** (`jaEstouNaMaquina`): libera na hora se a máquina estiver livre.
 - **"Cheguei" numa reserva já existente** (`POST /api/reservations/[id]/confirmar-chegada`): pra quando a câmera não reconheceu a placa. Se a unidade tiver mais de uma máquina, pergunta qual (`escolherMaquina: true` + lista de números) antes de liberar.
 
 ### 6.4 Reconhecimento de placa (LPR)
-`POST /api/lpr/frame` recebe o JPEG cru da câmera. Filtro de cena primeiro (compara tamanho do arquivo pra não gastar orçamento de IA em cena parada). A leitura em si é feita pela **API de visão da Anthropic** (`lib/vision-claude.ts`) — sem cota mensal, foi a solução que substituiu o Plate Recognizer (que tinha estourado a cota e derrubado o sistema por dias em 08/09). Fallback: Plate Recognizer (se configurado) → Tesseract (bancada).
+`POST /api/lpr/frame` recebe o JPEG cru da câmera. Filtro de cena primeiro (compara tamanho do arquivo pra não gastar orçamento de IA em cena parada). A leitura em si é feita pela **API de visão da Anthropic** (`lib/vision-claude.ts`). Fallback: Plate Recognizer (se configurado) → Tesseract (bancada).
 
 Leitura de alta confiança (≥0.97) libera sozinha; leitura fraca compara contra quem já pagou e está na fila — se bater com exatamente um veículo, cria uma "sugestão" (`Arrival.SUGGESTED`) que o motorista confirma no app ("é o seu carro?").
 
-### 6.5 Sistema multi-máquina (implementado em 2026-09-17/18)
+### 6.5 Sistema multi-máquina
 Uma unidade (`WashStation`) pode ter **várias máquinas** (`Machine.numero`). A compra não escolhe qual máquina — entra numa **fila única**: quando promove a reserva, pega **qualquer máquina livre daquela unidade** (`machineForStation()`). O cliente só escolhe manualmente quando libera sem câmera e há mais de uma máquina (ver 6.3).
 
-**Provisionamento** (`POST /api/machine/provisionar`): cadastro automático de máquina nova — recebe o ID único do chip + unidade (existente por `stationId`, ou nova por cidade+rua) + número. Reconhece unidade já existente mesmo com **acento e maiúscula diferentes** (achado real testando o retrofit da máquina em produção — o teclado do display provavelmente não digita "ã" fácil). Protegido por `PROVISION_SECRET` (senha de fábrica).
+**Provisionamento** (`POST /api/machine/provisionar`): cadastro automático de máquina nova — recebe o ID único do chip + unidade (existente por `stationId`, ou nova por cidade+rua) + número. Reconhece unidade já existente mesmo com **acento, maiúscula E prefixo de logradouro diferentes** ("Joao Carlon" == "Rua João Carlon", fix de 09-19 depois de uma duplicata real em produção). Protegido por `PROVISION_SECRET`.
 
-### 6.6 Sistema de lavador (implementado em 2026-09-18)
-`Machine.operadorId` vincula um usuário (`role: LAVADOR`) a uma máquina específica. O admin faz isso direto num dropdown em `/admin/maquinas`. Quando a máquina falha/trava/fica offline, **o lavador daquela máquina** recebe push notification (além do admin) — antes só o admin era avisado. `GET /api/lavador/painel` devolve, só das máquinas do lavador logado: status ao vivo, lavagens e faturamento (hoje/7 dias/30 dias).
+**Busca de unidades** (`GET /api/machine/unidades?cidade=X`, nova 09-19): lista unidades existentes que batem com a cidade digitada, já com o **próximo número livre** de máquina calculado — usada pela tela de cadastro do display antes de criar uma unidade nova.
 
-### 6.7 Rotas de API — mapa geral
+### 6.6 Sistema de lavador e divisão de comissão
+
+`Machine.operadorId` vincula um usuário (`role: LAVADOR`) a uma máquina específica, escolhido num dropdown em `/admin/maquinas`. Quando a máquina falha/trava/fica offline, o lavador daquela máquina recebe push notification (além do admin).
+
+**Presencial x App (09-19)**: cada lavagem concluída é registrada com sua origem — `Reservation` (app) ou `LavagemPresencial` (dinheiro, botões X1-X6). Isso importa porque **quem já está com o dinheiro na mão é diferente**:
+- Presencial: o **lavador** já fica com o dinheiro na hora.
+- App: o **admin** já fica com o dinheiro (carteira do cliente debita direto).
+
+**Percentual PROVISÓRIO** (`server/lib/comissao.ts`, `PERCENTUAL_LAVADOR = 0.55`): 55% pro lavador, 45% pro admin — ainda não definido de vez, é só pra simulação; virar configurável por máquina/lavador é TODO. `acertoFinal()` calcula o líquido: quanto o lavador deve repassar ao admin (45% do presencial) menos quanto o admin deve pagar ao lavador (55% do app) — quem sai devendo é quem tem o número líquido positivo do outro lado.
+
+`GET /api/lavador/painel` (só vê as máquinas do próprio lavador):
+- `?de=AAAA-MM-DD&ate=AAAA-MM-DD`: período customizado (calendário no app).
+- `?desde=acerto`: tudo desde o último "Marcar pago hoje" da máquina (`lastPaymentDate` — mesmo ponto de fechamento que o admin usa).
+- Sem nenhum dos dois: hoje.
+- Traz por tipo de lavagem (1-4) x origem (presencial/app), mas os valores mostrados **já são a parte do lavador** (não o bruto) — só "Total no período" (separado) continua bruto. O percentual e o corte do admin nunca saem pro app do lavador.
+
+`/admin/maquinas` (aba de cada máquina, só quando há lavador designado) mostra a tabela completa **sem esconder nada** — Presencial (Admin | Lavador) e App (Admin | Lavador) por tipo, mais o acerto final líquido calculado.
+
+### 6.7 Preço por unidade (`StationPrograma`, `lib/precos.ts`)
+
+Cada unidade cobra o que quiser pelos 4 tipos de lavagem — não existe mais um preço "padrão" que as unidades herdam. A aba `/admin/precos` só edita o **nome** dos 4 tipos (compartilhado entre todas as unidades); o preço em R$ é preenchido do zero dentro de cada unidade, em `/admin/maquinas`. `precoEfetivo(programId, stationId)` é chamado nos 3 pontos que cobram uma lavagem (`/api/reservations`, `/api/orders`, `/api/arrivals/[id]/request`) — sem preço próprio cadastrado, usa o `Program.precoCents` de fábrica como último recurso (nunca deveria acontecer numa unidade já em operação).
+
+### 6.8 Rotas de API — mapa geral
 ```
 /api/auth/            register, login  (cliente — e-mail/senha)
                        otp/request, otp/verify  (legado, não usado por nenhuma tela)
 /api/me                perfil do cliente logado
 /api/vehicles           CRUD de veículos
-/api/programs           lista os 4 tipos de lavagem
-/api/orders             compra de lavagem (voucher)
-/api/reservations       criar/listar reservas; [id]/cancel; [id]/confirmar-chegada
-/api/arrivals/mine      chegada atual do cliente (pra tela inicial)
+/api/programs           lista os 4 tipos — aceita ?stationId= pra devolver o preço daquela unidade
+/api/orders             compra de lavagem (voucher) — aceita stationId
+/api/reservations       criar/listar reservas (aceita stationId); [id]/cancel; [id]/confirmar-chegada
+/api/arrivals/mine      chegada atual do cliente (pra tela inicial) — inclui stationId
 /api/arrivals/[id]/confirm   responder a uma sugestão de placa
+/api/arrivals/[id]/request   pagar lavagem a partir de uma chegada detectada
 /api/stations           lista pública de unidades (mapa do app)
 /api/wallet             saldo e extrato
 /api/push/              inscrição de push notification
-/api/lavador/painel     painel do lavador (só as máquinas dele)
+/api/lavador/painel     painel do lavador — ?de=&ate= ou ?desde=acerto
 /api/lpr/frame          recebe foto da câmera, aciona o LPR
-/api/machine/           heartbeat, car-entered, wash-complete, fault, provisionar
+/api/machine/           heartbeat, car-entered, wash-complete (app + presencial), fault,
+                        provisionar, unidades (busca por cidade)
 /api/admin/machine/payment   marcar pagamento em dia (legado, ver /admin/maquinas)
 /api/cron/expire-reservations   cron do Railway (a cada 5 min) — expira reservas, estorna, checa saúde
 /api/saude              diagnóstico de saúde da operação (usado pelo app antes de deixar comprar)
 ```
 
-### 6.8 Saúde da operação (`lib/saude.ts`)
+### 6.9 Saúde da operação (`lib/saude.ts`)
 Três coisas precisam estar vivas pra uma lavagem acontecer: o **display** (executa o ciclo), a **câmera** (reconhece a placa) e a **internet** da máquina (se cai, os dois somem juntos). `diagnosticar()` calcula isso; `verificarEAlertar()` (rodado pelo cron) avisa admin + lavador quando há problema, com **dedup por tipo+máquina** (10 min) pra não virar spam.
 
-**Limitação conhecida**: `diagnosticar()` hoje sempre olha a "máquina padrão" (`findFirst`) — não está totalmente adaptado pro cenário de múltiplas máquinas ainda (funciona certo com 1 máquina por unidade, que é o caso real hoje).
+**Limitação conhecida**: `diagnosticar()` hoje sempre olha a "máquina padrão" (`findFirst`) — não está totalmente adaptado pro cenário de múltiplas máquinas ainda.
 
-### 6.9 Notificações push (`lib/push.ts`)
+### 6.10 Notificações push (`lib/push.ts`)
 Web Push com chaves VAPID. `avisarCliente()` manda pra todos os aparelhos inscritos de um usuário (limpa inscrições mortas automaticamente); `avisarAdmins()` manda pra todos os admins. Nunca derruba o fluxo principal se falhar — push é extra.
 
 ---
@@ -236,14 +282,15 @@ Web Push com chaves VAPID. `avisarCliente()` manda pra todos os aparelhos inscri
 ## 7. App Mobile — `mobile/` (Expo/React Native + Expo Router)
 
 Estrutura de abas (`src/app/(tabs)/`):
-- **Início** (`index.tsx`): saldo, reserva ativa (com contagem regressiva, botão "Cheguei" manual, cancelar), veículos, sugestão de placa fraca pra confirmar.
-- **Unidades**: lista/mapa das unidades (`/api/stations`), com status agregado (aberto/ocupado/manutenção).
+- **Início** (`index.tsx`): saldo, reserva ativa (com contagem regressiva, botão "Cheguei" manual, cancelar), veículos, sugestão de placa fraca pra confirmar. Botão "Reservar lavagem" abre a lista de **Unidades** (não vai mais direto pro formulário — ver abaixo).
+- **Unidades**: lista/mapa das unidades (`/api/stations`), com status agregado (aberto/ocupado/manutenção). Tocar numa unidade abre o detalhe (`unidade/[id].tsx`) com as máquinas dela; o botão "Reservar lavagem" de lá já leva o `stationId` pra frente.
 - **Carteira**: saldo e extrato, recarga.
 - **Planos**: os tipos de lavagem.
-- **Minha Máquina** (`minha-maquina.tsx`, **só aparece pra `role: LAVADOR`**): painel da(s) máquina(s) que o usuário administra.
-- **Perfil**: dados, biometria, sair.
+- **Minha Máquina** (`minha-maquina.tsx`, **só aparece pra `role: LAVADOR`**): painel da(s) máquina(s) que o usuário administra — filtro Hoje / período customizado (calendário nativo, `@react-native-community/datetimepicker`) / "Não acertado ainda", tabela por tipo (presencial/app, já com a parte do lavador), soma no rodapé de cada coluna, e o card "Sua participação" com o valor final.
 
-Telas fora das abas: `cadastro.tsx` / `login.tsx` (e-mail+senha), `onboarding.tsx` (3 passos, termina na tela de recarga), `nova-lavagem.tsx`, `veiculo-novo.tsx`, `recarga.tsx`, `historico.tsx`, `meus-dados.tsx`, `voucher/[id].tsx`, `scanner.tsx` (lavador escaneia voucher no balcão).
+**Correção 09-19**: `nova-lavagem.tsx` **exige** `stationId` (vem por parâmetro de rota) — sem ele, mostra uma tela pedindo pra escolher a unidade primeiro, em vez de deixar reservar "sem unidade nenhuma" (bug real: toda reserva nascia com `stationId=null`, dando a impressão de cair direto numa máquina qualquer).
+
+Telas fora das abas: `cadastro.tsx` / `login.tsx` (e-mail+senha), `onboarding.tsx` (3 passos, termina na tela de recarga), `nova-lavagem.tsx`, `veiculo-novo.tsx`, `recarga.tsx`, `historico.tsx`, `meus-dados.tsx`, `voucher/[id].tsx`, `scanner.tsx` (lavador escaneia voucher no balcão), `unidade/[id].tsx`.
 
 **Sessão**: token JWT guardado no `expo-secure-store` (`lib/session.tsx`), com opção de **biometria** (Face ID/digital) como trava extra ao abrir o app (`lib/biometria.ts`) — configurável em "Meus dados".
 
@@ -251,7 +298,9 @@ Telas fora das abas: `cadastro.tsx` / `login.tsx` (e-mail+senha), `onboarding.ts
 
 ## 8. PWA — `server/app/(pwa)/`
 
-Versão web do app, servida pelo mesmo Next.js do backend (rota `/app`). Mesmas telas conceituais do mobile (cadastro, login, onboarding, home, lavagem, recarga, histórico, perfil), com componentes próprios (`CameraAoVivo.tsx`, `ProgressoLavagem.tsx`, `StatusMaquina.tsx`, `AvisosPush.tsx`). Também tem `/camera` (painel de luz pro celular fixo na máquina) e `/capturas` (debug: últimas fotos + o que a IA leu).
+Versão web do app, servida pelo mesmo Next.js do backend (rota `/app`). Mesmas telas conceituais do mobile (cadastro, login, onboarding, home, lavagem, recarga, histórico, perfil), com componentes próprios (`CameraAoVivo.tsx`, `ProgressoLavagem.tsx`, `AvisosPush.tsx`). Também tem `/camera` (painel de luz pro celular fixo na máquina) e `/capturas` (debug: últimas fotos + o que a IA leu).
+
+**Correção 09-19 (causa real de "o app entra direto numa máquina")**: a home mostrava um card `StatusMaquina` que chamava `/api/saude` → `diagnosticar()` → pega a **primeira máquina do banco inteiro** (`prisma.machine.findFirst()`), sem relação nenhuma com unidade — resquício de antes do multi-máquina existir. Isso rodava antes de qualquer escolha do cliente. **Removido** — o componente não existe mais. Nova tela `/app/unidades` (mesmo endpoint `/api/stations` do mobile) fica sempre no caminho antes de comprar, mesmo com uma unidade só; `lavagem/page.tsx` exige `stationId` igual ao mobile, e `/api/orders` usa `machineForStation(stationId)` em vez de `defaultMachine()` quando informado. O botão "Já estou na máquina" da home também foi corrigido pra usar o `stationId` da própria chegada (`Arrival.stationId`) em vez da máquina fixa.
 
 ---
 
@@ -260,7 +309,8 @@ Versão web do app, servida pelo mesmo Next.js do backend (rota `/app`). Mesmas 
 - **Visão geral** (`/admin`): vendas hoje/7d/30d, resgates, recargas, saldo total em carteiras, lavagens por programa.
 - **Lavagens** (`/admin/lavagens`): últimas 200, com status/voucher/quem resgatou.
 - **Usuários** (`/admin/usuarios`): lista completa, promove/rebaixa entre Cliente/Lavador.
-- **Máquinas** (`/admin/maquinas`): status online/offline, sensores, licença/pagamento (marcar pago hoje, pôr em manutenção), **e o vínculo com o lavador responsável**.
+- **Preços** (`/admin/precos`, nova 09-19): só edita o **nome** dos 4 tipos de lavagem — o preço em R$ fica dentro de cada unidade (ver abaixo e 6.7).
+- **Máquinas** (`/admin/maquinas`, redesenhado 09-19): cards de estatística no topo (total, offline, em manutenção, licença bloqueada) + **abas por unidade** — unidade com mais de uma máquina abre sub-abas (Máquina 1, 2, 3...) ao clicar. Uma aba **"Resumo geral / TOTAIS"** separada soma tudo (todas as máquinas) por tipo de lavagem. Dentro de cada unidade: preço dos 4 tipos (editável ali mesmo), status/licença/sensores da máquina selecionada, valor acumulado desde o último fechamento, histórico de lavagens, e (só quando há lavador designado) a seção **"Divisão com o lavador"** com a tabela completa Admin/Lavador por tipo e origem, mais o acerto líquido.
 
 ---
 
@@ -268,7 +318,7 @@ Versão web do app, servida pelo mesmo Next.js do backend (rota `/app`). Mesmas 
 
 | Variável | Pra que serve |
 |---|---|
-| `DATABASE_URL` / `DIRECT_URL` | Postgres (Neon) — pooled/direta |
+| `DATABASE_URL` / `DIRECT_URL` | Postgres (Neon em produção; Postgres local em dev) — pooled/direta |
 | `JWT_SECRET` | assina tokens de sessão e admin |
 | `ADMIN_USER` / `ADMIN_PASSWORD` | login do painel admin |
 | `SMS_PROVIDER` / `SMS_API_KEY` | legado, não usado no login principal |
@@ -277,7 +327,7 @@ Versão web do app, servida pelo mesmo Next.js do backend (rota `/app`). Mesmas 
 | `DEVICE_KEY` | chave genérica legada de dispositivo |
 | `MACHINE_DEVICE_KEY` | seed da máquina padrão |
 | `CRON_SECRET` | protege o cron de expiração |
-| `PROVISION_SECRET` | senha de fábrica do auto-cadastro de máquina |
+| `PROVISION_SECRET` | senha de fábrica do auto-cadastro de máquina (também protege `/api/machine/unidades`) |
 | `PLATE_RECOGNIZER_TOKEN` | fallback de LPR |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | push notifications |
 
@@ -287,14 +337,15 @@ Firmware da câmera tem seu próprio `PILI_PROVISION_SECRET` (deve bater com o `
 
 ## 11. Pendências e limitações conhecidas
 
-- **Firmware do display/câmera com o cadastro novo (seção 3.9) não foi testado em hardware** — só revisado manualmente (sem toolchain Arduino disponível no ambiente de desenvolvimento). Testar na bancada antes de gravar em produção.
-- **Sem lista de "unidade já existente"** na tela de cadastro do display — sempre digita cidade/rua na hora (mitigado por comparação sem acento no backend, mas uma lista seria mais seguro).
+- **Percentual lavador/admin ainda provisório** (55%/45%, hardcoded em `server/lib/comissao.ts`) — precisa virar configurável por máquina/lavador quando for decidido de vez.
 - **`diagnosticar()`** (saúde da operação) ainda assume a "máquina padrão" — não totalmente adaptado pra várias máquinas simultâneas.
 - **Sem "esqueci minha senha"** por decisão do usuário (não querem depender de provedor de e-mail ainda).
 - **Sem provedor de e-mail configurado** — se no futuro precisar (recibos, etc.), precisa escolher um serviço.
 - **OTA (atualização de firmware remota)** não existe — toda atualização exige cabo USB no local.
 - **Diagnóstico remoto fino** (sensores individuais, sub-estado do processo) não chega na nuvem hoje — só aparece na tela física ou no `Serial`.
 - **PROVISION_SECRET e ADMIN_PASSWORD**: confirme que estão configurados em produção (Railway) antes de considerar o sistema fechado para acesso externo — o padrão do projeto é "sem a variável, fica aberto (fase de teste)".
+- **Migrações não rodam sozinhas no deploy do Railway** — precisa aplicar manualmente (`npx prisma migrate deploy` com o `.env` apontando pra produção, revertendo logo em seguida) toda vez que o schema muda.
+- **Substituição de câmera testada só parcialmente em bancada** — o fluxo ESP-NOW (`MSG_IDPUSH_*`) foi validado, mas ainda não numa instalação real trocando a peça física de verdade.
 
 ---
 
@@ -302,7 +353,9 @@ Firmware da câmera tem seu próprio `PILI_PROVISION_SECRET` (deve bater com o `
 
 | Quero mudar... | Vou em... |
 |---|---|
-| Regra de preço/tempo de lavagem | `server/prisma/schema.prisma` (`Program`) + `/admin` |
+| Preço de um tipo de lavagem numa unidade | `/admin/maquinas` (aba da unidade) — não é mais global |
+| Nome dos 4 tipos de lavagem | `/admin/precos` |
+| Percentual lavador/admin | `server/lib/comissao.ts` |
 | Como a fila/reserva funciona | `server/lib/reservations.ts` |
 | Como a placa é lida | `server/lib/lpr.ts`, `server/lib/vision-claude.ts` |
 | Login/cadastro do cliente | `server/app/api/auth/*`, `mobile/src/app/{login,cadastro}.tsx` |
@@ -312,7 +365,8 @@ Firmware da câmera tem seu próprio `PILI_PROVISION_SECRET` (deve bater com o `
 | Painel do admin | `server/app/admin/*` |
 | App do lavador | `mobile/src/app/(tabs)/minha-maquina.tsx`, `server/app/api/lavador/*` |
 | Notificações push | `server/lib/push.ts` |
+| Ambiente de teste local | `server/.env` (local) vs `server/.env.production` (real) |
 
 ---
 
-*Documento gerado por revisão completa do código-fonte em 2026-09-18. Atualize conforme o sistema evoluir — este arquivo não se atualiza sozinho.*
+*Documento gerado por revisão completa do código-fonte em 2026-09-18, atualizado em 2026-09-19. Atualize conforme o sistema evoluir — este arquivo não se atualiza sozinho.*

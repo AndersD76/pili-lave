@@ -12,6 +12,21 @@ type Lavagem = {
   cliente: string;
 };
 
+type DivisaoTipo = {
+  programId: number;
+  presencial: { admin: string; lavador: string };
+  app: { admin: string; lavador: string };
+};
+type Divisao = {
+  porTipo: DivisaoTipo[];
+  totalPresencial: string;
+  totalApp: string;
+  lavadorDeve: string;
+  adminDeve: string;
+  netCents: number;
+  netAbs: string;
+};
+
 type Maquina = {
   id: string;
   numero: number;
@@ -25,8 +40,11 @@ type Maquina = {
   licenca: { label: string; classe: "ok" | "at" | "off" | "err" };
   operadorId: string | null;
   valorDesdeFechamento: string;
+  divisao: Divisao | null;
   historico: Lavagem[];
 };
+
+const NOME_TIPO: Record<number, string> = { 1: "Tipo 1", 2: "Tipo 2", 3: "Tipo 3", 4: "Tipo 4" };
 
 type Lavador = { id: string; label: string };
 type Totais = {
@@ -125,6 +143,75 @@ function PainelMaquina({ m, lavadores }: { m: Maquina; lavadores: Lavador[] }) {
         </select>
         <button className="btn ghost" type="submit" style={{ height: 36 }}>Salvar</button>
       </form>
+
+      {m.divisao && (
+        <>
+          <h4 className="section-title" style={{ margin: "26px 0 10px" }}>
+            Divisão com o lavador (desde o último fechamento)
+          </h4>
+          <p style={{ color: "var(--aco-d)", fontSize: 13, marginBottom: 12 }}>
+            Presencial fica na mão do lavador na hora (ele deve a parte do admin);
+            App cai direto pro admin (ele deve a parte do lavador).
+          </p>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Tipo</th>
+                  <th colSpan={2} style={{ textAlign: "center" }}>Presencial</th>
+                  <th colSpan={2} style={{ textAlign: "center" }}>App</th>
+                </tr>
+                <tr>
+                  <th>Admin</th><th>Lavador</th><th>Admin</th><th>Lavador</th>
+                </tr>
+              </thead>
+              <tbody>
+                {m.divisao.porTipo.map((t) => (
+                  <tr key={t.programId}>
+                    <td>{NOME_TIPO[t.programId]}</td>
+                    <td>{t.presencial.admin}</td>
+                    <td>{t.presencial.lavador}</td>
+                    <td>{t.app.admin}</td>
+                    <td>{t.app.lavador}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <td style={{ fontWeight: 700 }}>Total</td>
+                  <td colSpan={2} style={{ fontWeight: 700 }}>{m.divisao.totalPresencial}</td>
+                  <td colSpan={2} style={{ fontWeight: 700 }}>{m.divisao.totalApp}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div
+            className="card"
+            style={{
+              marginTop: 12, padding: "14px 18px", borderRadius: 12,
+              background: "var(--verniz2)", border: "1px solid var(--linha)",
+            }}
+          >
+            {m.divisao.netCents === 0 ? (
+              <span>Nada a acertar — presencial e app se equilibram.</span>
+            ) : m.divisao.netCents > 0 ? (
+              <span>
+                <b>Admin deve pagar o lavador: {m.divisao.netAbs}</b>
+                <br />
+                <span style={{ color: "var(--aco-d)", fontSize: 12 }}>
+                  (lavador deve {m.divisao.lavadorDeve} do presencial; admin deve {m.divisao.adminDeve} do app — resultado líquido)
+                </span>
+              </span>
+            ) : (
+              <span>
+                <b>Lavador deve repassar pro admin: {m.divisao.netAbs}</b>
+                <br />
+                <span style={{ color: "var(--aco-d)", fontSize: 12 }}>
+                  (lavador deve {m.divisao.lavadorDeve} do presencial; admin deve {m.divisao.adminDeve} do app — resultado líquido)
+                </span>
+              </span>
+            )}
+          </div>
+        </>
+      )}
 
       <h4 className="section-title" style={{ margin: "26px 0 10px" }}>
         Histórico de lavagens (sem acerto financeiro ainda)

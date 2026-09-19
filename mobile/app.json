@@ -45,7 +45,8 @@
         {
           "faceIDPermission": "O PILI LAVE usa Face ID para abrir o app sem precisar do código por SMS."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

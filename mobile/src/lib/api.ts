@@ -117,5 +117,6 @@ export type MaquinaLavador = {
   emManutencao: boolean;
   periodo: { inicio: string; fim: string };
   totalGeralCents: number;
+  suaParticipacaoCents: number;
   porTipo: TipoLavagemLavador[];
 };
