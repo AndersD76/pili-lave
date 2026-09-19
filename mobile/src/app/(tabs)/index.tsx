@@ -250,7 +250,7 @@ export default function Home() {
         </Card>
 
         <View style={{ marginTop: 22 }}>
-          <Btn title="Reservar lavagem" onPress={() => router.push("/nova-lavagem")} />
+          <Btn title="Reservar lavagem" onPress={() => router.push("/unidades")} />
         </View>
 
         <Card style={{ marginTop: 16, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 14 }}>

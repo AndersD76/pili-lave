@@ -1,4 +1,4 @@
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { api, ApiError, type Program, type Vehicle, type WalletResp } from "@/lib/api";
@@ -6,6 +6,7 @@ import { Btn, Card, ErrText, Label, Screen, Sub } from "@/ui";
 import { C, F, fmtPlate, money } from "@/theme";
 
 export default function NovaLavagem() {
+  const { stationId, stationName } = useLocalSearchParams<{ stationId?: string; stationName?: string }>();
   const [programs, setPrograms] = useState<Program[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
   const [available, setAvailable] = useState<number | null>(null);
@@ -18,7 +19,8 @@ export default function NovaLavagem() {
 
   useFocusEffect(
     useCallback(() => {
-      api<Program[]>("/api/programs", { auth: false }).then(setPrograms).catch(() => {});
+      const qs = stationId ? `?stationId=${encodeURIComponent(stationId)}` : "";
+      api<Program[]>(`/api/programs${qs}`, { auth: false }).then(setPrograms).catch(() => {});
       api<Vehicle[]>("/api/vehicles")
         .then((v) => {
           setVehicles(v);
@@ -29,7 +31,7 @@ export default function NovaLavagem() {
         })
         .catch(() => setVehicles((cur) => cur ?? []));
       api<WalletResp>("/api/wallet").then((w) => setAvailable(w.availableCents)).catch(() => {});
-    }, [])
+    }, [stationId])
   );
 
   // Pré-seleciona a lavagem padrão do veículo quando nenhum programa foi escolhido ainda.
@@ -52,7 +54,7 @@ export default function NovaLavagem() {
     setInsufficient(null);
     setLoading(true);
     try {
-      await api("/api/reservations", { body: { programId: selected.id, vehicleId } });
+      await api("/api/reservations", { body: { programId: selected.id, vehicleId, stationId } });
       Alert.alert(
         "Reserva feita!",
         "Válida por 1 hora. Aproxime o carro da câmera e entre no verde.",
@@ -74,9 +76,30 @@ export default function NovaLavagem() {
 
   const semVeiculo = vehicles !== null && vehicles.length === 0;
 
+  if (!stationId) {
+    return (
+      <Screen>
+        <View style={{ marginTop: 24, gap: 14 }}>
+          <Text style={{ fontFamily: F.display, fontSize: 18, color: C.cromo }}>
+            Escolha a unidade primeiro
+          </Text>
+          <Sub>Cada unidade tem seu próprio preço — selecione onde você vai lavar.</Sub>
+          <Btn title="Ver unidades" onPress={() => router.replace("/unidades")} />
+        </View>
+      </Screen>
+    );
+  }
+
   return (
     <Screen>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 20, gap: 20 }}>
+        {stationName && (
+          <View>
+            <Label>Unidade</Label>
+            <Text style={{ fontFamily: F.displayX, fontSize: 18, color: C.cromo }}>{stationName}</Text>
+          </View>
+        )}
+
         {semVeiculo && (
           <Card>
             <Text style={{ fontFamily: F.display, fontSize: 18, color: C.cromo }}>

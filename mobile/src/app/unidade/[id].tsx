@@ -122,7 +122,10 @@ export default function UnidadeDetalhe() {
           </Card>
         </View>
 
-        <Btn title="Reservar lavagem" onPress={() => router.push("/nova-lavagem")} />
+        <Btn
+          title="Reservar lavagem"
+          onPress={() => router.push({ pathname: "/nova-lavagem", params: { stationId: station.id, stationName: station.name } })}
+        />
       </ScrollView>
     </Screen>
   );
