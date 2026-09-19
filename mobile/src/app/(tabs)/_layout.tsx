@@ -60,6 +60,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="minhas-comissoes"
+        options={{
+          title: "Comissões",
+          // só existe pra quem é PARCEIRO (comissão 1/2, aluguel)
+          href: me?.role === "PARCEIRO" ? undefined : null,
+          tabBarIcon: ({ color, size }) => <Ionicons name="cash" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="perfil"
         options={{
           title: "Perfil",

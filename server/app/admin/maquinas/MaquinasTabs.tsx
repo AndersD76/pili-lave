@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { marcarPagamento, alternarManutencao, definirOperador } from "./actions";
+import { marcarPagamento, alternarManutencao, definirOperador, salvarParticipante, removerParticipante } from "./actions";
 import { salvarPrecoUnidade } from "../precos/actions";
 
 type Lavagem = {
@@ -12,19 +12,31 @@ type Lavagem = {
   cliente: string;
 };
 
-type DivisaoTipo = {
-  programId: number;
-  presencial: { admin: string; lavador: string };
-  app: { admin: string; lavador: string };
+type TipoParticipacao = "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL";
+
+const TIPOS_PARTICIPACAO: TipoParticipacao[] = ["LAVADOR", "COMISSAO1", "COMISSAO2", "ALUGUEL"];
+const LABEL_TIPO: Record<TipoParticipacao, string> = {
+  LAVADOR: "Lavador",
+  COMISSAO1: "Comissão 1",
+  COMISSAO2: "Comissão 2",
+  ALUGUEL: "Aluguel",
+};
+
+type ParticipanteAtual = { tipo: TipoParticipacao; userId: string; percentual: number };
+
+type DivisaoParticipante = {
+  tipo: TipoParticipacao | "ADMIN";
+  label: string;
+  percentual: number;
+  presencial: string;
+  app: string;
+  saldoCents: number;
+  saldo: string;
 };
 type Divisao = {
-  porTipo: DivisaoTipo[];
   totalPresencial: string;
   totalApp: string;
-  lavadorDeve: string;
-  adminDeve: string;
-  netCents: number;
-  netAbs: string;
+  participantes: DivisaoParticipante[];
 };
 
 type Maquina = {
@@ -40,6 +52,7 @@ type Maquina = {
   licenca: { label: string; classe: "ok" | "at" | "off" | "err" };
   operadorId: string | null;
   valorDesdeFechamento: string;
+  participantes: ParticipanteAtual[];
   divisao: Divisao | null;
   historico: Lavagem[];
 };
@@ -47,6 +60,7 @@ type Maquina = {
 const NOME_TIPO: Record<number, string> = { 1: "Tipo 1", 2: "Tipo 2", 3: "Tipo 3", 4: "Tipo 4" };
 
 type Lavador = { id: string; label: string };
+type Participante = { id: string; label: string };
 type Totais = {
   valorTotalGeral: string;
   porPrograma: { programa: string; qtd: number; valor: string }[];
@@ -94,7 +108,75 @@ function PrecosUnidade({ stationId, precos }: { stationId: string; precos: Preco
   );
 }
 
-function PainelMaquina({ m, lavadores }: { m: Maquina; lavadores: Lavador[] }) {
+function ParticipantesMaquina({ m, participantesPossiveis }: { m: Maquina; participantesPossiveis: Participante[] }) {
+  const somaCadastrada = m.participantes.reduce((s, p) => s + p.percentual, 0);
+  const sobraAdmin = Math.max(0, 100 - somaCadastrada);
+
+  return (
+    <>
+      <h4 className="section-title" style={{ margin: "26px 0 10px" }}>
+        Participação na máquina
+      </h4>
+      <p style={{ color: "var(--aco-d)", fontSize: 13, marginBottom: 12 }}>
+        A soma de todos os participantes cadastrados nunca passa de 100% — o que sobra fica automaticamente com o admin
+        (hoje: <b>{sobraAdmin.toFixed(1)}%</b> pro admin).
+      </p>
+      <div className="tbl-wrap">
+        <table className="tbl">
+          <thead>
+            <tr><th>Tipo</th><th>Pessoa</th><th>%</th><th></th></tr>
+          </thead>
+          <tbody>
+            {TIPOS_PARTICIPACAO.map((tipo) => {
+              const atual = m.participantes.find((p) => p.tipo === tipo);
+              return (
+                <tr key={tipo}>
+                  <td>{LABEL_TIPO[tipo]}</td>
+                  <td>
+                    <form action={salvarParticipante} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <input type="hidden" name="machineId" value={m.id} />
+                      <input type="hidden" name="tipo" value={tipo} />
+                      <select name="userId" defaultValue={atual?.userId ?? ""} className="field" style={{ height: 32, fontSize: 13, padding: "0 8px" }}>
+                        <option value="">— ninguém —</option>
+                        {participantesPossiveis.map((p) => (
+                          <option key={p.id} value={p.id}>{p.label}</option>
+                        ))}
+                      </select>
+                      <input
+                        className="field"
+                        name="percentual"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        placeholder="%"
+                        defaultValue={atual?.percentual || ""}
+                        style={{ width: 70, height: 32, fontSize: 13, padding: "0 8px" }}
+                      />
+                      <button className="btn ghost" type="submit" style={{ height: 32, padding: "0 10px", fontSize: 12 }}>Salvar</button>
+                    </form>
+                  </td>
+                  <td>{atual ? `${atual.percentual}%` : "—"}</td>
+                  <td>
+                    {atual && (
+                      <form action={removerParticipante}>
+                        <input type="hidden" name="machineId" value={m.id} />
+                        <input type="hidden" name="tipo" value={tipo} />
+                        <button className="btn ghost" type="submit" style={{ height: 28, padding: "0 8px", fontSize: 11 }}>Remover</button>
+                      </form>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function PainelMaquina({ m, lavadores, participantesPossiveis }: { m: Maquina; lavadores: Lavador[]; participantesPossiveis: Participante[] }) {
   return (
     <div className="maq-painel">
       <div className="maq-painel-topo">
@@ -144,71 +226,45 @@ function PainelMaquina({ m, lavadores }: { m: Maquina; lavadores: Lavador[] }) {
         <button className="btn ghost" type="submit" style={{ height: 36 }}>Salvar</button>
       </form>
 
+      <ParticipantesMaquina m={m} participantesPossiveis={participantesPossiveis} />
+
       {m.divisao && (
         <>
           <h4 className="section-title" style={{ margin: "26px 0 10px" }}>
-            Divisão com o lavador (desde o último fechamento)
+            Divisão entre participantes (desde o último fechamento)
           </h4>
           <p style={{ color: "var(--aco-d)", fontSize: 13, marginBottom: 12 }}>
-            Presencial fica na mão do lavador na hora (ele deve a parte do admin);
-            App cai direto pro admin (ele deve a parte do lavador).
+            O lavador já fica com 100% do presencial na hora (deve a parte de todo mundo); o admin já fica com 100% do
+            app (deve a parte de todo mundo). Quem não é lavador nem admin nunca fica com dinheiro em mãos — é sempre credor.
           </p>
           <div className="tbl-wrap">
             <table className="tbl">
               <thead>
                 <tr>
-                  <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Tipo</th>
-                  <th colSpan={2} style={{ textAlign: "center" }}>Presencial</th>
-                  <th colSpan={2} style={{ textAlign: "center" }}>App</th>
-                </tr>
-                <tr>
-                  <th>Admin</th><th>Lavador</th><th>Admin</th><th>Lavador</th>
+                  <th>Participante</th><th>%</th><th>Presencial</th><th>App</th><th>Saldo</th>
                 </tr>
               </thead>
               <tbody>
-                {m.divisao.porTipo.map((t) => (
-                  <tr key={t.programId}>
-                    <td>{NOME_TIPO[t.programId]}</td>
-                    <td>{t.presencial.admin}</td>
-                    <td>{t.presencial.lavador}</td>
-                    <td>{t.app.admin}</td>
-                    <td>{t.app.lavador}</td>
+                {m.divisao.participantes.map((p) => (
+                  <tr key={p.tipo}>
+                    <td>{p.tipo === "ADMIN" ? "Admin" : `${LABEL_TIPO[p.tipo as TipoParticipacao]} (${p.label})`}</td>
+                    <td>{p.percentual.toFixed(1)}%</td>
+                    <td>{p.presencial}</td>
+                    <td>{p.app}</td>
+                    <td style={{ fontWeight: 700 }}>
+                      {p.saldoCents === 0 ? "—" : p.saldoCents > 0 ? `a receber ${p.saldo}` : `deve repassar ${p.saldo}`}
+                    </td>
                   </tr>
                 ))}
                 <tr>
                   <td style={{ fontWeight: 700 }}>Total</td>
-                  <td colSpan={2} style={{ fontWeight: 700 }}>{m.divisao.totalPresencial}</td>
-                  <td colSpan={2} style={{ fontWeight: 700 }}>{m.divisao.totalApp}</td>
+                  <td></td>
+                  <td style={{ fontWeight: 700 }}>{m.divisao.totalPresencial}</td>
+                  <td style={{ fontWeight: 700 }}>{m.divisao.totalApp}</td>
+                  <td></td>
                 </tr>
               </tbody>
             </table>
-          </div>
-          <div
-            className="card"
-            style={{
-              marginTop: 12, padding: "14px 18px", borderRadius: 12,
-              background: "var(--verniz2)", border: "1px solid var(--linha)",
-            }}
-          >
-            {m.divisao.netCents === 0 ? (
-              <span>Nada a acertar — presencial e app se equilibram.</span>
-            ) : m.divisao.netCents > 0 ? (
-              <span>
-                <b>Admin deve pagar o lavador: {m.divisao.netAbs}</b>
-                <br />
-                <span style={{ color: "var(--aco-d)", fontSize: 12 }}>
-                  (lavador deve {m.divisao.lavadorDeve} do presencial; admin deve {m.divisao.adminDeve} do app — resultado líquido)
-                </span>
-              </span>
-            ) : (
-              <span>
-                <b>Lavador deve repassar pro admin: {m.divisao.netAbs}</b>
-                <br />
-                <span style={{ color: "var(--aco-d)", fontSize: 12 }}>
-                  (lavador deve {m.divisao.lavadorDeve} do presencial; admin deve {m.divisao.adminDeve} do app — resultado líquido)
-                </span>
-              </span>
-            )}
           </div>
         </>
       )}
@@ -246,11 +302,13 @@ function PainelMaquina({ m, lavadores }: { m: Maquina; lavadores: Lavador[] }) {
 export default function MaquinasTabs({
   maquinas,
   lavadores,
+  participantesPossiveis,
   totais,
   precosPorUnidade,
 }: {
   maquinas: Maquina[];
   lavadores: Lavador[];
+  participantesPossiveis: Participante[];
   totais: Totais;
   precosPorUnidade: Record<string, PrecoPrograma[]>;
 }) {
@@ -361,7 +419,7 @@ export default function MaquinasTabs({
           grupoAtivo && (
             <>
               <PrecosUnidade stationId={grupoAtivo.stationId} precos={precosPorUnidade[grupoAtivo.stationId] ?? []} />
-              {maquinaAtiva && <PainelMaquina m={maquinaAtiva} lavadores={lavadores} />}
+              {maquinaAtiva && <PainelMaquina m={maquinaAtiva} lavadores={lavadores} participantesPossiveis={participantesPossiveis} />}
             </>
           )
         )}

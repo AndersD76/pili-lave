@@ -2,9 +2,11 @@ import { prisma } from "@/lib/prisma";
 import { requireAdminPage } from "@/lib/admin";
 import { AdminNav } from "../nav";
 import MaquinasTabs from "./MaquinasTabs";
-import { parteLavador, parteAdmin, acertoFinal } from "@/lib/comissao";
+import { divisaoCompleta, participacoesDaMaquina } from "@/lib/comissao";
 
 export const dynamic = "force-dynamic";
+
+const TIPOS_PARTICIPACAO = ["LAVADOR", "COMISSAO1", "COMISSAO2", "ALUGUEL"] as const;
 
 const LIC_AVISO_DIAS = 40;
 const LIC_BLOQUEIO_DIAS = 50;
@@ -43,7 +45,7 @@ function licencaDe(lastPaymentDate: Date | null): { label: string; classe: "ok" 
 
 export default async function AdminMaquinas() {
   await requireAdminPage();
-  const [machines, lavadores] = await Promise.all([
+  const [machines, lavadores, participantesPossiveis] = await Promise.all([
     prisma.machine.findMany({
       include: { station: true, operador: true },
       orderBy: [{ station: { city: "asc" } }, { numero: "asc" }],
@@ -53,7 +55,15 @@ export default async function AdminMaquinas() {
       select: { id: true, name: true, phone: true },
       orderBy: { name: "asc" },
     }),
+    prisma.user.findMany({
+      where: { role: { in: ["LAVADOR", "PARCEIRO"] } },
+      select: { id: true, name: true, phone: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
+
+  const participacoesPorMaquina = await Promise.all(machines.map((m) => participacoesDaMaquina(m.id)));
+  const userLabelMap = new Map(participantesPossiveis.map((u) => [u.id, u.name ?? u.phone]));
 
   const historicos = await Promise.all(
     machines.map((m) =>
@@ -122,36 +132,21 @@ export default async function AdminMaquinas() {
   const maquinasProps = machines.map((m, i) => {
     const offline = !m.lastHeartbeat || Date.now() - m.lastHeartbeat.getTime() > HEARTBEAT_OFFLINE_S * 1000;
 
-    // Divisão admin/lavador por tipo, só relevante quando há lavador
-    // designado. presencial = dinheiro que o lavador já tem na mão; app =
-    // dinheiro que o admin já tem na conta.
+    // Divisão entre todos os participantes cadastrados na máquina (lavador,
+    // comissão 1/2, aluguel) + admin (o que sobra até 100%). Só relevante
+    // quando há pelo menos um participante cadastrado.
+    const participacoes = participacoesPorMaquina[i];
     let divisao: {
-      porTipo: { programId: number; presencial: { admin: number; lavador: number }; app: { admin: number; lavador: number } }[];
+      participantes: ReturnType<typeof divisaoCompleta>["porParticipante"];
       totalPresencialCents: number;
       totalAppCents: number;
-      acerto: ReturnType<typeof acertoFinal>;
     } | null = null;
-    if (m.operadorId) {
-      const appMap = new Map(porProgramaPorMaquina[i].map((g) => [g.programId, g._sum.amountCents ?? 0]));
-      const presMap = new Map(presencialPorProgramaPorMaquina[i].map((g) => [g.programId, g._sum.amountCents ?? 0]));
+    if (participacoes.length > 0) {
       let totalPresencialCents = 0, totalAppCents = 0;
-      const porTipoDivisao = [1, 2, 3, 4].map((programId) => {
-        const presCents = presMap.get(programId) ?? 0;
-        const appCents = appMap.get(programId) ?? 0;
-        totalPresencialCents += presCents;
-        totalAppCents += appCents;
-        return {
-          programId,
-          presencial: { admin: parteAdmin(presCents), lavador: parteLavador(presCents) },
-          app: { admin: parteAdmin(appCents), lavador: parteLavador(appCents) },
-        };
-      });
-      divisao = {
-        porTipo: porTipoDivisao,
-        totalPresencialCents,
-        totalAppCents,
-        acerto: acertoFinal(totalPresencialCents, totalAppCents),
-      };
+      for (const g of presencialPorProgramaPorMaquina[i]) totalPresencialCents += g._sum.amountCents ?? 0;
+      for (const g of porProgramaPorMaquina[i]) totalAppCents += g._sum.amountCents ?? 0;
+      const { porParticipante } = divisaoCompleta(participacoes, totalPresencialCents, totalAppCents);
+      divisao = { participantes: porParticipante, totalPresencialCents, totalAppCents };
     }
 
     return {
@@ -167,18 +162,22 @@ export default async function AdminMaquinas() {
       licenca: licencaDe(m.lastPaymentDate),
       operadorId: m.operadorId,
       valorDesdeFechamento: money(totalDesdeFechamentoPorMaquina[i]),
+      participantes: TIPOS_PARTICIPACAO.map((tipo) => {
+        const p = participacoesPorMaquina[i].find((x) => x.tipo === tipo);
+        return { tipo, userId: p?.userId ?? "", percentual: p?.percentual ?? 0 };
+      }),
       divisao: divisao && {
-        porTipo: divisao.porTipo.map((t) => ({
-          programId: t.programId,
-          presencial: { admin: money(t.presencial.admin), lavador: money(t.presencial.lavador) },
-          app: { admin: money(t.app.admin), lavador: money(t.app.lavador) },
-        })),
         totalPresencial: money(divisao.totalPresencialCents),
         totalApp: money(divisao.totalAppCents),
-        lavadorDeve: money(divisao.acerto.lavadorDeveCents),
-        adminDeve: money(divisao.acerto.adminDeveCents),
-        netCents: divisao.acerto.netCents,
-        netAbs: money(Math.abs(divisao.acerto.netCents)),
+        participantes: divisao.participantes.map((p) => ({
+          tipo: p.tipo,
+          label: p.tipo === "ADMIN" ? "Admin" : userLabelMap.get(p.userId ?? "") ?? "—",
+          percentual: p.percentual,
+          presencial: money(p.presencialCents),
+          app: money(p.appCents),
+          saldoCents: p.saldoCents,
+          saldo: money(Math.abs(p.saldoCents)),
+        })),
       },
       historico: historicos[i].map((r) => ({
         id: r.id,
@@ -191,6 +190,7 @@ export default async function AdminMaquinas() {
   });
 
   const lavadoresProps = lavadores.map((l) => ({ id: l.id, label: l.name ?? l.phone }));
+  const participantesPossiveisProps = participantesPossiveis.map((u) => ({ id: u.id, label: u.name ?? u.phone }));
 
   // Preço por unidade — override (StationPrograma) quando existir, senão o
   // padrão do Program. Uma consulta só de overrides, indexada por unidade.
@@ -238,7 +238,13 @@ export default async function AdminMaquinas() {
       </div>
 
       <div style={{ marginTop: 30 }}>
-        <MaquinasTabs maquinas={maquinasProps} lavadores={lavadoresProps} totais={totaisProps} precosPorUnidade={precosPorUnidadeProps} />
+        <MaquinasTabs
+          maquinas={maquinasProps}
+          lavadores={lavadoresProps}
+          participantesPossiveis={participantesPossiveisProps}
+          totais={totaisProps}
+          precosPorUnidade={precosPorUnidadeProps}
+        />
       </div>
     </main>
   );

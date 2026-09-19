@@ -9,16 +9,17 @@ function money(cents: number): string {
   return `R$ ${(cents / 100).toFixed(2).replace(".", ",")}`;
 }
 
-async function toggleRole(formData: FormData) {
+const PAPEIS_ATRIBUIVEIS = ["CLIENT", "LAVADOR", "PARCEIRO"] as const;
+
+async function definirPapel(formData: FormData) {
   "use server";
   if (!(await isAdmin())) return;
   const id = String(formData.get("id"));
+  const role = String(formData.get("role"));
+  if (!PAPEIS_ATRIBUIVEIS.includes(role as (typeof PAPEIS_ATRIBUIVEIS)[number])) return;
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user || user.role === "ADMIN") return;
-  await prisma.user.update({
-    where: { id },
-    data: { role: user.role === "LAVADOR" ? "CLIENT" : "LAVADOR" },
-  });
+  await prisma.user.update({ where: { id }, data: { role: role as (typeof PAPEIS_ATRIBUIVEIS)[number] } });
   revalidatePath("/admin/usuarios");
 }
 
@@ -47,6 +48,7 @@ export default async function AdminUsuarios() {
                 <td>
                   {u.role === "ADMIN" && <span className="chip err">Admin</span>}
                   {u.role === "LAVADOR" && <span className="chip ok">Lavador</span>}
+                  {u.role === "PARCEIRO" && <span className="chip at">Parceiro</span>}
                   {u.role === "CLIENT" && <span className="chip off">Cliente</span>}
                 </td>
                 <td>{money(u.walletCents)}</td>
@@ -55,11 +57,14 @@ export default async function AdminUsuarios() {
                 <td>{u.createdAt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
                 <td>
                   {u.role !== "ADMIN" && (
-                    <form action={toggleRole}>
+                    <form action={definirPapel} style={{ display: "flex", gap: 6 }}>
                       <input type="hidden" name="id" value={u.id} />
-                      <button className="btn ghost" type="submit">
-                        {u.role === "LAVADOR" ? "Rebaixar p/ cliente" : "Tornar lavador"}
-                      </button>
+                      <select name="role" defaultValue={u.role} className="field" style={{ height: 32, fontSize: 13, padding: "0 8px" }}>
+                        <option value="CLIENT">Cliente</option>
+                        <option value="LAVADOR">Lavador</option>
+                        <option value="PARCEIRO">Parceiro</option>
+                      </select>
+                      <button className="btn ghost" type="submit" style={{ height: 32, padding: "0 10px", fontSize: 12 }}>Salvar</button>
                     </form>
                   )}
                 </td>

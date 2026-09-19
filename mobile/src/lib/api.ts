@@ -56,7 +56,7 @@ export async function api<T = unknown>(
 
 export type Me = {
   id: string; phone: string; email?: string | null; name: string | null; cpf?: string | null;
-  role: "CLIENT" | "LAVADOR" | "ADMIN"; walletCents: number;
+  role: "CLIENT" | "LAVADOR" | "PARCEIRO" | "ADMIN"; walletCents: number;
 };
 export type Program = { id: number; nome: string; precoCents: number };
 export type Vehicle = { id: string; plate: string; brand: string | null; model: string | null; defaultProgramId: number | null };
@@ -115,6 +115,21 @@ export type MaquinaLavador = {
   status: "FREE" | "WASHING" | "FAULT" | "OFFLINE" | "MAINTENANCE";
   emFalha: boolean;
   emManutencao: boolean;
+  periodo: { inicio: string; fim: string };
+  totalGeralCents: number;
+  suaParticipacaoCents: number;
+  porTipo: TipoLavagemLavador[];
+};
+
+/** Painel do parceiro (Comissão 1/2, Aluguel) — igual ao do lavador, sem
+ *  status de falha em destaque (ver /api/parceiro/painel). */
+export type MaquinaParceiro = {
+  id: string;
+  numero: number;
+  unidade: { cidade: string; rua: string };
+  tipo: "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL";
+  tipoLabel: string;
+  status: "FREE" | "WASHING" | "FAULT" | "OFFLINE" | "MAINTENANCE";
   periodo: { inicio: string; fim: string };
   totalGeralCents: number;
   suaParticipacaoCents: number;

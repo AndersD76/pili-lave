@@ -15,7 +15,37 @@ datasource db {
 enum Role {
   CLIENT
   LAVADOR
+  /// Sócio/comissionado numa ou mais máquinas (vendedor 1, vendedor 2,
+  /// dono do imóvel/aluguel...) — vê relatório das próprias máquinas no
+  /// app, mas NUNCA recebe notificação de falha (diferença chave pro
+  /// Lavador). O tipo exato de cada vínculo fica em MachineParticipante.
+  PARCEIRO
   ADMIN
+}
+
+enum TipoParticipacao {
+  LAVADOR
+  COMISSAO1
+  COMISSAO2
+  ALUGUEL
+}
+
+/// Um participante numa máquina, com seu percentual — a soma de TODOS os
+/// participantes de uma máquina tem que ser <= 100%; o que sobra até 100%
+/// é do admin (calculado, nunca guardado). Um único tipo por máquina (não
+/// dá pra ter 2 "Comissão 1" na mesma máquina, por exemplo).
+model MachineParticipante {
+  id         String            @id @default(cuid())
+  machineId  String
+  userId     String
+  tipo       TipoParticipacao
+  percentual Float             // 0-100
+
+  machine Machine @relation(fields: [machineId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([machineId, tipo])
+  @@index([userId])
 }
 
 enum TopupStatus {
@@ -78,6 +108,9 @@ model User {
   /// Máquinas que este usuário (role LAVADOR) administra — vê status,
   /// lavagens e faturamento só delas; recebe aviso se derem erro.
   maquinasOperadas Machine[] @relation("MachineOperador")
+  /// Vínculos de comissão/aluguel em máquinas (role PARCEIRO, ou LAVADOR
+  /// com percentual configurado) — só relatório, nunca notificação.
+  participacoes MachineParticipante[]
 }
 
 /* Legado: login por SMS. Mantido no schema/rotas por compatibilidade, mas
@@ -290,10 +323,11 @@ model Machine {
   /// designado ainda (só os ADMINs são avisados, como já era antes).
   operadorId String?
 
-  station      WashStation   @relation(fields: [stationId], references: [id])
-  operador     User?         @relation("MachineOperador", fields: [operadorId], references: [id])
-  reservations Reservation[]
-  presenciais  LavagemPresencial[]
+  station       WashStation   @relation(fields: [stationId], references: [id])
+  operador      User?         @relation("MachineOperador", fields: [operadorId], references: [id])
+  reservations  Reservation[]
+  presenciais   LavagemPresencial[]
+  participantes MachineParticipante[]
 
   @@unique([stationId, numero])
   @@index([stationId])
