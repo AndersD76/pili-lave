@@ -9,19 +9,20 @@ function centsFromForm(v: FormDataEntryValue | null): number {
   return Math.max(0, Math.round(n * 100));
 }
 
-/** Atualiza o preço PADRÃO (modelo) de um tipo de lavagem — vale pra toda
- * unidade que não tiver um preço próprio cadastrado. */
-export async function salvarPrecoPadrao(formData: FormData) {
+/** Nome do tipo de lavagem (vale pra todas as unidades) — não tem preço
+ * aqui, só na aba de cada unidade. */
+export async function salvarNomeTipo(formData: FormData) {
   if (!(await isAdmin())) return;
   const id = Number(formData.get("id"));
-  const precoCents = centsFromForm(formData.get("preco"));
-  await prisma.program.update({ where: { id }, data: { precoCents } });
+  const nome = String(formData.get("nome") ?? "").trim();
+  if (!nome) return;
+  await prisma.program.update({ where: { id }, data: { nome } });
   revalidatePath("/admin/precos");
   revalidatePath("/admin/maquinas");
 }
 
-/** Define (ou atualiza) o preço de um tipo de lavagem PARA UMA UNIDADE
- * específica — sobrepõe o padrão só ali. */
+/** Define (ou atualiza) o preço de um tipo de lavagem NESTA unidade —
+ * cada unidade preenche o próprio valor, sem herdar de lugar nenhum. */
 export async function salvarPrecoUnidade(formData: FormData) {
   if (!(await isAdmin())) return;
   const stationId = String(formData.get("stationId"));
@@ -32,14 +33,5 @@ export async function salvarPrecoUnidade(formData: FormData) {
     update: { precoCents },
     create: { stationId, programId, precoCents },
   });
-  revalidatePath("/admin/maquinas");
-}
-
-/** Remove o preço próprio da unidade — volta a usar o padrão. */
-export async function removerPrecoUnidade(formData: FormData) {
-  if (!(await isAdmin())) return;
-  const stationId = String(formData.get("stationId"));
-  const programId = Number(formData.get("programId"));
-  await prisma.stationPrograma.deleteMany({ where: { stationId, programId } });
   revalidatePath("/admin/maquinas");
 }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { marcarPagamento, alternarManutencao, definirOperador } from "./actions";
-import { salvarPrecoUnidade, removerPrecoUnidade } from "../precos/actions";
+import { salvarPrecoUnidade } from "../precos/actions";
 
 type Lavagem = {
   id: string;
@@ -44,7 +44,7 @@ function PrecosUnidade({ stationId, precos }: { stationId: string; precos: Preco
         Preços desta unidade
       </h4>
       <p style={{ color: "var(--aco-d)", fontSize: 13, marginBottom: 14 }}>
-        Sem preço próprio, essa unidade usa o valor padrão (aba Preços). Vale igual pra todas as máquinas dela.
+        Cada unidade cobra o valor que quiser — preencha os 4 tipos aqui (os nomes vêm da aba Preços).
       </p>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
         {precos.map((p) => (
@@ -61,20 +61,13 @@ function PrecosUnidade({ stationId, precos }: { stationId: string; precos: Preco
                 type="number"
                 step="0.01"
                 min="0"
-                defaultValue={(p.precoCents / 100).toFixed(2)}
+                placeholder="0,00"
+                defaultValue={p.proprio ? (p.precoCents / 100).toFixed(2) : ""}
               />
               <button className="btn ghost" type="submit" style={{ height: 30, padding: "0 10px", fontSize: 12 }}>Salvar</button>
             </form>
-            {p.proprio ? (
-              <form action={removerPrecoUnidade} style={{ marginTop: 6 }}>
-                <input type="hidden" name="stationId" value={stationId} />
-                <input type="hidden" name="programId" value={p.programId} />
-                <button className="btn ghost" type="submit" style={{ height: 26, padding: "0 8px", fontSize: 11 }}>
-                  Voltar ao padrão
-                </button>
-              </form>
-            ) : (
-              <div style={{ fontSize: 11, color: "var(--aco-d)", marginTop: 6 }}>usando o padrão</div>
+            {!p.proprio && (
+              <div style={{ fontSize: 11, color: "var(--atencao)", marginTop: 6 }}>preço ainda não definido</div>
             )}
           </div>
         ))}
