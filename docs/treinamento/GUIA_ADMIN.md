@@ -91,6 +91,10 @@ Se você já sabe que uma pessoa vai ser Lavador, Comissão 1, Comissão 2 ou Al
 
 > ⚠️ O usuário precisa **já ter se cadastrado no app antes** (cadastro normal, com e-mail e senha) — o admin não cria a conta da pessoa, só muda o papel/capacidade de quem já existe.
 
+> 💡 Ao promover direto pra **Lavador** ou **Parceiro** por esse atalho, o sistema já registra automaticamente o pedido correspondente como "Aprovado" — assim o Perfil da própria pessoa mostra certinho que ela tem aquela capacidade, em vez de continuar mostrando "Pedir" mesmo já promovida.
+
+> 💡 O "app" citado aqui é, na prática hoje, o **PWA** (acessado pelo navegador) — o app de celular ainda não foi publicado nas lojas, então clientes, lavadores e parceiros usam o sistema pelo link no navegador. A barra de navegação de baixo do PWA tem a mesma estrutura do app de celular, incluindo as abas condicionais "Minha Máq." e "Comissões" pra quem tem a capacidade aprovada.
+
 ---
 
 ## 5. Preços (`/admin/precos`)

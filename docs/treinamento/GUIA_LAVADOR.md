@@ -20,7 +20,9 @@ Se você entrar no app e a aba "Minha Máquina" não aparecer, ou aparecer vazia
 
 ## 2. Onde acessar
 
-É no **mesmo app do celular** que o cliente usa (não precisa instalar nada diferente). Assim que sua conta é promovida a Lavador, uma aba nova aparece no menu de baixo: **"Minha Máquina"** (ícone de ferramenta 🔧).
+É no **mesmo app** que o cliente usa (não precisa instalar nada diferente). Assim que sua conta é promovida a Lavador, uma aba nova aparece no menu de baixo: **"Minha Máquina"** (ícone de ferramenta 🔧).
+
+> 💡 Hoje, na prática, o acesso é sempre pelo **navegador** (o link que o administrador te passar) — o app para celular ainda não foi publicado nas lojas. A tela e o funcionamento são exatamente os mesmos descritos aqui, é só uma questão de onde você abre.
 
 ![Aba Minha Máquina no menu do app](imagens/lavador/01-aba-menu.png)
 

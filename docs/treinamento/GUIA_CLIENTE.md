@@ -8,7 +8,7 @@
 
 ## 1. Instalando e abrindo pela primeira vez
 
-Baixe o app (ou acesse pelo navegador, se estiver usando a versão web). Na primeira vez, você cai direto na tela de **Criar conta**.
+Acesse pelo **navegador do celular ou computador**, usando o link que a unidade divulgar — hoje ainda não existe um app pra baixar na loja (Play Store/App Store); tudo funciona direto no navegador, sem instalar nada. Na primeira vez, você cai direto na tela de **Criar conta**.
 
 ![Tela de cadastro](imagens/cliente/01-cadastro.png)
 

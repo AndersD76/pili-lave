@@ -20,6 +20,8 @@ PILI CLEAN é um sistema de lavagem automática de carros **sem operador fixo no
 - **Backend** (Next.js API Routes + Prisma + Postgres) — cérebro de tudo: pagamento, fila, reconhecimento de placa (IA), heartbeat das máquinas, admin.
 - **Painel admin** (dentro do `server/`) — visão gerencial, cadastro de lavadores, preço por unidade, divisão admin/lavador, controle de licença/pagamento por máquina.
 
+> **IMPORTANTE (descoberto em 09-19): o app mobile nunca foi publicado.** A pasta `mobile/` (Expo/React Native) não está distribuída em nenhuma loja (Play Store/App Store) nem como APK/TestFlight — ela só roda hoje via Expo Go apontando pra um servidor de desenvolvimento. Isso significa que **o PWA (`server/app/(pwa)/app/`, acessado pelo navegador no domínio do Railway) é hoje a ÚNICA forma real de um usuário de produção — cliente, lavador ou parceiro — usar o sistema.** Todo o trabalho de paridade do PWA com o app nativo (seção 8) existe por causa disso: o PWA não é um "extra", é o produto em uso.
+
 **Hospedagem:** backend no **Railway** (`pili-lave-production.up.railway.app`), banco Postgres no **Neon**.
 
 **Ambiente de teste local:** desde 2026-09-18 existe um Postgres local (`pililave_dev`) pra testar sem tocar em produção — `server/.env` aponta pra ele por padrão; `server/.env.production` guarda as credenciais reais (nunca carregado por `next dev`). Migrações precisam ser aplicadas **manualmente** nos dois lados (`npx prisma migrate deploy`, trocando o `.env` temporariamente pra produção) — o deploy do Railway **não roda migração sozinho**.
@@ -264,6 +266,7 @@ Qualquer cliente pode pedir uma ou mais capacidades extras (Lavador, Comissão 1
 - `/admin/usuarios` — seção **"Cadastros a aprovar"** no topo, lista cada solicitação pendente (telefone, nome, tipo pedido, data) com botões Aprovar/Rejeitar, um pedido por vez (uma pessoa pode ter 2-3 pedidos pendentes simultâneos, de tipos diferentes). Um badge vermelho com a contagem de pendentes aparece no `AdminNav`, ao lado do link "Usuários".
 - **Regra de promoção de `role` na aprovação**: o role nunca é rebaixado, só promovido — `LAVADOR` sempre "ganha" de `PARCEIRO` (dá acesso ao scanner de vouchers no balcão). Ex.: se a pessoa já é `PARCEIRO` (por causa de um Aluguel aprovado) e depois tem o pedido de `LAVADOR` aprovado também, o role sobe pra `LAVADOR` — sem perder o vínculo de Aluguel, que continua registrado à parte em `MachineParticipante`.
 - Também dá pra promover alguém **direto** pelo dropdown de `/admin/usuarios` (Cliente/Lavador/Parceiro — com o tipo específico de Parceiro obrigatório, não dá mais pra deixar "Parceiro" genérico sem tipo), sem esperar a pessoa pedir.
+- **Correção 09-19** (`server/app/admin/usuarios/actions.ts`): o atalho de promover **direto** pra Lavador só mudava o `role` do usuário, sem criar a `SolicitacaoParceiro` correspondente como `APROVADA` — a pessoa virava Lavador de verdade (ganhava a aba), mas o próprio Perfil dela continuava mostrando "Pedir" em vez de "Aprovado" na seção "Também é lavador, vendedor ou aluguel?". Isso já funcionava certo pro caso "Parceiro"; agora o caso "Lavador" também faz `upsert` de `SolicitacaoParceiro` (tipo `LAVADOR`, status `APROVADA`) na mesma transação que atualiza o `role` — os dois atalhos ficam consistentes.
 - Filtro por tipo de cadastro em `/admin/usuarios`: abas no topo (Todos/Cliente/Lavador/Comissão 1/Comissão 2/Aluguel/Admin) com contagem, via `?filtro=` na URL.
 - No mobile, a visibilidade das abas "Minha Máquina" e "Comissões" é baseada em **capacidade aprovada** (solicitação com `status: APROVADA`), não mais só no campo `role` — uma pessoa aprovada como Lavador e também como Aluguel vê as duas abas ao mesmo tempo.
 
@@ -332,6 +335,20 @@ Telas fora das abas: `cadastro.tsx` (e-mail+senha, mais os checkboxes/chips opci
 Versão web do app, servida pelo mesmo Next.js do backend (rota `/app`). Mesmas telas conceituais do mobile (cadastro, login, onboarding, home, lavagem, recarga, histórico, perfil), com componentes próprios (`CameraAoVivo.tsx`, `ProgressoLavagem.tsx`, `AvisosPush.tsx`). Também tem `/camera` (painel de luz pro celular fixo na máquina) e `/capturas` (debug: últimas fotos + o que a IA leu).
 
 **Correção 09-19 (causa real de "o app entra direto numa máquina")**: a home mostrava um card `StatusMaquina` que chamava `/api/saude` → `diagnosticar()` → pega a **primeira máquina do banco inteiro** (`prisma.machine.findFirst()`), sem relação nenhuma com unidade — resquício de antes do multi-máquina existir. Isso rodava antes de qualquer escolha do cliente. **Removido** — o componente não existe mais. Nova tela `/app/unidades` (mesmo endpoint `/api/stations` do mobile) fica sempre no caminho antes de comprar, mesmo com uma unidade só; `lavagem/page.tsx` exige `stationId` igual ao mobile, e `/api/orders` usa `machineForStation(stationId)` em vez de `defaultMachine()` quando informado. O botão "Já estou na máquina" da home também foi corrigido pra usar o `stationId` da própria chegada (`Arrival.stationId`) em vez da máquina fixa.
+
+### 8.1 Barra de navegação de baixo (`nav.tsx`) e paridade total com o app nativo (09-19)
+
+Desde que ficou claro que o PWA é a única forma real de uso (ver nota no item 1), a barra de baixo do PWA foi levada até ter paridade completa com a do app nativo (`mobile/src/app/(tabs)/_layout.tsx`):
+
+- **`server/app/(pwa)/app/nav.tsx`** virou dinâmico: busca `/api/me` uma vez (client-side) e monta a lista de abas em cima da resposta (`Me`, incluindo `role` e as `solicitacoes` do usuário). Antes, os links de Minha Máquina/Comissões ficavam como botões soltos dentro da página de Perfil — inferior à experiência do nativo.
+  - `temMinhaMaquina`: `role === "LAVADOR"`, `role === "ADMIN"`, ou alguma `solicitacao` com `tipo: "LAVADOR"` e `status: "APROVADA"`.
+  - `temComissoes`: alguma `solicitacao` com `tipo !== "LAVADOR"` e `status: "APROVADA"` (Comissão 1, Comissão 2 ou Aluguel).
+  - Essas duas abas são condicionais; o resto da barra é fixo pra todo mundo.
+- **Ordem final da barra**: Início, Unidades, Carteira, Planos, Histórico, [Minha Máq. 🔧 — condicional], [Comissões — condicional], Perfil. O "Histórico" foi mantido mesmo sem equivalente na barra do nativo, pra não tirar uma funcionalidade que já existia e era usada.
+- **`/app/minha-maquina`** (novo, 09-19): painel do lavador, equivalente a `mobile/src/app/(tabs)/minha-maquina.tsx`. Filtro Hoje / Período (inputs `type="date"` De/Até) / "Não acertado" (`?desde=acerto`), usando `/api/lavador/painel`. Mostra status da máquina com destaque visual de falha/offline, tabela por tipo de lavagem (presencial x app, quantidade e valor) e o total "Sua participação".
+- **`/app/comissoes`** (novo, 09-19): painel do parceiro (Comissão 1/2, Aluguel), equivalente a `mobile/.../minhas-comissoes.tsx`. Mesma estrutura de filtro de período, usa `/api/parceiro/painel` — sem nenhum destaque de falha/status técnico, já que o parceiro só acompanha o relatório financeiro.
+- **`/app/planos`** (novo, 09-19): réplica exata da tela "em breve" do nativo (`mobile/src/app/(tabs)/planos.tsx`) — clube de assinatura com lavagens mensais inclusas, anunciado mas **sem lógica nenhuma implementada** ainda, é só uma tela informativa.
+- **`/app/unidades`**: já existia (lista de unidades pra escolher antes de reservar), só não estava na barra de navegação — ganhou `<Nav />` e agora aparece como aba.
 
 ---
 
