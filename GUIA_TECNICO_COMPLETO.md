@@ -185,12 +185,14 @@ Três sistemas de auth **separados e independentes**:
 3. **Dispositivos** (display/câmera/máquina): header `x-device-key` — cada `Machine` tem seu próprio `deviceKey` único (`requireMachine()` resolve pelo header). Rotas de câmera legadas usam uma chave global (`DEVICE_KEY`) mais simples (`requireDevice()`).
 
 ### 6.2 Modelo de dados (Prisma) — visão geral
-- **User**: cliente, lavador ou admin (`role`). `walletCents` é um cache — a fonte da verdade é `WalletTx`.
+- **User**: cliente, lavador, parceiro ou admin (`role`: `CLIENT`/`LAVADOR`/`PARCEIRO`/`ADMIN`). Todo cadastro novo já nasce `CLIENT` (não existe opção "sou cliente" pra marcar). `walletCents` é um cache — a fonte da verdade é `WalletTx`.
+- **SolicitacaoParceiro** (nova, 09-19): pedido de uma capacidade extra (`tipo`: `LAVADOR`/`COMISSAO1`/`COMISSAO2`/`ALUGUEL`) feito por um usuário, com `status` (`PENDENTE`/`APROVADA`/`REJEITADA`). Um mesmo usuário pode ter várias linhas pendentes ao mesmo tempo (tipos diferentes), aprovadas/rejeitadas **independentemente** uma da outra. Pode ser criada no cadastro (marcando várias capacidades de uma vez) ou depois, a qualquer momento, pelo Perfil.
+- **MachineParticipante** (nova, 09-19): quem participa financeiramente de uma máquina — `machineId` + `userId` + `tipo` (enum `TipoParticipacao`: `LAVADOR`/`COMISSAO1`/`COMISSAO2`/`ALUGUEL`) + `percentual`. Substitui o antigo split fixo 55/45. Ver 6.6.
 - **Vehicle**: placa normalizada, programa padrão.
 - **Program**: os 4 tipos de lavagem — hoje só o **nome** é editável de forma centralizada (aba `/admin/precos`); o `precoCents` do Program é o valor de fábrica, praticamente não usado desde que o preço passou a ser por unidade (ver `StationPrograma`).
 - **StationPrograma** (nova, 09-19): preço de um tipo de lavagem **numa unidade específica** — cada unidade cobra o valor que quiser, preenchido do zero (não herda de nenhum "padrão" central). `lib/precos.ts` (`precoEfetivo()`) resolve o preço certo na hora de cobrar.
 - **WashStation**: a **unidade** (endereço — cidade + rua).
-- **Machine**: a máquina física, pertence a uma `WashStation`, tem `numero` (posição na unidade), `deviceKey`, status ao vivo, sensores X14/X15, contadores de lavagem, controle de licença (`lastPaymentDate` — também serve de ponto de "fechamento" pro lavador), e **`operadorId`** (o lavador responsável).
+- **Machine**: a máquina física, pertence a uma `WashStation`, tem `numero` (posição na unidade), `deviceKey`, status ao vivo, sensores X14/X15, contadores de lavagem, controle de licença (`lastPaymentDate` — também serve de ponto de "fechamento" pra todo mundo que participa dela), e a lista de `MachineParticipante` vinculados (Lavador, Comissão 1, Comissão 2, Aluguel — ver 6.6). O campo antigo `operadorId` foi substituído pelo participante do tipo `LAVADOR`.
 - **Order**: a compra (voucher). Status `PAID` → `REDEEMED` (lavagem concluída) ou `CANCELED` (estorno).
 - **Reservation**: o motor real da fila — `HELD` (pago, esperando 1h) → `ACTIVE` (placa reconhecida, máquina livre, verde aceso) → `ENTERED` (X14 confirmou) → `COMPLETED` (**único ponto de débito de verdade**) / `EXPIRED` / `CANCELED` / `FAILED`.
 - **LavagemPresencial** (nova, 09-19): uma linha por lavagem paga em dinheiro nos botões físicos X1-X6 — valor em R$ e data/hora exatos (o firmware só contava localmente, sem valor nem timestamp).
@@ -223,23 +225,47 @@ Uma unidade (`WashStation`) pode ter **várias máquinas** (`Machine.numero`). A
 
 **Busca de unidades** (`GET /api/machine/unidades?cidade=X`, nova 09-19): lista unidades existentes que batem com a cidade digitada, já com o **próximo número livre** de máquina calculado — usada pela tela de cadastro do display antes de criar uma unidade nova.
 
-### 6.6 Sistema de lavador e divisão de comissão
+### 6.6 Sistema de participantes e divisão de comissão (N participantes por máquina)
 
-`Machine.operadorId` vincula um usuário (`role: LAVADOR`) a uma máquina específica, escolhido num dropdown em `/admin/maquinas`. Quando a máquina falha/trava/fica offline, o lavador daquela máquina recebe push notification (além do admin).
+O antigo split fixo 55%/45% lavador/admin foi substituído por um modelo de **N participantes por máquina** (`MachineParticipante`, ver 6.2). Cada máquina pode ter até 4 participantes cadastrados, um de cada `tipo` (`TipoParticipacao`):
+- `LAVADOR` — quem opera a máquina no dia a dia, escaneia vouchers no balcão.
+- `COMISSAO1` / `COMISSAO2` — dois "vendedores"/comissionados independentes.
+- `ALUGUEL` — quem recebe pelo espaço onde a máquina está instalada.
 
-**Presencial x App (09-19)**: cada lavagem concluída é registrada com sua origem — `Reservation` (app) ou `LavagemPresencial` (dinheiro, botões X1-X6). Isso importa porque **quem já está com o dinheiro na mão é diferente**:
-- Presencial: o **lavador** já fica com o dinheiro na hora.
-- App: o **admin** já fica com o dinheiro (carteira do cliente debita direto).
+**Regra fixa dos 100%**: a soma dos percentuais dos participantes cadastrados numa máquina nunca passa de 100%. O que sobrar até 100% fica automaticamente com o **admin** — esse percentual do admin nunca é gravado no banco, é sempre calculado on-the-fly (100% menos a soma dos participantes cadastrados). Cadastro/edição de participante é feito em `/admin/maquinas` → seção "Participação na máquina" de cada máquina, via a action `salvarParticipante` (`server/app/admin/maquinas/actions.ts`), que calcula o percentual máximo ainda disponível pra aquele tipo e recusa/limita a entrada se passar de 100% — o erro aparece na tela (usa `useActionState` do React), não falha mais em silêncio.
 
-**Percentual PROVISÓRIO** (`server/lib/comissao.ts`, `PERCENTUAL_LAVADOR = 0.55`): 55% pro lavador, 45% pro admin — ainda não definido de vez, é só pra simulação; virar configurável por máquina/lavador é TODO. `acertoFinal()` calcula o líquido: quanto o lavador deve repassar ao admin (45% do presencial) menos quanto o admin deve pagar ao lavador (55% do app) — quem sai devendo é quem tem o número líquido positivo do outro lado.
+**Quem já fica com o dinheiro na mão** (o mesmo de antes, mas agora generalizado pra todos os participantes):
+- **Presencial** (dinheiro, botões X1-X6): o **lavador** já embolsa 100% na hora e deve repassar a parte de todo mundo (inclusive do admin) proporcional ao percentual de cada um.
+- **App** (carteira do cliente): o **admin** já fica com 100% na hora e deve repassar a parte de todo mundo (inclusive do lavador).
+- `COMISSAO1`, `COMISSAO2` e `ALUGUEL` **nunca** ficam com dinheiro na mão em nenhum dos dois casos — são sempre credores dos dois lados (presencial e app).
 
-`GET /api/lavador/painel` (só vê as máquinas do próprio lavador):
+Toda a lógica de cálculo está em `server/lib/comissao.ts`:
+- `participacoesDaMaquina(machineId)` — lista os participantes cadastrados na máquina.
+- `percentualDoUsuarioNaMaquina(machineId, userId)` — percentual de uma pessoa específica.
+- `percentualAdmin(machineId)` — calcula o que sobra pro admin (100% menos a soma dos cadastrados).
+- `participacaoDe(...)` / `divisaoCompleta(...)` — quebra o valor faturado (presencial/app, por tipo de lavagem) entre todos os participantes + admin.
+- `relatorioMaquinaPara(machineId, userId, periodo)` — monta o relatório de uma pessoa específica numa máquina (usado tanto pelo painel do lavador quanto pelo do parceiro).
+
+`GET /api/lavador/painel` (só vê as máquinas onde é o participante `LAVADOR`) e o novo `GET /api/parceiro/painel` (`server/app/api/parceiro/painel/route.ts`, só vê as máquinas onde é `COMISSAO1`/`COMISSAO2`/`ALUGUEL`) aceitam os mesmos parâmetros:
 - `?de=AAAA-MM-DD&ate=AAAA-MM-DD`: período customizado (calendário no app).
-- `?desde=acerto`: tudo desde o último "Marcar pago hoje" da máquina (`lastPaymentDate` — mesmo ponto de fechamento que o admin usa).
+- `?desde=acerto`: tudo desde o último "Marcar pago hoje" da máquina (`lastPaymentDate`).
 - Sem nenhum dos dois: hoje.
-- Traz por tipo de lavagem (1-4) x origem (presencial/app), mas os valores mostrados **já são a parte do lavador** (não o bruto) — só "Total no período" (separado) continua bruto. O percentual e o corte do admin nunca saem pro app do lavador.
+- Traz por tipo de lavagem (1-4) x origem (presencial/app), mas os valores mostrados **já são a parte da pessoa** (não o bruto, nem o percentual de ninguém) — só "Total no período" continua bruto.
 
-`/admin/maquinas` (aba de cada máquina, só quando há lavador designado) mostra a tabela completa **sem esconder nada** — Presencial (Admin | Lavador) e App (Admin | Lavador) por tipo, mais o acerto final líquido calculado.
+**Diferença chave entre os dois papéis**: o lavador recebe push notification quando a máquina falha/trava/fica offline; o parceiro (`/api/parceiro/painel`) **nunca** recebe esse tipo de notificação — só vê o relatório financeiro das próprias máquinas.
+
+`/admin/maquinas` (seção "Divisão entre participantes" de cada máquina) mostra a tabela completa **sem esconder nada** — por participante (incluindo o admin calculado), quanto veio do presencial/app e o saldo (a receber ou a repassar).
+
+### 6.6b Solicitação de papel e aprovação (`SolicitacaoParceiro`)
+
+Qualquer cliente pode pedir uma ou mais capacidades extras (Lavador, Comissão 1, Comissão 2, Aluguel) — no cadastro (marcando várias checkboxes/chips de uma vez) ou depois, a qualquer momento, pelo **Perfil** (seção "Também é lavador, vendedor ou aluguel?" com um botão "Pedir" por tipo). Cada marcação cria uma linha independente em `SolicitacaoParceiro` (`userId` + `tipo` + `status: PENDENTE`). Enquanto pendente, o usuário continua `CLIENT` normal — **nunca fica bloqueado** esperando aprovação.
+
+- `POST /api/parceiro/solicitar` — cria o pedido (endpoint usado tanto no cadastro quanto no Perfil).
+- `/admin/usuarios` — seção **"Cadastros a aprovar"** no topo, lista cada solicitação pendente (telefone, nome, tipo pedido, data) com botões Aprovar/Rejeitar, um pedido por vez (uma pessoa pode ter 2-3 pedidos pendentes simultâneos, de tipos diferentes). Um badge vermelho com a contagem de pendentes aparece no `AdminNav`, ao lado do link "Usuários".
+- **Regra de promoção de `role` na aprovação**: o role nunca é rebaixado, só promovido — `LAVADOR` sempre "ganha" de `PARCEIRO` (dá acesso ao scanner de vouchers no balcão). Ex.: se a pessoa já é `PARCEIRO` (por causa de um Aluguel aprovado) e depois tem o pedido de `LAVADOR` aprovado também, o role sobe pra `LAVADOR` — sem perder o vínculo de Aluguel, que continua registrado à parte em `MachineParticipante`.
+- Também dá pra promover alguém **direto** pelo dropdown de `/admin/usuarios` (Cliente/Lavador/Parceiro — com o tipo específico de Parceiro obrigatório, não dá mais pra deixar "Parceiro" genérico sem tipo), sem esperar a pessoa pedir.
+- Filtro por tipo de cadastro em `/admin/usuarios`: abas no topo (Todos/Cliente/Lavador/Comissão 1/Comissão 2/Aluguel/Admin) com contagem, via `?filtro=` na URL.
+- No mobile, a visibilidade das abas "Minha Máquina" e "Comissões" é baseada em **capacidade aprovada** (solicitação com `status: APROVADA`), não mais só no campo `role` — uma pessoa aprovada como Lavador e também como Aluguel vê as duas abas ao mesmo tempo.
 
 ### 6.7 Preço por unidade (`StationPrograma`, `lib/precos.ts`)
 
@@ -261,6 +287,8 @@ Cada unidade cobra o que quiser pelos 4 tipos de lavagem — não existe mais um
 /api/wallet             saldo e extrato
 /api/push/              inscrição de push notification
 /api/lavador/painel     painel do lavador — ?de=&ate= ou ?desde=acerto
+/api/parceiro/painel    painel do parceiro (comissão 1/2, aluguel) — mesmos parâmetros, sem alerta de falha
+/api/parceiro/solicitar pede uma capacidade nova (lavador/comissão1/comissão2/aluguel)
 /api/lpr/frame          recebe foto da câmera, aciona o LPR
 /api/machine/           heartbeat, car-entered, wash-complete (app + presencial), fault,
                         provisionar, unidades (busca por cidade)
@@ -286,11 +314,14 @@ Estrutura de abas (`src/app/(tabs)/`):
 - **Unidades**: lista/mapa das unidades (`/api/stations`), com status agregado (aberto/ocupado/manutenção). Tocar numa unidade abre o detalhe (`unidade/[id].tsx`) com as máquinas dela; o botão "Reservar lavagem" de lá já leva o `stationId` pra frente.
 - **Carteira**: saldo e extrato, recarga.
 - **Planos**: os tipos de lavagem.
-- **Minha Máquina** (`minha-maquina.tsx`, **só aparece pra `role: LAVADOR`**): painel da(s) máquina(s) que o usuário administra — filtro Hoje / período customizado (calendário nativo, `@react-native-community/datetimepicker`) / "Não acertado ainda", tabela por tipo (presencial/app, já com a parte do lavador), soma no rodapé de cada coluna, e o card "Sua participação" com o valor final.
+- **Minha Máquina** (`minha-maquina.tsx`, aparece pra quem tem a capacidade **Lavador aprovada** em `SolicitacaoParceiro` — não é mais baseado só em `role`): painel da(s) máquina(s) que o usuário opera — filtro Hoje / período customizado (calendário nativo, `@react-native-community/datetimepicker`) / "Não acertado ainda", tabela por tipo (presencial/app, já com a parte do lavador), soma no rodapé de cada coluna, e o card "Sua participação" com o valor final.
+- **Comissões** (`minhas-comissoes.tsx`, nova 09-19, aparece pra quem tem Comissão 1, Comissão 2 e/ou Aluguel aprovados): painel equivalente ao "Minha Máquina", mas pro parceiro — mesmo filtro de período, tabela por tipo de lavagem (presencial x app) e o valor final a receber, sem mostrar percentual nem o corte de ninguém. Uma pessoa pode ver as duas abas ao mesmo tempo se tiver mais de uma capacidade aprovada (ex.: Lavador de uma máquina e Aluguel de outra).
 
 **Correção 09-19**: `nova-lavagem.tsx` **exige** `stationId` (vem por parâmetro de rota) — sem ele, mostra uma tela pedindo pra escolher a unidade primeiro, em vez de deixar reservar "sem unidade nenhuma" (bug real: toda reserva nascia com `stationId=null`, dando a impressão de cair direto numa máquina qualquer).
 
-Telas fora das abas: `cadastro.tsx` / `login.tsx` (e-mail+senha), `onboarding.tsx` (3 passos, termina na tela de recarga), `nova-lavagem.tsx`, `veiculo-novo.tsx`, `recarga.tsx`, `historico.tsx`, `meus-dados.tsx`, `voucher/[id].tsx`, `scanner.tsx` (lavador escaneia voucher no balcão), `unidade/[id].tsx`.
+Telas fora das abas: `cadastro.tsx` (e-mail+senha, mais os checkboxes/chips opcionais "Sou lavador"/"Sou vendedor 1"/"Sou vendedor 2"/"Recebo aluguel" — pode marcar mais de um, cada marcação vira uma `SolicitacaoParceiro`) / `login.tsx`, `onboarding.tsx` (3 passos, termina na tela de recarga), `nova-lavagem.tsx`, `veiculo-novo.tsx`, `recarga.tsx`, `historico.tsx`, `meus-dados.tsx` (com a seção "Também é lavador, vendedor ou aluguel?" pra pedir uma capacidade nova a qualquer momento), `voucher/[id].tsx`, `scanner.tsx` (lavador escaneia voucher no balcão), `unidade/[id].tsx`.
+
+**Correção do onboarding não travar em PIX (09-19)**: o passo final do onboarding usava `router.replace("/recarga")`, trocando a tela sem deixar histórico de navegação — se a geração do PIX falhasse (Asaas fora do ar, sem chave configurada) ou demorasse, o cliente ficava preso na tela de recarga sem conseguir usar o resto do app. Corrigido: agora existe um link "Agora não, quero só olhar o app" que leva direto pras abas normais. Adicionar saldo é sempre uma ação **opcional**, disponível a qualquer momento na Carteira ou na Home — nunca um pré-requisito bloqueante pra usar o app (só é necessário na hora de efetivamente reservar uma lavagem).
 
 **Sessão**: token JWT guardado no `expo-secure-store` (`lib/session.tsx`), com opção de **biometria** (Face ID/digital) como trava extra ao abrir o app (`lib/biometria.ts`) — configurável em "Meus dados".
 
@@ -308,9 +339,9 @@ Versão web do app, servida pelo mesmo Next.js do backend (rota `/app`). Mesmas 
 
 - **Visão geral** (`/admin`): vendas hoje/7d/30d, resgates, recargas, saldo total em carteiras, lavagens por programa.
 - **Lavagens** (`/admin/lavagens`): últimas 200, com status/voucher/quem resgatou.
-- **Usuários** (`/admin/usuarios`): lista completa, promove/rebaixa entre Cliente/Lavador.
+- **Usuários** (`/admin/usuarios`): lista completa, com a seção **"Cadastros a aprovar"** no topo (solicitações pendentes de `SolicitacaoParceiro`, Aprovar/Rejeitar uma a uma) e um badge de contagem no menu. Abas de filtro por tipo de cadastro (Todos/Cliente/Lavador/Comissão 1/Comissão 2/Aluguel/Admin, via `?filtro=`). Promove/rebaixa direto pelo dropdown (Cliente/Lavador/Parceiro — escolhendo o tipo específico quando é Parceiro).
 - **Preços** (`/admin/precos`, nova 09-19): só edita o **nome** dos 4 tipos de lavagem — o preço em R$ fica dentro de cada unidade (ver abaixo e 6.7).
-- **Máquinas** (`/admin/maquinas`, redesenhado 09-19): cards de estatística no topo (total, offline, em manutenção, licença bloqueada) + **abas por unidade** — unidade com mais de uma máquina abre sub-abas (Máquina 1, 2, 3...) ao clicar. Uma aba **"Resumo geral / TOTAIS"** separada soma tudo (todas as máquinas) por tipo de lavagem. Dentro de cada unidade: preço dos 4 tipos (editável ali mesmo), status/licença/sensores da máquina selecionada, valor acumulado desde o último fechamento, histórico de lavagens, e (só quando há lavador designado) a seção **"Divisão com o lavador"** com a tabela completa Admin/Lavador por tipo e origem, mais o acerto líquido.
+- **Máquinas** (`/admin/maquinas`, redesenhado 09-19): cards de estatística no topo (total, offline, em manutenção, licença bloqueada) + **abas por unidade** — unidade com mais de uma máquina abre sub-abas (Máquina 1, 2, 3...) ao clicar. Uma aba **"Resumo geral / TOTAIS"** separada soma tudo (todas as máquinas) por tipo de lavagem. Dentro de cada unidade: preço dos 4 tipos (editável ali mesmo), status/licença/sensores da máquina selecionada, valor acumulado desde o último fechamento, histórico de lavagens, a seção **"Participação na máquina"** (cadastro/edição dos 4 tipos de participante com percentual, regra dos 100%) e a seção **"Divisão entre participantes"** com a tabela completa por participante (incluindo o admin calculado), por origem, mais o saldo líquido de cada um.
 
 ---
 
@@ -337,7 +368,6 @@ Firmware da câmera tem seu próprio `PILI_PROVISION_SECRET` (deve bater com o `
 
 ## 11. Pendências e limitações conhecidas
 
-- **Percentual lavador/admin ainda provisório** (55%/45%, hardcoded em `server/lib/comissao.ts`) — precisa virar configurável por máquina/lavador quando for decidido de vez.
 - **`diagnosticar()`** (saúde da operação) ainda assume a "máquina padrão" — não totalmente adaptado pra várias máquinas simultâneas.
 - **Sem "esqueci minha senha"** por decisão do usuário (não querem depender de provedor de e-mail ainda).
 - **Sem provedor de e-mail configurado** — se no futuro precisar (recibos, etc.), precisa escolher um serviço.
@@ -355,7 +385,9 @@ Firmware da câmera tem seu próprio `PILI_PROVISION_SECRET` (deve bater com o `
 |---|---|
 | Preço de um tipo de lavagem numa unidade | `/admin/maquinas` (aba da unidade) — não é mais global |
 | Nome dos 4 tipos de lavagem | `/admin/precos` |
-| Percentual lavador/admin | `server/lib/comissao.ts` |
+| Percentual de cada participante numa máquina | `/admin/maquinas` (seção "Participação na máquina") |
+| Lógica de cálculo de comissão/divisão | `server/lib/comissao.ts` |
+| Aprovar/rejeitar pedido de papel (lavador/comissão/aluguel) | `/admin/usuarios` (seção "Cadastros a aprovar"), `server/app/api/parceiro/solicitar/route.ts` |
 | Como a fila/reserva funciona | `server/lib/reservations.ts` |
 | Como a placa é lida | `server/lib/lpr.ts`, `server/lib/vision-claude.ts` |
 | Login/cadastro do cliente | `server/app/api/auth/*`, `mobile/src/app/{login,cadastro}.tsx` |

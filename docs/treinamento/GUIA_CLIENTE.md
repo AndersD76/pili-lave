@@ -37,15 +37,17 @@ Depois de criar a conta, o app mostra 3 telas rápidas explicando como tudo func
 2. Como a câmera reconhece sua placa sozinha na chegada.
 3. O que fazer se a câmera não reconhecer (botão "Cheguei").
 
-No final, você já cai direto na tela de **adicionar créditos**.
+No final, o app sugere adicionar créditos — mas isso é **opcional**.
 
 ---
 
-## 3. Adicionando saldo
+## 3. Adicionando saldo (opcional, a qualquer momento)
 
 Escolha o valor e a forma de pagamento (PIX, geralmente) pra colocar saldo na sua carteira do app.
 
 ![Tela de recarga](imagens/cliente/05-recarga.png)
+
+> 💡 **Adicionar saldo nunca é obrigatório pra usar o app.** Se a tela de recarga demorar ou o PIX falhar por algum motivo, toque em **"Agora não, quero só olhar o app"** — você entra normalmente nas suas abas e pode navegar, cadastrar veículo, ver unidades, etc. Você só vai precisar ter saldo na carteira **na hora de efetivamente reservar uma lavagem**. Pra recarregar depois, é só ir na aba **Carteira** ou tocar no saldo na tela inicial, quando quiser.
 
 ---
 
@@ -146,10 +148,23 @@ Na aba **Perfil**, você pode:
 
 ---
 
+## 12. Também trabalha com lavagem? Vire Lavador, Vendedor ou Aluguel
+
+Além de cliente, você também pode ter uma capacidade extra no sistema — **Lavador** (opera uma máquina), **Vendedor 1**, **Vendedor 2** (comissão) ou **Aluguel** (recebe pelo espaço onde uma máquina fica instalada). Isso é totalmente **opcional** e nunca atrapalha seu uso normal do app como cliente.
+
+- No **cadastro**, você pode marcar quantas dessas opções quiser ao mesmo tempo.
+- Se já é cliente há mais tempo e quer pedir agora, vá em **Perfil** → seção **"Também é lavador, vendedor ou aluguel?"** e toque em **Pedir** no tipo desejado. Dá pra pedir mais de um.
+- O status de cada pedido aparece ali mesmo: **Pedir** → **Em análise** (esperando o administrador aprovar) → **Aprovado**. Se for rejeitado, aparece **"Pedir de novo"**.
+- Enquanto o pedido está em análise, você continua usando o app normalmente — nunca fica bloqueado esperando aprovação.
+- Depois de aprovado, aparecem abas novas no app: **"Minha Máquina"** (se Lavador) e/ou **"Comissões"** (se Vendedor/Aluguel), com o relatório do que você tem a receber.
+
+---
+
 ## Resumo rápido
 
 ```
-Instalar -> Criar conta -> Onboarding -> Adicionar crédito
-Cadastrar veículo -> Escolher unidade -> Reservar lavagem
+Instalar -> Criar conta -> Onboarding -> (Adicionar crédito é opcional)
+Cadastrar veículo -> Escolher unidade -> Reservar lavagem (aí sim precisa de saldo)
 Chegar na máquina (câmera reconhece, ou "Cheguei" manual) -> luz verde -> lavar -> pronto
+Quer ser Lavador/Vendedor/Aluguel? -> Perfil -> "Também é lavador, vendedor ou aluguel?" -> Pedir
 ```

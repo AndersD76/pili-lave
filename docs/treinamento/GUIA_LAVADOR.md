@@ -6,13 +6,15 @@
 
 ---
 
-## 1. Pré-requisito: sua conta precisa ser vinculada
+## 1. Pré-requisito: sua conta precisa ser aprovada e vinculada
 
-Antes de você ver qualquer coisa, o **administrador** precisa ter feito 2 coisas (ver *Guia do Administrador*, seções 4 e 6):
-1. Promovido seu usuário pro papel **Lavador**.
-2. Vinculado sua conta à máquina que você administra.
+Antes de você ver qualquer coisa, duas coisas precisam acontecer:
+1. Você **pede** pra ser Lavador — no cadastro (marcando "Sou lavador") ou depois, a qualquer momento, pelo **Perfil**, na seção "Também é lavador, vendedor ou aluguel?" (botão "Pedir"). O status muda pra "Em análise".
+2. O **administrador aprova** o pedido e te cadastra como participante da máquina (ver *Guia do Administrador*, seções 4 e 6).
 
-Se você entrar no app e a aba "Minha Máquina" aparecer vazia com a mensagem *"Nenhuma máquina vinculada ao seu usuário ainda"*, é porque esse segundo passo ainda não foi feito — fale com o administrador.
+Se você entrar no app e a aba "Minha Máquina" não aparecer, ou aparecer vazia com a mensagem *"Nenhuma máquina vinculada ao seu usuário ainda"*, é porque a aprovação ou o vínculo ainda não foram feitos — confira o status no Perfil ou fale com o administrador.
+
+> 💡 Você pode ser Lavador de uma máquina **e ao mesmo tempo** Vendedor (Comissão 1/2) ou receber Aluguel de outra máquina — são pedidos independentes, dá pra ter mais de uma capacidade aprovada ao mesmo tempo. Nesse caso o app mostra as abas "Minha Máquina" e "Comissões" juntas (ver seção 6).
 
 ---
 
@@ -94,10 +96,24 @@ você recebe uma **notificação no celular na hora**, mesmo com o app fechado �
 
 ---
 
+## 6. Aba "Comissões" (se você também for vendedor ou receber aluguel)
+
+Se, além de Lavador, você também tiver sido aprovado como **Comissão 1**, **Comissão 2** ou **Aluguel** em alguma máquina (sua ou de outra pessoa), aparece uma aba extra no menu: **"Comissões"** — separada da aba "Minha Máquina".
+
+Funciona parecido: escolha o período (Hoje / período escolhido / desde o último acerto), veja a tabela por tipo de lavagem (presencial x app) e o valor final que você tem a receber. A diferença é que essa aba **não mostra percentual nem o corte de ninguém**, só o resultado final — e você **não recebe** aviso de falha das máquinas onde só é Comissão/Aluguel (esse aviso é só pra quem é Lavador daquela máquina).
+
+## 7. Quer pedir uma capacidade nova?
+
+Você não precisa esperar o cadastro inicial pra virar Vendedor ou receber Aluguel de outra máquina. A qualquer momento, vá em **Perfil** → "Também é lavador, vendedor ou aluguel?" e toque em **Pedir** no tipo que quiser. O status mostra: **Pedir** (ainda não pediu) → **Em análise** (esperando o admin) → **Aprovado**. Se for rejeitado, aparece **"Pedir de novo"**.
+
+---
+
 ## Resumo rápido
 
 ```
 Abrir app -> aba "Minha Máquina" -> escolher período (Hoje / período / não acertado)
           -> ver status + Presencial x App por tipo + Sua participação
+Também é vendedor/aluguel? -> aba "Comissões" (sem aviso de falha, só o valor a receber)
+Quer pedir uma capacidade nova? -> Perfil -> "Também é lavador, vendedor ou aluguel?" -> Pedir
 Notificação de erro chegou? -> ir até a máquina -> ler a mensagem no display -> resolver
 ```
