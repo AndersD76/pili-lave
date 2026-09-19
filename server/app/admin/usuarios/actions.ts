@@ -21,8 +21,24 @@ export async function definirPapel(formData: FormData) {
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user || user.role === "ADMIN") return;
 
-  if (valor === "CLIENT" || valor === "LAVADOR") {
-    await prisma.user.update({ where: { id }, data: { role: valor } });
+  if (valor === "CLIENT") {
+    await prisma.user.update({ where: { id }, data: { role: "CLIENT" } });
+    revalidatePath("/admin/usuarios");
+    return;
+  }
+
+  if (valor === "LAVADOR") {
+    // Mesma lógica do Parceiro: registra a solicitação já aprovada, senão
+    // o perfil da pessoa continua mostrando "Pedir" pro Lavador mesmo com
+    // o role já promovido — inconsistente com o que aparece pra ela.
+    await prisma.$transaction([
+      prisma.solicitacaoParceiro.upsert({
+        where: { userId_tipo: { userId: id, tipo: "LAVADOR" } },
+        update: { status: "APROVADA", decididoEm: new Date() },
+        create: { userId: id, tipo: "LAVADOR", status: "APROVADA", decididoEm: new Date() },
+      }),
+      prisma.user.update({ where: { id }, data: { role: "LAVADOR" } }),
+    ]);
     revalidatePath("/admin/usuarios");
     return;
   }
