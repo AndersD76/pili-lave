@@ -126,6 +126,7 @@ model Program {
   orders       Order[]
   reservations Reservation[]
   precosPorUnidade StationPrograma[]
+  presenciais  LavagemPresencial[]
 }
 
 model Topup {
@@ -292,10 +293,29 @@ model Machine {
   station      WashStation   @relation(fields: [stationId], references: [id])
   operador     User?         @relation("MachineOperador", fields: [operadorId], references: [id])
   reservations Reservation[]
+  presenciais  LavagemPresencial[]
 
   @@unique([stationId, numero])
   @@index([stationId])
   @@index([operadorId])
+}
+
+/// Lavagem paga em dinheiro na hora, iniciada pelos botões físicos X1-X6 do
+/// display (sem passar pelo app) — o display já contava isso localmente
+/// (NVS_PROGx_PRES), mas nunca mandava pra nuvem. Um registro por lavagem
+/// concluída (evt_tipo=4 do ESP-NOW), pra dar pro lavador filtrar por
+/// período e ver o que ainda não foi acertado (Machine.lastPaymentDate).
+model LavagemPresencial {
+  id          String   @id @default(cuid())
+  machineId   String
+  programId   Int
+  amountCents Int
+  completedAt DateTime @default(now())
+
+  machine Machine @relation(fields: [machineId], references: [id])
+  program Program @relation(fields: [programId], references: [id])
+
+  @@index([machineId, completedAt])
 }
 
 // Reserva: segura o valor por 1h; débito só em COMPLETED (AUTO_CONCLUIDO)

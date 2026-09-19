@@ -5,8 +5,15 @@ import { prisma } from "@/lib/prisma";
 import { requireMachine } from "@/lib/device";
 import { DONE_GREEN_S } from "@/lib/reservations";
 import { avisarCliente } from "@/lib/push";
+import { precoEfetivo } from "@/lib/precos";
 
-const Body = z.object({ reservationId: z.string().optional() });
+const Body = z.object({
+  reservationId: z.string().optional(),
+  /** "remote" = terminou pelos botões físicos X1-X6, sem reserva de app —
+   *  lavagem PAGA EM DINHEIRO na hora (ver MSG_EVT no firmware). */
+  source: z.string().optional(),
+  programId: z.number().int().min(1).max(4).optional(),
+});
 
 function voucherCode(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -25,6 +32,8 @@ export async function POST(req: NextRequest) {
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   const wanted = parsed.success ? parsed.data.reservationId : undefined;
+  const remoto = parsed.success && parsed.data.source === "remote";
+  const programIdRemoto = parsed.success ? parsed.data.programId : undefined;
 
   // Mesmo caso do car-entered: o id que o display manda pode ser de uma
   // reserva antiga (a NVS dele não é limpa). Se não casar, conclui a
@@ -48,6 +57,19 @@ export async function POST(req: NextRequest) {
       orderBy: { completedAt: "desc" },
     });
     if (done) return NextResponse.json({ ok: true, reservationId: done.id, dedup: true });
+
+    // Presencial (paga em dinheiro nos botões X1-X6, sem reserva nenhuma) —
+    // sem controle de idempotência por id (o firmware não manda um; uma
+    // retransmissão rara duplicando o registro é aceitável, é só um
+    // contador pro lavador, não mexe em saldo/débito de ninguém).
+    if (remoto && programIdRemoto) {
+      const amountCents = await precoEfetivo(programIdRemoto, auth.machine.stationId);
+      await prisma.lavagemPresencial.create({
+        data: { machineId: auth.machine.id, programId: programIdRemoto, amountCents },
+      });
+      return NextResponse.json({ ok: true, presencial: true });
+    }
+
     await prisma.event.create({
       data: { type: "wash_complete_orphan", payload: { machineId: auth.machine.id, reservationId: wanted ?? null } },
     });

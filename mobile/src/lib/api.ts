@@ -106,7 +106,8 @@ export type WalletResp = {
 };
 
 /** Painel do lavador — só as máquinas que ele administra (ver /api/lavador/painel). */
-export type PeriodoLavador = { lavagens: number; faturamentoCents: number };
+export type ColunaLavador = { lavagens: number; valorCents: number };
+export type TipoLavagemLavador = { programId: number; app: ColunaLavador; presencial: ColunaLavador };
 export type MaquinaLavador = {
   id: string;
   numero: number;
@@ -114,7 +115,7 @@ export type MaquinaLavador = {
   status: "FREE" | "WASHING" | "FAULT" | "OFFLINE" | "MAINTENANCE";
   emFalha: boolean;
   emManutencao: boolean;
-  hoje: PeriodoLavador;
-  semana: PeriodoLavador;
-  mes: PeriodoLavador;
+  periodo: { inicio: string; fim: string };
+  totalGeralCents: number;
+  porTipo: TipoLavagemLavador[];
 };
