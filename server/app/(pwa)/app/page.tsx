@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api, fmtPlate, getToken, money, type Me, type Order, type Program, type Vehicle } from "./client";
 import { Nav } from "./nav";
-import { StatusMaquina } from "./StatusMaquina";
 import { ProgressoLavagem, type StatusLavagem } from "./ProgressoLavagem";
 import CameraAoVivo from "./CameraAoVivo";
 import { Logo } from "./Logo";
@@ -12,6 +11,8 @@ import { Logo } from "./Logo";
 type Arrival = {
   id: string; plate: string; status: "WAITING_DRIVER" | "NO_MATCH" | "REQUESTED" | "STARTED" | "EXPIRED";
   vehicle: { plate: string; defaultProgramId: number | null } | null;
+  /** unidade da câmera que detectou o carro — decide pra qual máquina vai a reserva. */
+  stationId?: string | null;
   /** status da reserva: é ele que diz o que aconteceu na máquina */
   lavagem?: StatusLavagem;
   reservaId?: string | null;
@@ -51,7 +52,13 @@ export default function Home() {
   async function liberarAgora() {
     setErroLiberar(""); setLiberando(true);
     try {
-      await api("/api/orders", { body: { programId: 1, jaEstouNaMaquina: true } });
+      await api("/api/orders", {
+        body: {
+          programId: arrival?.vehicle?.defaultProgramId ?? 1,
+          jaEstouNaMaquina: true,
+          stationId: arrival?.stationId,
+        },
+      });
       const r = await api<{ arrival: Arrival | null }>("/api/arrivals/mine");
       setArrival(r.arrival);
     } catch (e) {
@@ -88,9 +95,6 @@ export default function Home() {
   return (
     <>
       <Logo />
-
-      {/* Primeira coisa que o cliente vê: dá para lavar agora? */}
-      <StatusMaquina />
 
       {arrival?.status === "WAITING_DRIVER" && (
         <Link href={`/app/chegada/${arrival.id}`} style={{ textDecoration: "none" }}>

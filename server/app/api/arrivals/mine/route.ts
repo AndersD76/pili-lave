@@ -84,6 +84,7 @@ export async function GET(req: NextRequest) {
       plate: viva.vehicle.plate,
       status: "REQUESTED",
       vehicle: viva.vehicle,
+      stationId: viva.stationId,
       lavagem: viva.status,
       reservaId: viva.id,
       semChegada: true,   // a câmera ainda não leu a placa
