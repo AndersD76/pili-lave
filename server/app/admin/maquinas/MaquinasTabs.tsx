@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import { marcarPagamento, alternarManutencao, definirOperador, salvarParticipante, removerParticipante } from "./actions";
 import { salvarPrecoUnidade } from "../precos/actions";
 
@@ -108,6 +108,65 @@ function PrecosUnidade({ stationId, precos }: { stationId: string; precos: Preco
   );
 }
 
+function LinhaParticipante({
+  machineId,
+  tipo,
+  atual,
+  participantesPossiveis,
+}: {
+  machineId: string;
+  tipo: TipoParticipacao;
+  atual: ParticipanteAtual | undefined;
+  participantesPossiveis: Participante[];
+}) {
+  const [state, formAction, pending] = useActionState(salvarParticipante, null);
+
+  return (
+    <tr>
+      <td>{LABEL_TIPO[tipo]}</td>
+      <td>
+        <form action={formAction} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <input type="hidden" name="machineId" value={machineId} />
+          <input type="hidden" name="tipo" value={tipo} />
+          <select name="userId" defaultValue={atual?.userId ?? ""} className="field" style={{ height: 32, fontSize: 13, padding: "0 8px" }}>
+            <option value="">— ninguém —</option>
+            {participantesPossiveis.map((p) => (
+              <option key={p.id} value={p.id}>{p.label}</option>
+            ))}
+          </select>
+          <input
+            className="field"
+            name="percentual"
+            type="number"
+            step="0.1"
+            min="0"
+            max="100"
+            placeholder="%"
+            defaultValue={atual?.percentual || ""}
+            style={{ width: 70, height: 32, fontSize: 13, padding: "0 8px" }}
+          />
+          <button className="btn ghost" type="submit" disabled={pending} style={{ height: 32, padding: "0 10px", fontSize: 12 }}>
+            {pending ? "Salvando..." : "Salvar"}
+          </button>
+          {state?.error && (
+            <span style={{ color: "var(--erro, #e05555)", fontSize: 12, width: "100%" }}>{state.error}</span>
+          )}
+        </form>
+      </td>
+      <td>{atual ? `${atual.percentual}%` : "—"}</td>
+      <td>
+        {atual && (
+          <form action={removerParticipante}>
+            <input type="hidden" name="machineId" value={machineId} />
+            <input type="hidden" name="tipo" value={tipo} />
+            <button className="btn ghost" type="submit" style={{ height: 28, padding: "0 8px", fontSize: 11 }}>Remover</button>
+          </form>
+        )}
+      </td>
+    </tr>
+  );
+}
+
 function ParticipantesMaquina({ m, participantesPossiveis }: { m: Maquina; participantesPossiveis: Participante[] }) {
   const somaCadastrada = m.participantes.reduce((s, p) => s + p.percentual, 0);
   const sobraAdmin = Math.max(0, 100 - somaCadastrada);
@@ -127,48 +186,15 @@ function ParticipantesMaquina({ m, participantesPossiveis }: { m: Maquina; parti
             <tr><th>Tipo</th><th>Pessoa</th><th>%</th><th></th></tr>
           </thead>
           <tbody>
-            {TIPOS_PARTICIPACAO.map((tipo) => {
-              const atual = m.participantes.find((p) => p.tipo === tipo);
-              return (
-                <tr key={tipo}>
-                  <td>{LABEL_TIPO[tipo]}</td>
-                  <td>
-                    <form action={salvarParticipante} style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      <input type="hidden" name="machineId" value={m.id} />
-                      <input type="hidden" name="tipo" value={tipo} />
-                      <select name="userId" defaultValue={atual?.userId ?? ""} className="field" style={{ height: 32, fontSize: 13, padding: "0 8px" }}>
-                        <option value="">— ninguém —</option>
-                        {participantesPossiveis.map((p) => (
-                          <option key={p.id} value={p.id}>{p.label}</option>
-                        ))}
-                      </select>
-                      <input
-                        className="field"
-                        name="percentual"
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="100"
-                        placeholder="%"
-                        defaultValue={atual?.percentual || ""}
-                        style={{ width: 70, height: 32, fontSize: 13, padding: "0 8px" }}
-                      />
-                      <button className="btn ghost" type="submit" style={{ height: 32, padding: "0 10px", fontSize: 12 }}>Salvar</button>
-                    </form>
-                  </td>
-                  <td>{atual ? `${atual.percentual}%` : "—"}</td>
-                  <td>
-                    {atual && (
-                      <form action={removerParticipante}>
-                        <input type="hidden" name="machineId" value={m.id} />
-                        <input type="hidden" name="tipo" value={tipo} />
-                        <button className="btn ghost" type="submit" style={{ height: 28, padding: "0 8px", fontSize: 11 }}>Remover</button>
-                      </form>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+            {TIPOS_PARTICIPACAO.map((tipo) => (
+              <LinhaParticipante
+                key={tipo}
+                machineId={m.id}
+                tipo={tipo}
+                atual={m.participantes.find((p) => p.tipo === tipo)}
+                participantesPossiveis={participantesPossiveis}
+              />
+            ))}
           </tbody>
         </table>
       </div>
