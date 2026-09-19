@@ -19,15 +19,25 @@ const PASSOS = [
   },
 ];
 
-/** Primeiro acesso: Cadastro → login automático → Onboarding → tela de créditos. */
+/**
+ * Primeiro acesso: Cadastro → login automático → Onboarding → app.
+ * Adicionar saldo é OPCIONAL aqui — a pessoa pode navegar o app livremente
+ * sem pagar nada (o pix pode falhar, demorar, ou ela simplesmente não
+ * querer recarregar agora). Quem quiser recarga, acha em Carteira/Início
+ * quando quiser; o botão "Adicionar créditos" abaixo só oferece o atalho.
+ */
 export default function Onboarding() {
   const [passo, setPasso] = useState(0);
   const ultimo = passo === PASSOS.length - 1;
   const atual = PASSOS[passo];
 
   function avancar() {
-    if (ultimo) router.replace("/recarga");
+    if (ultimo) router.push("/recarga");
     else setPasso((p) => p + 1);
+  }
+
+  function pular() {
+    router.replace("/(tabs)");
   }
 
   return (
@@ -50,6 +60,14 @@ export default function Onboarding() {
           ))}
         </View>
         <Btn title={ultimo ? "Adicionar créditos" : "Próximo"} onPress={avancar} />
+        {ultimo && (
+          <Text
+            style={{ fontFamily: F.body, fontSize: 14, color: C.jato, textAlign: "center" }}
+            onPress={pular}
+          >
+            Agora não, quero só olhar o app
+          </Text>
+        )}
       </View>
     </Screen>
   );

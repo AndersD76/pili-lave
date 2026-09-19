@@ -26,7 +26,7 @@ export default function Onboarding() {
   const atual = PASSOS[passo];
 
   function avancar() {
-    if (ultimo) router.replace("/app/recarga");
+    if (ultimo) router.push("/app/recarga");
     else setPasso((p) => p + 1);
   }
 
@@ -52,6 +52,11 @@ export default function Onboarding() {
       <button className="btn" onClick={avancar}>
         {ultimo ? "Adicionar créditos" : "Próximo"}
       </button>
+      {ultimo && (
+        <p className="sub center" style={{ cursor: "pointer" }} onClick={() => router.replace("/app")}>
+          Agora não, quero só olhar o app
+        </p>
+      )}
     </div>
   );
 }

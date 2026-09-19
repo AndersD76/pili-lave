@@ -34,7 +34,8 @@ export default function Recarga() {
           if (st.status === "PAID") {
             if (pollRef.current) clearInterval(pollRef.current);
             await refresh();
-            router.back();
+            if (router.canGoBack()) router.back();
+            else router.replace("/(tabs)");
           }
         } catch { /* segue tentando */ }
       }, 3000);
