@@ -326,13 +326,19 @@ export default function Home() {
                       borderWidth: 1.5, borderColor: sel ? C.jato : C.linha,
                       backgroundColor: sel ? "rgba(37,207,222,0.12)" : "transparent",
                       borderRadius: 14, padding: 14,
-                      flexDirection: "row", justifyContent: "space-between", alignItems: "center",
                     }}
                   >
-                    <Text style={{ fontFamily: F.bodyBold, fontSize: 15, color: C.cromo }}>{p.nome}</Text>
-                    <Text style={{ fontFamily: F.bodyBold, fontSize: 15, color: sel ? C.jato : C.acoD, fontVariant: ["tabular-nums"] }}>
-                      {money(p.precoCents)}
-                    </Text>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                      <Text style={{ flex: 1, fontFamily: F.bodyBold, fontSize: 15, color: C.cromo }}>{p.nome}</Text>
+                      <Text style={{ fontFamily: F.bodyBold, fontSize: 15, color: sel ? C.jato : C.acoD, fontVariant: ["tabular-nums"] }}>
+                        {money(p.precoCents)}
+                      </Text>
+                    </View>
+                    {!!p.descricao && (
+                      <Text style={{ fontFamily: F.body, fontSize: 12, color: C.acoD, marginTop: 4 }}>
+                        {p.descricao}
+                      </Text>
+                    )}
                   </Pressable>
                 );
               })}
