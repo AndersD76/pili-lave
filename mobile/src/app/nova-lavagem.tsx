@@ -153,15 +153,21 @@ export default function NovaLavagem() {
                     backgroundColor: sel ? "rgba(37,207,222,0.12)" : C.verniz2,
                     borderWidth: 1.5, borderColor: sel ? C.jato : C.linha,
                     borderRadius: 18, padding: 18,
-                    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
                   }}
                 >
-                  <Text style={{ fontFamily: F.display, fontSize: 18, color: C.cromo }}>
-                    {p.id} · {p.nome}
-                  </Text>
-                  <Text style={{ fontFamily: F.displayX, fontSize: 18, color: sel ? C.jato : C.cromo, fontVariant: ["tabular-nums"] }}>
-                    {money(p.precoCents)}
-                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <Text style={{ flex: 1, fontFamily: F.display, fontSize: 18, color: C.cromo }}>
+                      {p.id} · {p.nome}
+                    </Text>
+                    <Text style={{ fontFamily: F.displayX, fontSize: 18, color: sel ? C.jato : C.cromo, fontVariant: ["tabular-nums"] }}>
+                      {money(p.precoCents)}
+                    </Text>
+                  </View>
+                  {!!p.descricao && (
+                    <Text style={{ fontFamily: F.body, fontSize: 13, color: C.acoD, marginTop: 6 }}>
+                      {p.descricao}
+                    </Text>
+                  )}
                 </Pressable>
               );
             })}

@@ -178,6 +178,7 @@ model Vehicle {
 model Program {
   id         Int     @id // 1..4
   nome       String
+  descricao  String? // o que está incluso nesse tipo — nome fica curto, o detalhe vai aqui
   precoCents Int
   duracaoMin Int     @default(30) // duração do ciclo (timeout de segurança = 2x)
   ordem      Int     @default(0)

@@ -139,8 +139,13 @@ export default function Chegada() {
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {programs.map((p) => (
           <button key={p.id} type="button" className={`opt${sel === p.id ? " sel" : ""}`} onClick={() => setSel(p.id)}>
-            <span className="nome">{p.id} · {p.nome}</span>
-            <span className="preco">{money(p.precoCents)}</span>
+            <span style={{ display: "flex", flexDirection: "column", width: "100%", gap: 4, textAlign: "left" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="nome" style={{ flex: 1, minWidth: 0 }}>{p.id} · {p.nome}</span>
+                <span className="preco" style={{ flexShrink: 0 }}>{money(p.precoCents)}</span>
+              </span>
+              {p.descricao && <span className="sub" style={{ fontSize: 13 }}>{p.descricao}</span>}
+            </span>
           </button>
         ))}
       </div>

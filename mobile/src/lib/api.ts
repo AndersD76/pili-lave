@@ -63,7 +63,7 @@ export type Me = {
   role: "CLIENT" | "LAVADOR" | "PARCEIRO" | "ADMIN"; walletCents: number;
   solicitacoes?: Solicitacao[];
 };
-export type Program = { id: number; nome: string; precoCents: number };
+export type Program = { id: number; nome: string; descricao?: string | null; precoCents: number };
 export type Vehicle = { id: string; plate: string; brand: string | null; model: string | null; defaultProgramId: number | null };
 export type Order = {
   id: string; programId: number; amountCents: number; status: "PAID" | "REDEEMED" | "CANCELED";

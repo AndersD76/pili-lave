@@ -9,14 +9,17 @@ function centsFromForm(v: FormDataEntryValue | null): number {
   return Math.max(0, Math.round(n * 100));
 }
 
-/** Nome do tipo de lavagem (vale pra todas as unidades) — não tem preço
- * aqui, só na aba de cada unidade. */
+/** Nome e descrição do tipo de lavagem (vale pra todas as unidades) — não
+ * tem preço aqui, só na aba de cada unidade. Nome é pra ficar CURTO (é ele
+ * que fica ao lado do preço na tela do cliente); o que está incluso no
+ * serviço vai na descrição, mostrada embaixo, separada. */
 export async function salvarNomeTipo(formData: FormData) {
   if (!(await isAdmin())) return;
   const id = Number(formData.get("id"));
   const nome = String(formData.get("nome") ?? "").trim();
+  const descricao = String(formData.get("descricao") ?? "").trim();
   if (!nome) return;
-  await prisma.program.update({ where: { id }, data: { nome } });
+  await prisma.program.update({ where: { id }, data: { nome, descricao: descricao || null } });
   revalidatePath("/admin/precos");
   revalidatePath("/admin/maquinas");
 }
