@@ -43,6 +43,13 @@ static inline uint16_t vel(uint8_t etapa) {
     return g_velocidades[g_estado.programa_sel - 1][etapa];
 }
 
+// Trecho "sai do X10, anda, para, volta ate o X10, para e gira": Pre-Lavagem/
+// Enxague, Alta Pressao e Espuma A (os unicos com esse roteiro — Espuma B nao
+// tem giro aqui). A partir do carr_fwd_iniciar() ate o carr_rev_x10 terminar
+// (ANTES do giro), a frequencia e FIXA em 20Hz — independente do que estiver
+// configurado na etapa do programa (pedido do operador).
+#define CARRINHO_X10_FREQ_HZ10 200   // 20.0 Hz
+
 // -----------------------------------------------------------------------
 // GIRO — bloco unico, agora NAO BLOQUEANTE (giro_iniciar + giro_tick)
 // -----------------------------------------------------------------------
@@ -558,7 +565,7 @@ static bool tick_pre_lavagem() {
             break; }
 
         case PL_FWD_INI:
-            carr_fwd_iniciar(vel(0), 1000); _pst = PL_FWD; break;    // ate 1000ms apos perder X10
+            carr_fwd_iniciar(CARRINHO_X10_FREQ_HZ10, 1000); _pst = PL_FWD; break;    // ate 1000ms apos perder X10 — 20Hz fixo
         case PL_FWD: {
             int r = carr_fwd_tick();
             if (r == SUB_ERR) { auto_erro(_cf_msg); return false; }
@@ -568,7 +575,7 @@ static bool tick_pre_lavagem() {
         case PL_PARA_MEIO:
             if (millis() - _pt >= 500) _pst = PL_REV_MEIO_INI; break; // 500ms parado
         case PL_REV_MEIO_INI:
-            carr_rev_x10_iniciar(vel(0)); _pst = PL_REV_MEIO; break;  // volta ate X10+500ms
+            carr_rev_x10_iniciar(CARRINHO_X10_FREQ_HZ10); _pst = PL_REV_MEIO; break;  // volta ate X10+500ms — 20Hz fixo
         case PL_REV_MEIO: {
             int r = carr_rev_x10_tick();
             if (r == SUB_ERR)  { auto_erro(_cf_msg); return false; }
@@ -659,7 +666,7 @@ static bool tick_alta_pressao() {
             break;
 
         case AP_FWD_INI:
-            carr_fwd_iniciar(vel(8), 1000); _pst = AP_FWD; break;
+            carr_fwd_iniciar(CARRINHO_X10_FREQ_HZ10, 1000); _pst = AP_FWD; break;    // 20Hz fixo
         case AP_FWD: {
             int r = carr_fwd_tick();
             if (r == SUB_ERR) { auto_erro(_cf_msg); return false; }
@@ -668,7 +675,7 @@ static bool tick_alta_pressao() {
         case AP_PARA_MEIO:
             if (millis() - _pt >= 500) _pst = AP_REV_MEIO_INI; break;
         case AP_REV_MEIO_INI:
-            carr_rev_x10_iniciar(vel(8)); _pst = AP_REV_MEIO; break;
+            carr_rev_x10_iniciar(CARRINHO_X10_FREQ_HZ10); _pst = AP_REV_MEIO; break;    // 20Hz fixo
         case AP_REV_MEIO: {
             int r = carr_rev_x10_tick();
             if (r == SUB_ERR)  { auto_erro(_cf_msg); return false; }
@@ -750,7 +757,9 @@ static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
             break; }
 
         case SP_FWD_INI:
-            carr_fwd_iniciar(vel(etapa_desl), fwd_dwell); _pst = SP_FWD; break;
+            // com giro (Espuma A): 20Hz fixo nesse trecho. Sem giro (Espuma B,
+            // Cor Magica, etc.): mantem a velocidade configurada na etapa.
+            carr_fwd_iniciar(com_giro ? CARRINHO_X10_FREQ_HZ10 : vel(etapa_desl), fwd_dwell); _pst = SP_FWD; break;
         case SP_FWD: {
             int r = carr_fwd_tick();
             if (r == SUB_ERR) { auto_erro(_cf_msg); return false; }
@@ -763,7 +772,8 @@ static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
             break;
 
         case SP_REV_X10_INI:
-            carr_rev_x10_iniciar(vel(etapa_desl)); _pst = SP_REV_X10; break;  // retorno parcial ate X10+500ms
+            // So alcancado quando com_giro=true (Espuma A) — 20Hz fixo.
+            carr_rev_x10_iniciar(CARRINHO_X10_FREQ_HZ10); _pst = SP_REV_X10; break;  // retorno parcial ate X10+500ms
         case SP_REV_X10: {
             int r = carr_rev_x10_tick();
             if (r == SUB_ERR)  { auto_erro(_cf_msg); return false; }
