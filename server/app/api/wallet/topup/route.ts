@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { createCharge } from "@/lib/asaas";
+import { asaasConfigurado, createCharge } from "@/lib/asaas";
 
 const MIN_CENTS = 1000;      // R$ 10
 const MAX_CENTS = 100000;    // R$ 1.000
@@ -18,6 +18,13 @@ export async function POST(req: NextRequest) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success)
     return NextResponse.json({ error: "Valor inválido (mín. R$ 10, máx. R$ 1.000)" }, { status: 400 });
+
+  // sem a chave do Asaas não há como gerar cobrança — avisa em vez de dar erro técnico
+  if (!asaasConfigurado())
+    return NextResponse.json(
+      { error: "Recarga indisponível no momento. Fale com o atendimento.", indisponivel: true },
+      { status: 503 }
+    );
 
   try {
     const charge = await createCharge(auth.user.id, parsed.data.amountCents, parsed.data.method);

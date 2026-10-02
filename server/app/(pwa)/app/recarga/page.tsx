@@ -20,6 +20,7 @@ export default function Recarga() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
+  const [pag, setPag] = useState<{ disponivel: boolean; teste: boolean } | null>(null);
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   function loadWallet() {
@@ -27,7 +28,13 @@ export default function Recarga() {
       .then((r) => { setSaldo(r.walletCents); setTxs(r.txs); })
       .catch(() => router.replace("/app/login"));
   }
-  useEffect(() => { loadWallet(); return () => { if (poll.current) clearInterval(poll.current); }; }, []);
+  useEffect(() => {
+    loadWallet();
+    // situação do pagamento: avisa ANTES de o cliente tentar recarregar
+    api<{ disponivel: boolean; teste: boolean }>("/api/pagamento", { auth: false })
+      .then(setPag).catch(() => {});
+    return () => { if (poll.current) clearInterval(poll.current); };
+  }, []);
 
   async function gerar() {
     setError(""); setLoading(true);
@@ -79,6 +86,22 @@ export default function Recarga() {
         <div className="lab">Saldo disponível</div>
         <div className="money"><span className="cur">R$</span>{(saldo / 100).toFixed(2).replace(".", ",")}</div>
       </div>
+      {/* Avisa ANTES de o cliente escolher o valor e descobrir no erro. */}
+      {pag && !pag.disponivel && (
+        <div className="card" style={{ borderColor: "var(--atencao)" }}>
+          <div className="lab" style={{ color: "var(--atencao)" }}>Recarga indisponível</div>
+          <p className="sub">
+            O pagamento por PIX ainda não está ativo. Fale com o atendimento para
+            adicionar saldo.
+          </p>
+        </div>
+      )}
+      {pag?.teste && (
+        <p className="sub" style={{ color: "var(--atencao)" }}>
+          Ambiente de teste: a cobrança é simulada e não gera pagamento real.
+        </p>
+      )}
+
       <div>
         <div className="lab">Adicionar quanto?</div>
         <div className="row" style={{ flexWrap: "wrap" }}>
@@ -91,7 +114,7 @@ export default function Recarga() {
         </div>
       </div>
       {error && <p className="err">{error}</p>}
-      <button className="btn" onClick={gerar} disabled={loading}>
+      <button className="btn" onClick={gerar} disabled={loading || pag?.disponivel === false}>
         {loading ? "Gerando…" : `Gerar PIX de ${money(amount)}`}
       </button>
       <div>

@@ -2,7 +2,22 @@ import { prisma } from "./prisma";
 
 const BASE = process.env.ASAAS_BASE_URL ?? "https://api-sandbox.asaas.com/v3";
 
+/** A recarga só funciona com a chave do Asaas configurada no ambiente. */
+export function asaasConfigurado(): boolean {
+  return !!process.env.ASAAS_API_KEY?.trim();
+}
+
+/** Sandbox é ambiente de teste: dinheiro não é real. */
+export function asaasSandbox(): boolean {
+  return BASE.includes("sandbox");
+}
+
 async function asaas(method: string, path: string, body?: unknown) {
+  /* Sem chave, o Asaas responde 401 e o cliente via "Asaas 401" na tela.
+   * Falha cedo, com um texto que diz o que fazer. */
+  if (!asaasConfigurado())
+    throw new Error("Pagamento indisponível no momento (chave do Asaas não configurada).");
+
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
