@@ -124,6 +124,8 @@ model User {
   /// Vínculos de comissão/aluguel em máquinas (role PARCEIRO, ou LAVADOR
   /// com percentual configurado) — só relatório, nunca notificação.
   participacoes MachineParticipante[]
+  /// Pagamentos recebidos (comissão, aluguel, lavador).
+  repasses      Repasse[]
   /// Pedidos pra virar Lavador/Comissão1/Comissão2/Aluguel — uma pessoa pode
   /// pedir vários tipos ao mesmo tempo (ex: Lavador de uma máquina E Aluguel
   /// de outra) e também pedir um tipo novo depois, já sendo cliente há
@@ -465,4 +467,31 @@ model PushSubscription {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+/// Pagamento de comissão/aluguel/lavador feito pela API do Asaas.
+/// É a LISTA BRANCA da validação de saque: o Asaas pergunta antes de
+/// liberar cada saque, e só aprovamos o que tem registro aqui.
+model Repasse {
+  id             String        @id @default(cuid())
+  userId         String                      // quem recebe
+  valorCents     Int
+  pixChave       String                      // chave usada (para auditoria)
+  descricao      String
+  /// Id da transferência no Asaas — chega na validação como externalReference.
+  asaasTransferId String?      @unique
+  status         StatusRepasse @default(PENDENTE)
+  criadoEm       DateTime      @default(now())
+  concluidoEm    DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, criadoEm])
+}
+
+enum StatusRepasse {
+  PENDENTE    // criado por nós, aguardando o Asaas processar
+  APROVADO    // a validação de saque autorizou
+  CONCLUIDO   // o Asaas confirmou a transferência
+  FALHOU
 }
