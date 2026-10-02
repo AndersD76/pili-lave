@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { meComSolicitacoes } from "@/lib/meShape";
+import { atualizarCpfNoAsaas } from "@/lib/asaas";
 
 export async function GET(req: NextRequest) {
   const auth = await requireUser(req);
@@ -25,5 +26,18 @@ export async function PATCH(req: NextRequest) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
   const user = await prisma.user.update({ where: { id: auth.user.id }, data: parsed.data });
+
+  /* CPF novo com customer já existente no Asaas: leva o CPF para lá. Se a
+   * atualização falhar, esquece o customer — a próxima recarga cria outro,
+   * já com CPF. Sem isso, quem preencheu o CPF depois continuaria sem
+   * conseguir recarregar. */
+  const cpfMudou = parsed.data.cpf && parsed.data.cpf !== auth.user.cpf;
+  if (cpfMudou && user.asaasCustomerId) {
+    try {
+      await atualizarCpfNoAsaas(user.asaasCustomerId, parsed.data.cpf!);
+    } catch {
+      await prisma.user.update({ where: { id: user.id }, data: { asaasCustomerId: null } });
+    }
+  }
   return NextResponse.json({ ok: true, name: user.name, cpf: user.cpf });
 }

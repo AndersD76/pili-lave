@@ -38,11 +38,12 @@ async function asaas(method: string, path: string, body?: unknown) {
 /** Garante um customer Asaas para o usuário (cria e cacheia no banco). */
 export async function ensureCustomer(userId: string): Promise<string> {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  if (user.asaasCustomerId) return user.asaasCustomerId;
   /* O Asaas EXIGE CPF/CNPJ para emitir cobrança — sem ele a criação falha
-   * com "invalid_object" e o cliente via só "não foi possível". Falha aqui
-   * com um texto que diz o que fazer. */
+   * com "invalid_object" e o cliente via só "não foi possível". A checagem
+   * vem ANTES de reaproveitar o customer: um customer criado sem CPF numa
+   * tentativa anterior não pode pular esta verificação. */
   if (!user.cpf) throw new Error("FALTA_CPF");
+  if (user.asaasCustomerId) return user.asaasCustomerId;
   const customer = await asaas("POST", "/customers", {
     name: user.name || `Cliente ${user.phone}`,
     mobilePhone: user.phone.replace("+55", ""),
@@ -51,6 +52,15 @@ export async function ensureCustomer(userId: string): Promise<string> {
   });
   await prisma.user.update({ where: { id: userId }, data: { asaasCustomerId: customer.id } });
   return customer.id as string;
+}
+
+/**
+ * Leva o CPF para o customer que já existe no Asaas. Necessário quando a
+ * pessoa preenche o CPF DEPOIS de já ter um customer criado — senão o
+ * customer continua sem documento e toda cobrança falha.
+ */
+export async function atualizarCpfNoAsaas(customerId: string, cpf: string): Promise<void> {
+  await asaas("PUT", `/customers/${customerId}`, { cpfCnpj: cpf });
 }
 
 export type CreatedCharge = {
