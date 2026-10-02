@@ -45,6 +45,12 @@ export async function POST(req: NextRequest) {
       status: topup.status,
     }, { status: 201 });
   } catch (e) {
+    // CPF é exigência do Asaas, não nossa — explica em vez de "erro genérico"
+    if (e instanceof Error && e.message === "FALTA_CPF")
+      return NextResponse.json(
+        { error: "Informe seu CPF no perfil para poder adicionar saldo.", faltaCpf: true },
+        { status: 400 }
+      );
     console.error("Topup falhou:", e);
     return NextResponse.json({ error: "Não foi possível criar a cobrança. Tente novamente." }, { status: 502 });
   }

@@ -11,6 +11,7 @@ export default function Perfil() {
   const [me, setMe] = useState<Me | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [name, setName] = useState("");
+  const [cpf, setCpf] = useState("");
   const [saved, setSaved] = useState(false);
   const [pixChave, setPixChave] = useState("");
   const [pixTipo, setPixTipo] = useState("CPF");
@@ -28,7 +29,7 @@ export default function Perfil() {
 
   const carregar = () => {
     api<Me>("/api/me").then((m) => {
-      setMe(m); setName(m.name ?? "");
+      setMe(m); setName(m.name ?? ""); setCpf(m.cpf ?? "");
       setPixChave(m.pixChave ?? ""); setPixTipo(m.pixTipo ?? "CPF");
     })
       .catch(() => router.replace("/app/login"));
@@ -39,7 +40,11 @@ export default function Perfil() {
   async function save() {
     setError(""); setSaved(false);
     try {
-      await api("/api/me", { method: "PATCH", body: { name: name.trim() } });
+      const limpo = cpf.replace(/\D/g, "");
+      await api("/api/me", {
+        method: "PATCH",
+        body: { name: name.trim(), ...(limpo.length === 11 ? { cpf: limpo } : {}) },
+      });
       setSaved(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível salvar");
@@ -125,6 +130,15 @@ export default function Perfil() {
       <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="lab">Seus dados</div>
         <input className="field" placeholder="Como podemos te chamar?" value={name} onChange={(e) => setName(e.target.value)} />
+        {/* O Asaas exige CPF para emitir cobrança — sem ele não dá para
+            adicionar saldo. */}
+        <input className="field" inputMode="numeric" placeholder="CPF (para adicionar saldo)"
+          value={cpf} onChange={(e) => setCpf(e.target.value)} />
+        {!me?.cpf && (
+          <p className="sub" style={{ color: "var(--atencao)", fontSize: 13 }}>
+            Informe seu CPF para conseguir adicionar saldo.
+          </p>
+        )}
         {me?.email && <p className="sub">E-mail: {me.email}</p>}
         {me?.phone && <p className="sub">Telefone: {me.phone}</p>}
         <button className="btn ghost" onClick={save}>{saved ? "Salvo!" : "Salvar"}</button>

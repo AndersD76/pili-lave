@@ -76,6 +76,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: "Pagamento recusado pelo banco emissor." }, { status: 402 });
   } catch (e) {
+    // CPF é exigência do Asaas, não nossa — explica em vez de "erro genérico"
+    if (e instanceof Error && e.message === "FALTA_CPF")
+      return NextResponse.json(
+        { error: "Informe seu CPF no perfil para poder adicionar saldo.", faltaCpf: true },
+        { status: 400 }
+      );
     const msg = e instanceof Error ? e.message : "Não foi possível cobrar o cartão";
     return NextResponse.json({ error: msg }, { status: 400 });
   }

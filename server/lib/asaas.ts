@@ -39,6 +39,10 @@ async function asaas(method: string, path: string, body?: unknown) {
 export async function ensureCustomer(userId: string): Promise<string> {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
   if (user.asaasCustomerId) return user.asaasCustomerId;
+  /* O Asaas EXIGE CPF/CNPJ para emitir cobrança — sem ele a criação falha
+   * com "invalid_object" e o cliente via só "não foi possível". Falha aqui
+   * com um texto que diz o que fazer. */
+  if (!user.cpf) throw new Error("FALTA_CPF");
   const customer = await asaas("POST", "/customers", {
     name: user.name || `Cliente ${user.phone}`,
     mobilePhone: user.phone.replace("+55", ""),
