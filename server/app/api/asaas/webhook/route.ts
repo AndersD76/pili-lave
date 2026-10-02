@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { creditTopup } from "@/lib/wallet";
 import { getChargeStatus } from "@/lib/asaas";
+import { sincronizarRepasse } from "@/lib/repasse";
 
 /**
  * Webhook do Asaas. Configure no painel Asaas:
  *   URL: https://SEU_DOMINIO/api/asaas/webhook
  *   Token de autenticação: valor de ASAAS_WEBHOOK_TOKEN
- * Eventos: PAYMENT_RECEIVED e PAYMENT_CONFIRMED.
+ * Eventos: PAYMENT_RECEIVED e PAYMENT_CONFIRMED (recarga) e
+ * TRANSFER_DONE, TRANSFER_FAILED, TRANSFER_CANCELLED (repasses).
  */
 export async function POST(req: NextRequest) {
   /* Este endereço credita saldo real. Sem token configurado, qualquer um
@@ -23,6 +25,19 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null);
   const event = body?.event as string | undefined;
+
+  /* Repasse (PIX que nós mandamos): o status vem do próprio Asaas, não do
+   * corpo do evento — o evento só avisa que algo mudou. */
+  if (event?.startsWith("TRANSFER_")) {
+    const transferId = body?.transfer?.id as string | undefined;
+    const repasse = transferId
+      ? await prisma.repasse.findUnique({ where: { asaasTransferId: transferId } })
+      : null;
+    if (repasse)
+      await sincronizarRepasse(repasse.id).catch((e) => console.error("[asaas] sync repasse:", e));
+    return NextResponse.json({ ok: true });
+  }
+
   const paymentId = body?.payment?.id as string | undefined;
   if (!event || !paymentId) return NextResponse.json({ ok: true }); // ignora formatos inesperados
 

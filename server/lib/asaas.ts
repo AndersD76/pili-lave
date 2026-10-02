@@ -208,6 +208,12 @@ export async function transferirPix(
   return { id: t.id as string, status: String(t.status ?? ""), valorCents };
 }
 
+/** Status atual de uma transferência no Asaas (PENDING | BANK_PROCESSING | DONE | FAILED | CANCELLED). */
+export async function statusTransferencia(id: string): Promise<string> {
+  const t = await asaas("GET", `/transfers/${id}`);
+  return String(t?.status ?? "");
+}
+
 /** Saldo disponível na conta Asaas (em centavos) — o que dá para pagar. */
 export async function saldoAsaasCents(): Promise<number> {
   const b = await asaas("GET", "/finance/balance");

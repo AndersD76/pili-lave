@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { chavePublicaPush } from "@/lib/push";
+import { chavePublicaPush, pushConfigurado } from "@/lib/push";
 
 /** Chave pública do servidor — o navegador precisa dela para se inscrever. */
 export async function GET() {
+  if (!pushConfigurado())
+    return NextResponse.json({ error: "Avisos indisponíveis no momento." }, { status: 503 });
   return NextResponse.json({ chave: chavePublicaPush() });
 }
 

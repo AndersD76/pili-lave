@@ -13,6 +13,34 @@ function paraBytes(base64: string): ArrayBuffer {
   return buf;
 }
 
+function mesmosBytes(a: ArrayBuffer, b: ArrayBuffer): boolean {
+  const x = new Uint8Array(a), y = new Uint8Array(b);
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+}
+
+/**
+ * Roda a cada abertura do app. Se a chave do servidor mudou (troca das
+ * chaves VAPID), a inscrição antiga para de receber avisos em silêncio —
+ * aqui ela é refeita sozinha, sem o cliente precisar desligar e ligar.
+ * Quem desativou os avisos (sem inscrição) continua desativado.
+ */
+export async function sincronizarPush(): Promise<void> {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  if (Notification.permission !== "granted" || !getToken()) return;
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) return;
+  const { chave } = await api<{ chave: string }>("/api/push", { auth: false });
+  const atual = sub.options.applicationServerKey;
+  if (!atual || !mesmosBytes(atual, paraBytes(chave))) {
+    await sub.unsubscribe();
+    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: paraBytes(chave) });
+  }
+  // registra de novo mesmo sem troca: o servidor pode ter descartado a inscrição
+  const j = sub.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } };
+  await api("/api/push", { body: { endpoint: j.endpoint, keys: j.keys } });
+}
+
 /**
  * Liga/desliga os avisos no celular. O cliente não fica com o app aberto
  * esperando — sem isso ele só descobre a luz verde se olhar a tela na hora.

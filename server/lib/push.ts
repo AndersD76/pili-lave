@@ -13,19 +13,27 @@ import webpush from "web-push";
 import { prisma } from "./prisma";
 
 /* Chaves VAPID: identificam este servidor para o navegador do cliente.
- * Em produção vêm do ambiente; o par abaixo é o de teste (fase atual). */
-const PUBLICA =
-  process.env.VAPID_PUBLIC_KEY ||
-  "BL2R89IuQxjACRjxNyqHsolZ4dKOG6tA5zcPbvWHDgx0u_oo_AGFhargBu0lTWi9iYQ2DghbPdewjWCwfIOkA_M";
-const PRIVADA =
-  process.env.VAPID_PRIVATE_KEY || "nr-JIIRmJ6-3_jCYCbxH2atMInNTCAxAyNOLNBRXKNU";
+ * Vêm SÓ do ambiente (Railway / .env) — a privada não pode ficar no código,
+ * quem a tiver consegue mandar aviso em nome do PILI CLEAN. Sem elas o push
+ * fica desligado e o resto do app segue normal. */
+const PUBLICA = process.env.VAPID_PUBLIC_KEY?.trim() ?? "";
+const PRIVADA = process.env.VAPID_PRIVATE_KEY?.trim() ?? "";
 const CONTATO = process.env.VAPID_SUBJECT || "mailto:contato@pililave.com.br";
 
+export function pushConfigurado(): boolean {
+  return !!(PUBLICA && PRIVADA);
+}
+
 let pronto = false;
-function configurar() {
-  if (pronto) return;
+function configurar(): boolean {
+  if (pronto) return true;
+  if (!pushConfigurado()) {
+    console.error("[push] VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY não configuradas — avisos desligados");
+    return false;
+  }
   webpush.setVapidDetails(CONTATO, PUBLICA, PRIVADA);
   pronto = true;
+  return true;
 }
 
 export function chavePublicaPush(): string {
@@ -44,7 +52,7 @@ export type Aviso = {
 /** Envia para todos os aparelhos do cliente. Limpa inscrição morta. */
 export async function avisarCliente(userId: string, aviso: Aviso): Promise<number> {
   try {
-    configurar();
+    if (!configurar()) return 0;
     const subs = await prisma.pushSubscription.findMany({ where: { userId } });
     if (!subs.length) return 0;
 

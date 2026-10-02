@@ -41,7 +41,15 @@ export async function POST(req: NextRequest) {
   const t = body?.transfer as { id?: string; value?: number } | undefined;
   if (!t?.id) return recusar("transferência sem id");
 
-  const repasse = await prisma.repasse.findUnique({ where: { asaasTransferId: t.id } });
+  /* O Asaas pode perguntar aqui antes de o sistema terminar de gravar o id
+   * da transferência no Repasse (a resposta do POST /transfers e esta
+   * consulta correm em paralelo). Espera um pouco antes de recusar — sem
+   * isso, um pagamento legítimo seria cancelado por chegar cedo demais. */
+  let repasse = await prisma.repasse.findUnique({ where: { asaasTransferId: t.id } });
+  for (let i = 0; !repasse && i < 6; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    repasse = await prisma.repasse.findUnique({ where: { asaasTransferId: t.id } });
+  }
   if (!repasse) return recusar("saque não foi originado pelo sistema");
   if (repasse.status === "CONCLUIDO" || repasse.status === "APROVADO")
     return recusar("este repasse já foi autorizado");
