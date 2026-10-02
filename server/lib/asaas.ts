@@ -157,3 +157,45 @@ export async function getChargeStatus(paymentId: string): Promise<"PENDING" | "P
   if (["PENDING", "AWAITING_RISK_ANALYSIS"].includes(st)) return "PENDING";
   return "FAILED";
 }
+
+/* ── PAGAR participantes (comissão, aluguel, lavador) ──────────────────
+ * Sai dinheiro da conta Asaas para a chave PIX da pessoa. Exige saldo na
+ * conta Asaas — o que entra das recargas dos clientes fica lá. */
+
+export type Transferencia = {
+  id: string;
+  status: string;      // PENDING | BANK_PROCESSING | DONE | FAILED | CANCELLED
+  valorCents: number;
+};
+
+/**
+ * Transfere via PIX para a chave de um participante.
+ *
+ * O Asaas pede só três coisas: valor, chave e TIPO da chave. Mandamos
+ * também uma referência nossa (externalReference) para conseguir casar a
+ * transferência com o acerto que a originou — sem isso, uma transferência
+ * repetida por engano seria indistinguível da legítima no extrato.
+ */
+export async function transferirPix(
+  chave: string,
+  tipo: "CPF" | "CNPJ" | "EMAIL" | "PHONE" | "EVP",
+  valorCents: number,
+  descricao: string,
+  referencia?: string
+): Promise<Transferencia> {
+  const t = await asaas("POST", "/transfers", {
+    value: valorCents / 100,
+    operationType: "PIX",
+    pixAddressKey: chave,
+    pixAddressKeyType: tipo,
+    description: descricao,
+    ...(referencia ? { externalReference: referencia } : {}),
+  });
+  return { id: t.id as string, status: String(t.status ?? ""), valorCents };
+}
+
+/** Saldo disponível na conta Asaas (em centavos) — o que dá para pagar. */
+export async function saldoAsaasCents(): Promise<number> {
+  const b = await asaas("GET", "/finance/balance");
+  return Math.round(Number(b?.balance ?? 0) * 100);
+}

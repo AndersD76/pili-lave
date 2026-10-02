@@ -15,6 +15,8 @@ export async function meComSolicitacoes(user: User) {
   return {
     id: user.id, phone: user.phone, email: user.email, name: user.name,
     cpf: user.cpf, role: user.role, walletCents: user.walletCents,
+    // dados de recebimento (lavador/comissionado/aluguel)
+    pixChave: user.pixChave, pixTipo: user.pixTipo,
     solicitacoes,
   };
 }

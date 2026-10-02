@@ -10,7 +10,14 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(await meComSolicitacoes(auth.user));
 }
 
-const Body = z.object({ name: z.string().min(2).max(80).optional(), cpf: z.string().regex(/^\d{11}$/).optional() });
+const Body = z.object({
+  name: z.string().min(2).max(80).optional(),
+  cpf: z.string().regex(/^\d{11}$/).optional(),
+  /* Chave PIX de quem RECEBE (lavador, comissionado, aluguel). String vazia
+   * limpa a chave — é como a pessoa remove o dado se quiser. */
+  pixChave: z.string().max(120).optional(),
+  pixTipo: z.enum(["CPF", "CNPJ", "EMAIL", "PHONE", "EVP"]).optional(),
+});
 
 export async function PATCH(req: NextRequest) {
   const auth = await requireUser(req);

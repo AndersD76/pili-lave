@@ -53,6 +53,9 @@ export type Solicitacao = { tipo: TipoParceiro; status: StatusSolicitacao };
 
 export type Me = {
   id: string; phone: string; email: string | null; name: string | null;
+  cpf?: string | null;
+  pixChave?: string | null;
+  pixTipo?: "CPF" | "CNPJ" | "EMAIL" | "PHONE" | "EVP" | null;
   role: "CLIENT" | "LAVADOR" | "PARCEIRO" | "ADMIN"; walletCents: number;
   solicitacoes?: Solicitacao[];
 };

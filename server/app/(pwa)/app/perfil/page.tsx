@@ -12,6 +12,9 @@ export default function Perfil() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [name, setName] = useState("");
   const [saved, setSaved] = useState(false);
+  const [pixChave, setPixChave] = useState("");
+  const [pixTipo, setPixTipo] = useState("CPF");
+  const [pixMsg, setPixMsg] = useState("");
   const [error, setError] = useState("");
 
   // troca de senha
@@ -24,7 +27,10 @@ export default function Perfil() {
   const [erroSolicitacao, setErroSolicitacao] = useState("");
 
   const carregar = () => {
-    api<Me>("/api/me").then((m) => { setMe(m); setName(m.name ?? ""); })
+    api<Me>("/api/me").then((m) => {
+      setMe(m); setName(m.name ?? "");
+      setPixChave(m.pixChave ?? ""); setPixTipo(m.pixTipo ?? "CPF");
+    })
       .catch(() => router.replace("/app/login"));
     api<Vehicle[]>("/api/vehicles").then(setVehicles).catch(() => {});
   };
@@ -37,6 +43,17 @@ export default function Perfil() {
       setSaved(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível salvar");
+    }
+  }
+
+  async function salvarPix() {
+    setPixMsg("");
+    try {
+      await api("/api/me", { method: "PATCH", body: { pixChave: pixChave.trim(), pixTipo } });
+      setPixMsg("Chave salva!");
+      setTimeout(() => setPixMsg(""), 2500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível salvar a chave");
     }
   }
 
@@ -132,6 +149,26 @@ export default function Perfil() {
       </div>
 
       <AvisosPush />
+
+      {/* Só quem RECEBE precisa de chave PIX: lavador, comissionado,
+          aluguel. Cliente comum não vê este bloco. */}
+      {(me?.role === "LAVADOR" || me?.role === "PARCEIRO" || me?.role === "ADMIN") && (
+        <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="lab">Onde você recebe</div>
+          <p className="sub">Chave PIX para o pagamento da sua parte.</p>
+          <select className="field" value={pixTipo} onChange={(e) => setPixTipo(e.target.value)}>
+            <option value="CPF">CPF</option>
+            <option value="CNPJ">CNPJ</option>
+            <option value="EMAIL">E-mail</option>
+            <option value="PHONE">Telefone</option>
+            <option value="EVP">Chave aleatória</option>
+          </select>
+          <input className="field" placeholder="Sua chave PIX"
+            value={pixChave} onChange={(e) => setPixChave(e.target.value)} />
+          <button className="btn ghost" onClick={salvarPix}>Salvar chave</button>
+          {pixMsg && <p className="sub" style={{ color: "var(--ok)" }}>{pixMsg}</p>}
+        </div>
+      )}
 
       {me?.email && (
         <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>

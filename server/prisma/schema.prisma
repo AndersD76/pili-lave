@@ -12,6 +12,15 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+/// Tipo da chave PIX, como o Asaas espera em pixAddressKeyType.
+enum PixTipo {
+  CPF
+  CNPJ
+  EMAIL
+  PHONE
+  EVP        // chave aleatória
+}
+
 enum Role {
   CLIENT
   LAVADOR
@@ -93,6 +102,10 @@ model User {
   name            String?
   cpf             String?
   role            Role     @default(CLIENT)
+  /// Dados para RECEBER (lavador, comissionado, aluguel). A chave PIX é o
+  /// que a transferência do Asaas precisa; o tipo diz como interpretá-la.
+  pixChave        String?
+  pixTipo         PixTipo?
   asaasCustomerId String?
   walletCents     Int      @default(0) // cache; fonte da verdade = WalletTx
   createdAt       DateTime @default(now())
