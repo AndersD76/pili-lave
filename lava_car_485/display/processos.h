@@ -591,7 +591,7 @@ static bool tick_pre_lavagem() {
             break; }
 
         case PL_RET_INI:
-            carr_rev_x12_iniciar(vel(10)); _pst = PL_RET; break;     // retorno ate X12 (rampa 1s)
+            carr_rev_x12_iniciar(vel(0)); _pst = PL_RET; break;     // retorno ate X12 (rampa 1s) — propria velocidade do processo (era vel(10) compartilhado)
         case PL_RET: {
             int r = carr_rev_x12_tick();
             if (r == SUB_ERR)  { auto_erro(_cf_msg); return false; }   // X0 travado no retorno
@@ -698,7 +698,7 @@ static bool tick_alta_pressao() {
             break;
 
         case AP_RET_INI:
-            carr_rev_x12_iniciar(vel(10)); _pst = AP_RET; break;
+            carr_rev_x12_iniciar(vel(8)); _pst = AP_RET; break;   // propria velocidade do processo (era vel(10) compartilhado)
         case AP_RET: {
             int r = carr_rev_x12_tick();
             if (r == SUB_ERR)  { auto_erro(_cf_msg); return false; }   // X0 travado no retorno
@@ -789,7 +789,12 @@ static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
             break; }
 
         case SP_REV_INI:
-            carr_rev_x12_iniciar(vel(10)); _pst = SP_REV; break;    // retorno final ate X12
+            // propria velocidade do processo (etapa_desl) — era vel(10), um unico
+            // campo "Retorno" compartilhado por TODOS os processos, o que fazia o
+            // retorno final ignorar a velocidade que o operador configurou pro
+            // deslocamento daquele processo especifico (ex: Cor Magica a 40Hz
+            // avancava a 40Hz mas voltava sempre no valor fixo do "Retorno").
+            carr_rev_x12_iniciar(vel(etapa_desl)); _pst = SP_REV; break;    // retorno final ate X12
         case SP_REV: {
             int r = carr_rev_x12_tick();
             if (r == SUB_ERR)  { auto_erro(_cf_msg); return false; }   // X0 travado no retorno
