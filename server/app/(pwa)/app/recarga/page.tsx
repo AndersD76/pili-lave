@@ -21,6 +21,34 @@ export default function Recarga() {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   const [pag, setPag] = useState<{ disponivel: boolean; teste: boolean } | null>(null);
+  const [forma, setForma] = useState<"PIX" | "CREDITO" | "DEBITO">("PIX");
+  const [cartao, setCartao] = useState({
+    numero: "", nome: "", mes: "", ano: "", cvv: "",
+    cpfCnpj: "", cep: "", numeroEndereco: "",
+  });
+  const [msgCartao, setMsgCartao] = useState("");
+
+  /* Cobrança no cartão SEM sair do app: os dados vão para o nosso servidor
+     e dele direto ao Asaas — nada é guardado aqui nem abre página externa. */
+  async function pagarCartao() {
+    setError(""); setMsgCartao(""); setLoading(true);
+    try {
+      const r = await api<{ status: string; aviso?: string }>("/api/wallet/topup/cartao", {
+        body: { amountCents: amount, tipo: forma, cartao },
+      });
+      if (r.status === "PAID") {
+        setMsgCartao("Pagamento aprovado! Saldo creditado.");
+        setCartao({ numero: "", nome: "", mes: "", ano: "", cvv: "", cpfCnpj: "", cep: "", numeroEndereco: "" });
+        loadWallet();
+      } else {
+        setMsgCartao(r.aviso ?? "Pagamento em análise.");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível pagar");
+    } finally {
+      setLoading(false);
+    }
+  }
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   function loadWallet() {
@@ -113,10 +141,62 @@ export default function Recarga() {
           ))}
         </div>
       </div>
+      {/* Forma de pagamento — tudo resolvido aqui dentro, sem abrir site. */}
+      <div>
+        <div className="lab">Como quer pagar?</div>
+        <div className="abas">
+          <button className={forma === "PIX" ? "on" : ""} onClick={() => setForma("PIX")}>PIX</button>
+          <button className={forma === "CREDITO" ? "on" : ""} onClick={() => setForma("CREDITO")}>Crédito</button>
+          <button className={forma === "DEBITO" ? "on" : ""} onClick={() => setForma("DEBITO")}>Débito</button>
+        </div>
+      </div>
+
+      {forma !== "PIX" && (
+        <div className="card" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className="lab">Dados do cartão</div>
+          <input className="field" inputMode="numeric" placeholder="Número do cartão"
+            value={cartao.numero} onChange={(e) => setCartao({ ...cartao, numero: e.target.value })} />
+          <input className="field" placeholder="Nome impresso no cartão"
+            value={cartao.nome} onChange={(e) => setCartao({ ...cartao, nome: e.target.value })} />
+          <div className="row">
+            <input className="field" inputMode="numeric" placeholder="Mês (MM)" maxLength={2}
+              value={cartao.mes} onChange={(e) => setCartao({ ...cartao, mes: e.target.value })} />
+            <input className="field" inputMode="numeric" placeholder="Ano (AAAA)" maxLength={4}
+              value={cartao.ano} onChange={(e) => setCartao({ ...cartao, ano: e.target.value })} />
+            <input className="field" inputMode="numeric" placeholder="CVV" maxLength={4}
+              value={cartao.cvv} onChange={(e) => setCartao({ ...cartao, cvv: e.target.value })} />
+          </div>
+          {/* O Asaas exige os dados do titular para a análise antifraude. */}
+          <input className="field" inputMode="numeric" placeholder="CPF do titular"
+            value={cartao.cpfCnpj} onChange={(e) => setCartao({ ...cartao, cpfCnpj: e.target.value })} />
+          <div className="row">
+            <input className="field" inputMode="numeric" placeholder="CEP"
+              value={cartao.cep} onChange={(e) => setCartao({ ...cartao, cep: e.target.value })} />
+            <input className="field" inputMode="numeric" placeholder="Nº"
+              value={cartao.numeroEndereco} onChange={(e) => setCartao({ ...cartao, numeroEndereco: e.target.value })} />
+          </div>
+          <p className="sub" style={{ fontSize: 12 }}>
+            {forma === "CREDITO" ? "Crédito à vista." : "Débito."} Seus dados vão direto para a
+            operadora — não ficam guardados no app.
+          </p>
+        </div>
+      )}
+
       {error && <p className="err">{error}</p>}
-      <button className="btn" onClick={gerar} disabled={loading || pag?.disponivel === false}>
-        {loading ? "Gerando…" : `Gerar PIX de ${money(amount)}`}
-      </button>
+      {msgCartao && <p className="sub" style={{ color: "var(--ok)" }}>{msgCartao}</p>}
+
+      {forma === "PIX" ? (
+        <button className="btn" onClick={gerar} disabled={loading || pag?.disponivel === false}>
+          {loading ? "Gerando…" : `Gerar PIX de ${money(amount)}`}
+        </button>
+      ) : (
+        <button className="btn" onClick={pagarCartao}
+          disabled={loading || pag?.disponivel === false ||
+            !cartao.numero || !cartao.nome || !cartao.mes || !cartao.ano || !cartao.cvv ||
+            !cartao.cpfCnpj || !cartao.cep || !cartao.numeroEndereco}>
+          {loading ? "Processando…" : `Pagar ${money(amount)} no ${forma === "CREDITO" ? "crédito" : "débito"}`}
+        </button>
+      )}
       <div>
         <div className="lab">Movimentações</div>
         {txs.length === 0 && <p className="sub">Nada por aqui ainda.</p>}

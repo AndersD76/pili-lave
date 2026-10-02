@@ -55,6 +55,76 @@ export type CreatedCharge = {
   pixPayload: string | null;
 };
 
+export type DadosCartao = {
+  numero: string;
+  nome: string;            // como está impresso no cartão
+  mes: string;             // MM
+  ano: string;             // AAAA
+  cvv: string;
+  /** Titular (exigido pelo Asaas na cobrança por cartão). */
+  cpfCnpj: string;
+  cep: string;
+  numeroEndereco: string;
+  email?: string;
+  telefone?: string;
+};
+
+/**
+ * Cobrança no CARTÃO sem sair do app: manda os dados direto para o Asaas
+ * (creditCard + creditCardHolderInfo) em vez de devolver um link de
+ * checkout. O cartão NÃO é gravado aqui — vai para o Asaas e o que volta é
+ * só o status da cobrança.
+ *
+ * Crédito é sempre à vista (1x) e débito usa o mesmo caminho: para recarga
+ * de saldo, parcelar não faz sentido — o cliente põe crédito e usa.
+ */
+export async function cobrarNoCartao(
+  userId: string,
+  amountCents: number,
+  cartao: DadosCartao,
+  tipo: "CREDITO" | "DEBITO" = "CREDITO",
+  ipDoCliente?: string
+): Promise<{ paymentId: string; status: "PAID" | "PENDING" | "FAILED" }> {
+  const customer = await ensureCustomer(userId);
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  const hoje = new Date().toISOString().slice(0, 10);
+
+  const payment = await asaas("POST", "/payments", {
+    customer,
+    billingType: tipo === "DEBITO" ? "DEBIT_CARD" : "CREDIT_CARD",
+    value: amountCents / 100,
+    dueDate: hoje,
+    description: "Recarga de saldo — PILI CLEAN",
+    externalReference: userId,
+    installmentCount: 1,          // sempre à vista
+    creditCard: {
+      holderName: cartao.nome,
+      number: cartao.numero.replace(/\D/g, ""),
+      expiryMonth: cartao.mes,
+      expiryYear: cartao.ano,
+      ccv: cartao.cvv,
+    },
+    creditCardHolderInfo: {
+      name: cartao.nome,
+      email: cartao.email || `${user.phone.replace(/\D/g, "")}@pililave.com.br`,
+      cpfCnpj: cartao.cpfCnpj.replace(/\D/g, ""),
+      postalCode: cartao.cep.replace(/\D/g, ""),
+      addressNumber: cartao.numeroEndereco,
+      phone: (cartao.telefone || user.phone).replace(/\D/g, ""),
+    },
+    // o Asaas exige o IP de quem está pagando para a análise antifraude
+    ...(ipDoCliente ? { remoteIp: ipDoCliente } : {}),
+  });
+
+  const st = String(payment?.status ?? "");
+  const status = ["RECEIVED", "CONFIRMED"].includes(st)
+    ? "PAID"
+    : ["PENDING", "AWAITING_RISK_ANALYSIS"].includes(st)
+      ? "PENDING"
+      : "FAILED";
+  return { paymentId: payment.id as string, status };
+}
+
 /** Cria cobrança de recarga. PIX devolve o copia-e-cola; cartão devolve o checkout. */
 export async function createCharge(
   userId: string,
