@@ -904,12 +904,29 @@ static bool tick_cera_agua() {
                           _liga_y0_cera, _desliga_y0_cera);
 }
 
-// ---- Secagem: Y5, SEM giro, dwell 2500ms (etapa 9). Ventiladores (Y5) ligados
-//      4s antes de mover o carrinho (Y14) — os outros processos seguem com 2s. ----
+// ---- Secagem: Y5, SEM giro, dwell 2500ms (etapa 9).
+//      Ajuste (pedido do operador): 10s de pausa PURA no inicio, com tudo
+//      desligado — da tempo da agua escorrer dos canos da bomba antes do
+//      compressor ligar, pra nao respingar no carro. So depois disso liga
+//      o compressor (Y5) e fica MAIS 5s parado, e so entao comeca a andar
+//      pra frente (era 4s genericos antes, sem a pausa inicial). ----
+#define SEC_PAUSA_INICIAL_MS 10000   // 10s parado, Y5 desligado (escoar a bomba)
+#define SEC_LIGA_PARADO_MS    5000   // 5s com Y5 ligado, ainda parado, antes de andar
+static bool     _sec_pausa_feita = false;
+static uint32_t _sec_t_pausa = 0;
 static void _off_sec() { SET_Y5(false); }
 static bool tick_secagem() {
-    if (_pst == SP_HOME) { SET_Y5(true); }
-    return _proc_simples(false, 2500, 9, 9, _off_sec, 4000);
+    if (_pst == SP_HOME && !_sec_pausa_feita) {
+        // pausa inicial: nem o _proc_simples comeca ainda (ele quem liga o
+        // Y5, no primeiro SP_LIGA_WAIT) — so conta o tempo e sai.
+        if (_sec_t_pausa == 0) _sec_t_pausa = millis();
+        if (millis() - _sec_t_pausa < SEC_PAUSA_INICIAL_MS) return false;
+        _sec_pausa_feita = true;
+    }
+    if (_pst == SP_HOME) SET_Y5(true);   // liga o compressor SO depois da pausa inicial
+    bool fim = _proc_simples(false, 2500, 9, 9, _off_sec, SEC_LIGA_PARADO_MS);
+    if (fim) { _sec_pausa_feita = false; _sec_t_pausa = 0; }   // reseta p/ proxima vez
+    return fim;
 }
 
 // =======================================================================
@@ -951,6 +968,7 @@ void processos_reset() {
     _cf_st = 0; _cr_st = 0; _cx_st = 0;
     _cr_saiu = false; _cr_t_x10_on = 0;
     _ap_giro_n = 0;
+    _sec_pausa_feita = false; _sec_t_pausa = 0;
 }
 
 // Desloca TODOS os cronometros dos processos por 'delta' ms. Chamado ao RETOMAR da
@@ -969,6 +987,8 @@ void processos_shift_timers(uint32_t delta) {
     _cr_t        += delta;   // carrinho REV ate X10
     _cr_t_x10_on += delta;
     _cx_t        += delta;   // carrinho REV ate X12
+    _cf_t_ramp   += delta;   // rampa de desaceleracao do avanco (apos perder X10)
+    if (_sec_t_pausa) _sec_t_pausa += delta;   // pausa inicial da secagem (10s)
 }
 
 // Sub-estado do processo atual (pra diagnostico na tela)
