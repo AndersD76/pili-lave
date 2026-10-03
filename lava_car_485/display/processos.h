@@ -425,7 +425,14 @@ static int carr_fwd_tick() {
     }
     switch (_cf_st) {
         case 0:  // perdeu X10 — mas so vale se ficar em 0 por X10_FWD_LOST_MS (filtra fantasma)
-                 if (!X10) {
+                 //           E com o carro confirmado na posicao (X15) — o Y14 ja esta
+                 //           sempre ligado aqui (carr_fwd_iniciar liga antes de entrar
+                 //           neste tick). Sem o X15, nao assume "perdeu o X10" — evita o
+                 //           falso-positivo de cair pra 20Hz quando o carro nao esta
+                 //           exatamente na posicao esperada (ex.: trocou o carro entre um
+                 //           teste e outro e o X10 ja comeca lendo 0, sem o carrinho ter
+                 //           avancado de verdade).
+                 if (!X10 && X15) {
                      if (_cf_t_x10_lost == 0) _cf_t_x10_lost = millis();          // X10 caiu a 0 agora
                      if (millis() - _cf_t_x10_lost >= X10_FWD_LOST_MS) {          // ficou 0 por 150ms -> perdeu de verdade
                          Serial.printf("[CARRINHO] perdeu X10 -> inicia rampa %.1fHz -> %.1fHz em %ums\n",
@@ -433,7 +440,7 @@ static int carr_fwd_tick() {
                          _cf_st = 1; _cf_t_x10 = millis(); _cf_t_ramp = 0;
                      }
                  } else {
-                     _cf_t_x10_lost = 0;                                          // X10 voltou -> era fantasma, reseta
+                     _cf_t_x10_lost = 0;                                          // X10 voltou (ou X15 ausente) -> reseta
                  }
                  break;
         case 1: {
