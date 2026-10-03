@@ -45,9 +45,14 @@ static inline uint16_t vel(uint8_t etapa) {
 
 // Trecho "sai do X10, anda, para, volta ate o X10, para e gira": Pre-Lavagem/
 // Enxague, Alta Pressao e Espuma A (os unicos com esse roteiro — Espuma B nao
-// tem giro aqui). A partir do carr_fwd_iniciar() ate o carr_rev_x10 terminar
-// (ANTES do giro), a frequencia e FIXA em 20Hz — independente do que estiver
-// configurado na etapa do programa (pedido do operador).
+// tem giro aqui). Regra (pedido do operador):
+//   - Avanco: comeca na velocidade CONFIGURADA do painel; SO quando confirma
+//     que perdeu o sinal do X10 e que cai pra 20Hz fixo, ate completar o
+//     dwell (~1-1,5s) e parar.
+//   - Retorno ate achar o X10 de novo (+ a prorrogacao de ~500ms): 20Hz fixo
+//     do inicio ao fim (carr_rev_x10_iniciar sempre recebe 20Hz).
+//   - So DEPOIS do giro (pos2->1), o retorno final ate o X12 volta a usar a
+//     velocidade configurada no painel (carr_rev_x12_iniciar).
 #define CARRINHO_X10_FREQ_HZ10 200   // 20.0 Hz
 
 // -----------------------------------------------------------------------
@@ -364,6 +369,7 @@ static inline bool x12_estavel() {
 static uint8_t     _cf_st = 0;
 static uint32_t    _cf_t_x10 = 0, _cf_t_pulso = 0, _cf_dwell = 0;
 static uint32_t    _cf_t_x10_lost = 0;   // instante em que o X10 comecou a ler 0 no avanco (debounce)
+static uint16_t    _cf_freq_apos_x10 = 0; // freq a aplicar assim que confirmar que perdeu o X10
 static bool        _cf_x0_ant = false;
 static const char* _cf_msg = "";
 
@@ -376,12 +382,22 @@ static void vfd_parar_de_vez(uint32_t ms) {
     while (millis() - ts < ms) { vfd_stop(); delay(50); }
 }
 
-static void carr_fwd_iniciar(uint16_t freq_hz10, uint32_t dwell_ms) {
+// freq_antes_x10: velocidade enquanto o X10 ainda esta ativo (normalmente a
+// configurada no painel para o processo).
+// freq_apos_x10 : velocidade aplicada assim que CONFIRMA que perdeu o X10
+// (passa a valer so no trecho "anda mais um pouco" ate o dwell acabar) — nos
+// processos com giro (Pre-Lavagem, Alta Pressao, Espuma A) isso e o 20Hz
+// fixo (CARRINHO_X10_FREQ_HZ10); nos demais e a mesma freq_antes_x10 (sem
+// troca nenhuma).
+static void carr_fwd_iniciar(uint16_t freq_antes_x10, uint16_t freq_apos_x10, uint32_t dwell_ms) {
+    Serial.printf("[CARRINHO] FWD freq_antes_x10=%.1fHz freq_apos_x10=%.1fHz dwell=%ums\n",
+                  freq_antes_x10 / 10.0f, freq_apos_x10 / 10.0f, (unsigned)dwell_ms);  // TEMP debug
     vfd_parar_de_vez(VFD_SETTLE_MS);       // motor parado antes de reverter p/ FWD
     SET_Y14(true);
-    vfd_run_fwd(freq_hz10);
+    vfd_run_fwd(freq_antes_x10);
     _cf_st      = 0;
     _cf_dwell   = dwell_ms;
+    _cf_freq_apos_x10 = freq_apos_x10;
     _cf_t_pulso = millis();
     _cf_x0_ant  = X0;
     _cf_t_x10_lost = 0;                   // reinicia o debounce da perda do X10
@@ -407,6 +423,8 @@ static int carr_fwd_tick() {
                  if (!X10) {
                      if (_cf_t_x10_lost == 0) _cf_t_x10_lost = millis();          // X10 caiu a 0 agora
                      if (millis() - _cf_t_x10_lost >= X10_FWD_LOST_MS) {          // ficou 0 por 150ms -> perdeu de verdade
+                         vfd_run_fwd(_cf_freq_apos_x10);  // TROCA de velocidade AQUI — so a partir de agora
+                         Serial.printf("[CARRINHO] perdeu X10 -> troca pra %.1fHz\n", _cf_freq_apos_x10 / 10.0f);  // TEMP debug
                          _cf_st = 1; _cf_t_x10 = millis();
                      }
                  } else {
@@ -441,6 +459,7 @@ static uint32_t _cr_t_pulso = 0;   // watchdog X0: ultimo instante em que o X0 p
 static bool     _cr_x0_ant  = false;
 
 static void carr_rev_x10_iniciar(uint16_t freq_hz10) {
+    Serial.printf("[CARRINHO] REV_X10 freq=%.1fHz\n", freq_hz10 / 10.0f);  // TEMP debug
     vfd_parar_de_vez(VFD_SETTLE_MS);       // motor parado antes de reverter p/ REV
     SET_Y14(true);
     vfd_run_rev(freq_hz10);
@@ -498,6 +517,7 @@ static uint32_t _cx_t_pulso = 0;   // watchdog X0 no retorno: ultimo instante em
 static bool     _cx_x0_ant  = false;
 
 static void carr_rev_x12_iniciar(uint16_t freq_hz10) {
+    Serial.printf("[CARRINHO] REV_X12 (retorno final) freq=%.1fHz\n", freq_hz10 / 10.0f);  // TEMP debug
     vfd_parar_de_vez(VFD_SETTLE_MS);       // motor parado antes de arrancar o deslocamento
     SET_Y14(true);
     vfd_run_rev(freq_hz10);
@@ -565,7 +585,7 @@ static bool tick_pre_lavagem() {
             break; }
 
         case PL_FWD_INI:
-            carr_fwd_iniciar(CARRINHO_X10_FREQ_HZ10, 1000); _pst = PL_FWD; break;    // ate 1000ms apos perder X10 — 20Hz fixo
+            carr_fwd_iniciar(vel(0), CARRINHO_X10_FREQ_HZ10, 1000); _pst = PL_FWD; break;    // ate 1000ms apos perder X10 — cai pra 20Hz so apos perder o X10
         case PL_FWD: {
             int r = carr_fwd_tick();
             if (r == SUB_ERR) { auto_erro(_cf_msg); return false; }
@@ -666,7 +686,7 @@ static bool tick_alta_pressao() {
             break;
 
         case AP_FWD_INI:
-            carr_fwd_iniciar(CARRINHO_X10_FREQ_HZ10, 1000); _pst = AP_FWD; break;    // 20Hz fixo
+            carr_fwd_iniciar(vel(8), CARRINHO_X10_FREQ_HZ10, 1000); _pst = AP_FWD; break;    // cai pra 20Hz so apos perder o X10
         case AP_FWD: {
             int r = carr_fwd_tick();
             if (r == SUB_ERR) { auto_erro(_cf_msg); return false; }
@@ -757,9 +777,11 @@ static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
             break; }
 
         case SP_FWD_INI:
-            // com giro (Espuma A): 20Hz fixo nesse trecho. Sem giro (Espuma B,
-            // Cor Magica, etc.): mantem a velocidade configurada na etapa.
-            carr_fwd_iniciar(com_giro ? CARRINHO_X10_FREQ_HZ10 : vel(etapa_desl), fwd_dwell); _pst = SP_FWD; break;
+            // com giro (Espuma A): comeca na velocidade do painel e, assim que
+            // perder o X10, cai pra 20Hz fixo ate o fim do dwell. Sem giro
+            // (Espuma B, Cor Magica, etc.): mantem a mesma velocidade o tempo
+            // todo (nao ha troca).
+            carr_fwd_iniciar(vel(etapa_desl), com_giro ? CARRINHO_X10_FREQ_HZ10 : vel(etapa_desl), fwd_dwell); _pst = SP_FWD; break;
         case SP_FWD: {
             int r = carr_fwd_tick();
             if (r == SUB_ERR) { auto_erro(_cf_msg); return false; }
