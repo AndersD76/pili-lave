@@ -336,6 +336,16 @@ void setup() {
     nvs_load_modelos(g_modelos, sizeof(g_modelos));
     nvs_load_velocidades(g_velocidades, sizeof(g_velocidades));
 
+    // TEMP debug: dump de todas as velocidades (4 modelos x 11 etapas) no boot,
+    // pra conferir via serial sem depender do touch da tela.
+    for (int m = 0; m < 4; m++) {
+        Serial.printf("[VELOCIDADES] Modelo %d:", m + 1);
+        for (int e = 0; e < NUM_ETAPAS; e++) {
+            Serial.printf(" %s=%.1fHz", NOMES_ETAPA[e], g_velocidades[m][e] / 10.0f);
+        }
+        Serial.println();
+    }
+
     // Cria telas LVGL
     lvgl_port_lock(-1);
     log_mem("before_screen_1_manual");

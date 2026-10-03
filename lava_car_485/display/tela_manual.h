@@ -419,10 +419,11 @@ void tela_manual_criar(void (*cb_config)(), void (*cb_auto)(), void (*cb_pagamen
     // BLOCO DIREITO (x=450 a 800)
     // ═══════════════════════════════════════════════════════════════════
 
-    // --- Logo (y=0 a 120) ---
+    // --- Logo (trocou de lugar com os botoes Tecnico/Config — agora no
+    //     canto inferior direito, onde eles ficavam) ---
     lv_obj_t* logo_fundo = lv_obj_create(scr_manual);
-    lv_obj_set_pos(logo_fundo, 450, 0);
-    lv_obj_set_size(logo_fundo, 350, 120);
+    lv_obj_set_pos(logo_fundo, 570, 390);
+    lv_obj_set_size(logo_fundo, 225, 85);
     lv_obj_set_style_bg_color(logo_fundo, lv_color_hex(0x000000), 0);
     lv_obj_set_style_border_width(logo_fundo, 0, 0);
     lv_obj_set_style_radius(logo_fundo, 0, 0);
@@ -482,10 +483,12 @@ void tela_manual_criar(void (*cb_config)(), void (*cb_auto)(), void (*cb_pagamen
     lv_obj_set_style_text_color(lbl_alarme, COR_VERMELHO, 0);
     lv_obj_set_pos(lbl_alarme, 452, 432);
 
-    lv_obj_t* btn_tecnico = criar_btn(scr_manual, "Tecnico", 580, 428, 100, 44);
+    // Tecnico/Config trocaram de lugar com a logo — agora no topo direito
+    // (onde a logo ficava), maiores pra aproveitar o espaco.
+    lv_obj_t* btn_tecnico = criar_btn(scr_manual, "Tecnico", 460, 20, 165, 70);
     lv_obj_add_event_cb(btn_tecnico, [](lv_event_t*) { cb_ir_senha_tec(); }, LV_EVENT_CLICKED, nullptr);
 
-    btn_config = criar_btn(scr_manual, "Config", 690, 428, 105, 44);
+    btn_config = criar_btn(scr_manual, "Config", 635, 20, 165, 70);
     lv_obj_add_event_cb(btn_config, cb_btn_config, LV_EVENT_CLICKED, nullptr);
 
     // Diagnostico das 16 entradas (mapear sensores movendo o braço/carrinho na mão)
