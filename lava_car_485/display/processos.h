@@ -366,10 +366,14 @@ static inline bool x12_estavel() {
 // -----------------------------------------------------------------------
 #define CARRO_WD_MS  4000   // watchdog do X0: se nao pulsar por esse tempo -> CARRO TRAVADO (era 2000)
 #define X10_FWD_LOST_MS  150   // no avanco, o X10 precisa ficar em 0 por esse tempo p/ valer "perdeu X10" (anti-fantasma)
+#define CARR_RAMPA_MS       500   // duracao da rampa de desaceleracao no avanco, apos perder o X10
+#define CARR_RAMPA_STEP_MS  100   // recalcula a rampa a cada 100ms (mesmo espirito da rampa do giro)
 static uint8_t     _cf_st = 0;
 static uint32_t    _cf_t_x10 = 0, _cf_t_pulso = 0, _cf_dwell = 0;
 static uint32_t    _cf_t_x10_lost = 0;   // instante em que o X10 comecou a ler 0 no avanco (debounce)
-static uint16_t    _cf_freq_apos_x10 = 0; // freq a aplicar assim que confirmar que perdeu o X10
+static uint16_t    _cf_freq_antes_x10 = 0; // freq de onde a rampa parte (a que estava rodando ao perder o X10)
+static uint16_t    _cf_freq_apos_x10 = 0; // freq de chegada da rampa (piso, mantida ate o fim do dwell)
+static uint32_t    _cf_t_ramp = 0;        // ultimo instante em que a rampa foi recalculada
 static bool        _cf_x0_ant = false;
 static const char* _cf_msg = "";
 
@@ -397,7 +401,8 @@ static void carr_fwd_iniciar(uint16_t freq_antes_x10, uint16_t freq_apos_x10, ui
     vfd_run_fwd(freq_antes_x10);
     _cf_st      = 0;
     _cf_dwell   = dwell_ms;
-    _cf_freq_apos_x10 = freq_apos_x10;
+    _cf_freq_antes_x10 = freq_antes_x10;
+    _cf_freq_apos_x10  = freq_apos_x10;
     _cf_t_pulso = millis();
     _cf_x0_ant  = X0;
     _cf_t_x10_lost = 0;                   // reinicia o debounce da perda do X10
@@ -423,19 +428,36 @@ static int carr_fwd_tick() {
                  if (!X10) {
                      if (_cf_t_x10_lost == 0) _cf_t_x10_lost = millis();          // X10 caiu a 0 agora
                      if (millis() - _cf_t_x10_lost >= X10_FWD_LOST_MS) {          // ficou 0 por 150ms -> perdeu de verdade
-                         vfd_run_fwd(_cf_freq_apos_x10);  // TROCA de velocidade AQUI — so a partir de agora
-                         Serial.printf("[CARRINHO] perdeu X10 -> troca pra %.1fHz\n", _cf_freq_apos_x10 / 10.0f);  // TEMP debug
-                         _cf_st = 1; _cf_t_x10 = millis();
+                         Serial.printf("[CARRINHO] perdeu X10 -> inicia rampa %.1fHz -> %.1fHz em %ums\n",
+                                       _cf_freq_antes_x10 / 10.0f, _cf_freq_apos_x10 / 10.0f, CARR_RAMPA_MS);  // TEMP debug
+                         _cf_st = 1; _cf_t_x10 = millis(); _cf_t_ramp = 0;
                      }
                  } else {
                      _cf_t_x10_lost = 0;                                          // X10 voltou -> era fantasma, reseta
                  }
                  break;
-        case 1:  if (millis() - _cf_t_x10 >= _cf_dwell) {
+        case 1: {
+                 // Rampa linear de 500ms, da freq que estava rodando ate a freq
+                 // de chegada (piso) — recalculada a cada CARR_RAMPA_STEP_MS,
+                 // igual a rampa de desaceleracao do giro. Termina a tempo e
+                 // fica no piso ate o dwell acabar.
+                 uint32_t dtr = millis() - _cf_t_x10;
+                 if (millis() - _cf_t_ramp >= CARR_RAMPA_STEP_MS) {
+                     _cf_t_ramp = millis();
+                     uint16_t f;
+                     if (dtr >= CARR_RAMPA_MS || _cf_freq_antes_x10 <= _cf_freq_apos_x10) {
+                         f = _cf_freq_apos_x10;
+                     } else {
+                         f = (uint16_t)(_cf_freq_antes_x10 -
+                             (uint32_t)(_cf_freq_antes_x10 - _cf_freq_apos_x10) * dtr / CARR_RAMPA_MS);
+                     }
+                     vfd_run_fwd(f);
+                 }
+                 if (dtr >= _cf_dwell) {
                      vfd_stop(); SET_Y14(false);
                      return SUB_DONE;
                  }
-                 break;
+                 break; }
     }
     return SUB_RUN;
 }
