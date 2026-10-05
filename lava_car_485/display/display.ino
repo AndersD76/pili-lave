@@ -41,7 +41,8 @@
 #include "hard_reset.h"    // hard reset no boot disparado pelo firmware (fase 1/2)
 #include "lvgl_v8_port.h"
 #include "comm_espnow.h"        // display <-> CÂMERA (ESP-NOW, só ela)
-#include "modbus_waveshares.h"  // display <-> WAVESHARES + inversor (RS-485)
+#include "modbus_waveshares.h"  // display <-> WAVESHARES + inversor Delta (RS-485)
+#include "saj_rs485.h"          // display <-> inversor SAJ (bomba de alta pressao), mesmo barramento
 #include "nvs_manager.h"
 #include "maquina_estados.h"   // FSM automatica (usa modbus/nvs; pull processos.h)
 #include "tela_manual.h"

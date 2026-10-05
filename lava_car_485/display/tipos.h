@@ -149,7 +149,8 @@ extern void cb_ir_wifi();        // botão CONFIGURAR WI-FI da tela de cadastro 
 // -----------------------------------------------------------------------
 #define MB_ADDR_IO1      1    // Waveshare #1
 #define MB_ADDR_IO2      2    // Waveshare #2
-#define MB_ADDR_INVERSOR 3    // Delta VFD-MS300
+#define MB_ADDR_INVERSOR 3    // Delta VFD-MS300 (giro/carrinho)
+#define MB_ADDR_SAJ      4    // SAJ VM1000B (bomba de alta pressao)
 
 // Registradores Waveshare (coils)
 #define MB_COIL_DO1      0x0000
@@ -185,10 +186,30 @@ extern void cb_ir_wifi();        // botão CONFIGURAR WI-FI da tela de cadastro 
 #define MB_VFD_CORRENTE  0x2101   // corrente atual (leitura)
 #define MB_VFD_STATUS    0x2103   // status (bit0=RUN, bit1=FWD, bit2=REV, bit3=FALHA)
 
-// Comandos VFD
+// Comandos VFD (Delta)
 #define VFD_FWD          0x0012   // RUN sentido A (FWD)
 #define VFD_REV          0x0022   // RUN sentido B (REV)
 #define VFD_STOP         0x0001   // STOP
+
+// Registradores Inversor SAJ VM1000B — esquema de comando DIFERENTE do
+// Delta (valores diretos, nao os codigos 0x0012/0x0022/0x0001). A partida
+// (Forward/Stop) do SAJ e feita por fiacao fisica (AI1/DI1), NAO por
+// Modbus — o firmware so ajusta a FREQUENCIA (0x1000) por processo.
+#define SAJ_REG_FREQ     0x1000   // valor de ajuste por comunicacao: -10000..10000 = -100%..100% de F0.10 (freq maxima)
+#define SAJ_REG_CMD      0x2000   // comando de controle (nao usado hoje — partida e fisica)
+#define SAJ_REG_FREQ_OUT 0x1001   // frequencia de operacao (leitura), 0.01Hz
+#define SAJ_REG_CORRENTE 0x1004   // corrente de saida (leitura), 0.01A
+#define SAJ_REG_STATUS   0x3000   // estado do inversor (leitura)
+
+#define SAJ_CMD_FWD         1
+#define SAJ_CMD_REV         2
+#define SAJ_CMD_STOP_LIVRE  5
+#define SAJ_CMD_STOP_RAMPA  6
+#define SAJ_CMD_RESET       7
+
+// F0.10 do SAJ (frequencia maxima configurada no painel) — base da escala
+// -10000..10000 do registrador 0x1000. Se mudar no painel do SAJ, mudar aqui tambem.
+#define SAJ_FREQ_MAX_HZ   55.0f
 
 // =======================================================================
 // ESP-NOW — comunicacao Display <-> Waveshares (substitui o Modbus das WS).

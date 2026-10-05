@@ -538,12 +538,17 @@ static int carr_rev_x10_tick() {
 }
 
 // -----------------------------------------------------------------------
-// Sub-maquina CARRINHO REV ate o fim de curso X12, com rampa de 1s.
+// Sub-maquina CARRINHO REV ate o fim de curso X12, com rampa de
+// desaceleracao de 500ms (da freq que estava rodando ate parar) ao
+// encontrar o X12 — pedido do operador, vale pra TODO retorno (Pre-
+// Lavagem, Alta Pressao, e os processos simples via _proc_simples).
 // -----------------------------------------------------------------------
 static uint8_t  _cx_st = 0;
 static uint32_t _cx_t  = 0;
 static uint32_t _cx_t_pulso = 0;   // watchdog X0 no retorno: ultimo instante em que o X0 pulsou
 static bool     _cx_x0_ant  = false;
+static uint16_t _cx_freq    = 0;   // freq que estava rodando ao achar o X12 — de onde a rampa parte
+static uint32_t _cx_t_ramp  = 0;   // ultimo recalculo da rampa
 
 static void carr_rev_x12_iniciar(uint16_t freq_hz10) {
     Serial.printf("[CARRINHO] REV_X12 (retorno final) freq=%.1fHz\n", freq_hz10 / 10.0f);  // TEMP debug
@@ -551,6 +556,7 @@ static void carr_rev_x12_iniciar(uint16_t freq_hz10) {
     SET_Y14(true);
     vfd_run_rev(freq_hz10);
     _cx_st = 0;
+    _cx_freq = freq_hz10;
     _cx_t_pulso = millis();               // arma o watchdog do X0 (carro travado no retorno)
     _cx_x0_ant  = X0;
     _t_x12_on = 0;                        // reinicia validacao de 300ms do X12
@@ -559,7 +565,7 @@ static void carr_rev_x12_iniciar(uint16_t freq_hz10) {
 static int carr_rev_x12_tick() {
     // Watchdog do X0 SO na fase 0 (enquanto o carrinho anda ate o X12). Igual ao carr_fwd:
     // oversample do X0 (le a io1 varias vezes) e, se nao pulsar por CARRO_WD_MS, acusa travado.
-    // Na fase 1 (ja parou no X12, rampa 1s) o X0 nao pulsa mais -> nao roda o watchdog la.
+    // Na fase 1 (ja achou o X12, rampa de 500ms) o X0 nao pulsa mais -> nao roda o watchdog la.
     if (_cx_st == 0) {
         for (uint8_t k = 0; k < 5; k++) {
             bool x0 = X0;
@@ -573,12 +579,25 @@ static int carr_rev_x12_tick() {
         }
     }
     switch (_cx_st) {
-        case 0:  if (x12_estavel()) { vfd_stop(); _cx_st = 1; _cx_t = millis(); } break; // fim de curso X12 >=300ms
-        case 1:  if (millis() - _cx_t >= 1000) {                                // rampa 1s
-                     SET_Y14(false);
-                     return SUB_DONE;
-                 }
-                 break;
+        case 0:  if (x12_estavel()) { _cx_st = 1; _cx_t = millis(); _cx_t_ramp = 0; } break; // fim de curso X12 >=300ms -> inicia rampa
+        case 1: {
+            // Rampa linear de 500ms, da freq que estava rodando ate parar —
+            // recalculada a cada CARR_RAMPA_STEP_MS, mesmo principio da
+            // rampa do avanco (carr_fwd_tick) e do giro.
+            uint32_t dtr = millis() - _cx_t;
+            if (dtr >= CARR_RAMPA_MS) {
+                vfd_stop();
+                SET_Y14(false);
+                return SUB_DONE;
+            }
+            if (millis() - _cx_t_ramp >= CARR_RAMPA_STEP_MS) {
+                _cx_t_ramp = millis();
+                uint16_t f = (uint16_t)(_cx_freq -
+                    (uint32_t)_cx_freq * dtr / CARR_RAMPA_MS);
+                if (f < 1) f = 1;   // nunca manda 0 pro VFD — o corte final e o vfd_stop() acima
+                vfd_run_rev(f);
+            }
+            break; }
     }
     return SUB_RUN;
 }
@@ -601,7 +620,9 @@ static bool tick_pre_lavagem() {
             // if (!braco_em_home()) { auto_erro("braco fora de posicao"); return false; }
             _pst = PL_BOMBA; break;
         case PL_BOMBA:
-            SET_Y13(true); _pt = millis(); _pst = PL_BOMBA_WAIT; break;
+            SET_Y13(true);
+            saj_set_freq(24.0f);   // SAJ — Pre-Lavagem/Enxague: 24Hz
+            _pt = millis(); _pst = PL_BOMBA_WAIT; break;
         case PL_BOMBA_WAIT:
             if (millis() - _pt >= 2000) _pst = PL_GIRO1_INI; break;
 
@@ -695,7 +716,9 @@ static bool tick_alta_pressao() {
             // if (!braco_em_home()) { auto_erro("braco fora de posicao"); return false; }
             _pst = AP_BOMBA; break;
         case AP_BOMBA:
-            SET_Y13(true); _pt = millis(); _pst = AP_BOMBA_WAIT; break;
+            SET_Y13(true);
+            saj_set_freq(32.0f);   // SAJ — Alta Pressao: 32Hz
+            _pt = millis(); _pst = AP_BOMBA_WAIT; break;
         case AP_BOMBA_WAIT:
             if (millis() - _pt >= 2000) { _ap_giro_n = 0; _pst = AP_GI_INI; } break;
 
@@ -877,7 +900,7 @@ static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
 // ---- Espuma A: Y7 + Y2, COM giro (etapa desl=2, giro=3) ----
 static void _off_espa() { SET_Y7(false); SET_Y2(false); }
 static bool tick_espuma_a() {
-    if (_pst == SP_HOME) { SET_Y2(true); SET_Y7(true); }   // solenoide ANTES do Y7 (intertravamento)
+    if (_pst == SP_HOME) { SET_Y2(true); SET_Y7(true); saj_set_freq(35.0f); }   // solenoide ANTES do Y7 (intertravamento)
     return _proc_simples(true, 1000, 2, 3, _off_espa, 2000, 15000);   // espera 15s apos desligar
 }
 
@@ -886,7 +909,7 @@ static bool tick_espuma_a() {
 // parar e voltar (pedido do operador).
 static void _off_espb() { SET_Y7(false); SET_Y3(false); }
 static bool tick_espuma_b() {
-    if (_pst == SP_HOME) { SET_Y3(true); SET_Y7(true); }   // solenoide ANTES do Y7 (intertravamento)
+    if (_pst == SP_HOME) { SET_Y3(true); SET_Y7(true); saj_set_freq(35.0f); }   // solenoide ANTES do Y7 (intertravamento)
     return _proc_simples(false, 2000, 4, 5, _off_espb, 2000, 15000);   // espera 15s apos desligar
 }
 
@@ -895,7 +918,7 @@ static bool tick_espuma_b() {
 // ligava Y1 e Y7 ficava desligado, deixando a Cor Magica sem vazao de agua.
 static void _off_cm() { SET_Y1(false); SET_Y7(false); SET_Y0(false); }
 static bool tick_cor_magica() {
-    if (_pst == SP_HOME) { SET_Y1(true); SET_Y7(true); SET_Y0(true); }   // Y0 junto com a Cor Magica
+    if (_pst == SP_HOME) { SET_Y1(true); SET_Y7(true); SET_Y0(true); saj_set_freq(35.0f); }   // Y0 junto com a Cor Magica
     return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, 45000);   // espera 45s apos desligar
 }
 
@@ -906,7 +929,7 @@ static void _off_cera() { SET_Y7(false); SET_Y10(false); }
 static void _liga_y0_cera()  { SET_Y0(true); }
 static void _desliga_y0_cera() { SET_Y0(false); }
 static bool tick_cera_agua() {
-    if (_pst == SP_HOME) { SET_Y10(true); SET_Y7(true); }   // solenoide ANTES do Y7 (intertravamento)
+    if (_pst == SP_HOME) { SET_Y10(true); SET_Y7(true); saj_set_freq(35.0f); }   // solenoide ANTES do Y7 (intertravamento)
     return _proc_simples(false, 1000, 0, 0, _off_cera, 2000, 2000,
                           _liga_y0_cera, _desliga_y0_cera);
 }
@@ -930,7 +953,10 @@ static bool tick_secagem() {
         if (millis() - _sec_t_pausa < SEC_PAUSA_INICIAL_MS) return false;
         _sec_pausa_feita = true;
     }
-    if (_pst == SP_HOME) SET_Y5(true);   // liga o compressor SO depois da pausa inicial
+    if (_pst == SP_HOME) {
+        SET_Y5(true);   // liga o compressor SO depois da pausa inicial
+        saj_set_freq(55.0f);   // SAJ — Secagem: 55Hz
+    }
     bool fim = _proc_simples(false, 2500, 9, 9, _off_sec, SEC_LIGA_PARADO_MS);
     if (fim) { _sec_pausa_feita = false; _sec_t_pausa = 0; }   // reseta p/ proxima vez
     return fim;
@@ -994,6 +1020,7 @@ void processos_shift_timers(uint32_t delta) {
     _cr_t        += delta;   // carrinho REV ate X10
     _cr_t_x10_on += delta;
     _cx_t        += delta;   // carrinho REV ate X12
+    _cx_t_ramp   += delta;   // rampa de desaceleracao do retorno (ao achar o X12)
     _cf_t_ramp   += delta;   // rampa de desaceleracao do avanco (apos perder X10)
     if (_sec_t_pausa) _sec_t_pausa += delta;   // pausa inicial da secagem (10s)
 }
