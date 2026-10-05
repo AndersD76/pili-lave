@@ -243,7 +243,7 @@ void comm_hard_reset_saidas() {
 #define HOME_X0_WD_MS    4000
 #define HOME_DESAC_FLOOR  50
 #define HOME_DESAC_MS   2000
-#define HOME_X12_RAMPA_MS      500   // rampa de desaceleracao ao achar o X12 (pedido do operador)
+#define HOME_X12_RAMPA_MS      350   // rampa de desaceleracao ao achar o X12 (pedido do operador, era 500ms)
 #define HOME_X12_RAMPA_STEP_MS 100
 
 enum { HOME_IDLE=0, HOME_FASE_GIRO, HOME_FASE_PARADA, HOME_FASE_DESLOC, HOME_FASE_X12_RAMPA, HOME_OK, HOME_FALHA };
