@@ -158,6 +158,7 @@ static void cb_toggle_secagem(lv_event_t* e) {
     static bool ativo = false;
     ativo = !ativo;
     io1_set_do(5, ativo);  // Y5 — compressor secagem
+    if (ativo) saj_set_freq(55.0f);   // SAJ — mesmo valor da Secagem automatica
     btn_set_ativo(btn_secagem, ativo);
 }
 
@@ -165,6 +166,7 @@ static void cb_toggle_bomba(lv_event_t* e) {
     static bool ativo = false;
     ativo = !ativo;
     io2_set_do(3, ativo);  // Y13 = W2 DO3 (bomba alta pressão / "bomba de água")
+    if (ativo) saj_set_freq(24.0f);   // SAJ — mesmo valor da Pre-Lavagem automatica
     btn_set_ativo(btn_bomba, ativo);
 }
 
