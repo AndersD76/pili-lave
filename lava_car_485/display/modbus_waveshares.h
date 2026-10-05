@@ -237,7 +237,7 @@ void comm_hard_reset_saidas() {
 // (Copiado sem mudança de lógica do antigo comm_espnow.h — só o transporte
 // dos io*_get_di/io*_set_do por baixo mudou.)
 // =======================================================================
-#define HOME_FREQ_HZ10   300   // 30.0Hz — pedido do operador (era 15.0Hz)
+#define HOME_FREQ_HZ10   500   // 50.0Hz — pedido do operador (era 30.0Hz, antes 15.0Hz)
 #define HOME_TIMEOUT_MS  25000
 #define HOME_TIMEOUT_DESLOC_MS 50000
 #define HOME_X0_WD_MS    4000
