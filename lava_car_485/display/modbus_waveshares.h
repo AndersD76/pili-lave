@@ -237,26 +237,30 @@ void comm_hard_reset_saidas() {
 // (Copiado sem mudança de lógica do antigo comm_espnow.h — só o transporte
 // dos io*_get_di/io*_set_do por baixo mudou.)
 // =======================================================================
-#define HOME_FREQ_HZ10   150
+#define HOME_FREQ_HZ10   300   // 30.0Hz — pedido do operador (era 15.0Hz)
 #define HOME_TIMEOUT_MS  25000
 #define HOME_TIMEOUT_DESLOC_MS 50000
 #define HOME_X0_WD_MS    4000
 #define HOME_DESAC_FLOOR  50
 #define HOME_DESAC_MS   2000
+#define HOME_X12_RAMPA_MS      500   // rampa de desaceleracao ao achar o X12 (pedido do operador)
+#define HOME_X12_RAMPA_STEP_MS 100
 
-enum { HOME_IDLE=0, HOME_FASE_GIRO, HOME_FASE_PARADA, HOME_FASE_DESLOC, HOME_OK, HOME_FALHA };
+enum { HOME_IDLE=0, HOME_FASE_GIRO, HOME_FASE_PARADA, HOME_FASE_DESLOC, HOME_FASE_X12_RAMPA, HOME_OK, HOME_FALHA };
 static uint8_t     g_home_estado = HOME_IDLE;
 static uint32_t    g_home_t0 = 0;
 static const char* g_home_msg = "";
 static uint32_t    g_home_x0_t   = 0;
 static bool        g_home_x0_ant = false;
+static uint32_t    g_home_x12_t0    = 0;   // instante em que achou o X12 — inicio da rampa
+static uint32_t    g_home_x12_t_ramp= 0;   // ultimo recalculo da rampa
 
 static inline bool home_sensor_giro() { return (g_io2.di >> 7) & 0x01; }  // X16 (HOME_GIRO)
 static inline bool home_sensor_x17()  { return (g_io2.di >> 6) & 0x01; }  // X17
 static inline bool home_sensor_x11()  { return (g_io2.di >> 1) & 0x01; }  // X11 (pulso)
 static inline bool home_sensor_x12()  { return (g_io2.di >> 2) & 0x01; }  // X12
 
-bool        home_rodando()  { return g_home_estado==HOME_FASE_GIRO || g_home_estado==HOME_FASE_PARADA || g_home_estado==HOME_FASE_DESLOC; }
+bool        home_rodando()  { return g_home_estado==HOME_FASE_GIRO || g_home_estado==HOME_FASE_PARADA || g_home_estado==HOME_FASE_DESLOC || g_home_estado==HOME_FASE_X12_RAMPA; }
 int         home_estado()   { return (int)g_home_estado; }
 const char* home_mensagem() { return g_home_msg; }
 
@@ -318,7 +322,13 @@ void home_tick() {
         vfd_stop();
         if (millis() - g_home_t0 >= 1500) home_iniciar_fase_desloc();
     } else if (g_home_estado == HOME_FASE_DESLOC) {
-        if (home_sensor_x12()) { vfd_stop(); io2_set_do(4,false); g_home_estado=HOME_OK; g_home_msg="HOME concluido"; return; }
+        if (home_sensor_x12()) {
+            // Achou o X12 — em vez de parar em degrau, inicia a rampa de
+            // desaceleracao de 500ms (pedido do operador).
+            g_home_estado = HOME_FASE_X12_RAMPA;
+            g_home_x12_t0 = millis(); g_home_x12_t_ramp = 0;
+            return;
+        }
 
         modbus_refresh_io1_di();
         if (io1_get_di(4) || io1_get_di(5)) {
@@ -335,6 +345,23 @@ void home_tick() {
         }
 
         if (millis() - g_home_t0 > HOME_TIMEOUT_DESLOC_MS) { home_parar_tudo(); g_home_estado=HOME_FALHA; g_home_msg="HOME FALHOU: X12 nao achado"; }
+    } else if (g_home_estado == HOME_FASE_X12_RAMPA) {
+        // Rampa linear de 500ms, de HOME_FREQ_HZ10 ate parar — recalculada
+        // a cada HOME_X12_RAMPA_STEP_MS, mesmo principio das outras rampas
+        // de desaceleracao (giro, carrinho).
+        uint32_t dtr = millis() - g_home_x12_t0;
+        if (dtr >= HOME_X12_RAMPA_MS) {
+            vfd_stop(); io2_set_do(4,false);
+            g_home_estado = HOME_OK; g_home_msg = "HOME concluido";
+            return;
+        }
+        if (millis() - g_home_x12_t_ramp >= HOME_X12_RAMPA_STEP_MS) {
+            g_home_x12_t_ramp = millis();
+            uint16_t f = (uint16_t)(HOME_FREQ_HZ10 -
+                (uint32_t)HOME_FREQ_HZ10 * dtr / HOME_X12_RAMPA_MS);
+            if (f < 1) f = 1;   // nunca manda 0 pro VFD — o corte final e o vfd_stop() acima
+            vfd_run_rev(f);
+        }
     }
 }
 
