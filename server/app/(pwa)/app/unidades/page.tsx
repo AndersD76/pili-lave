@@ -27,9 +27,9 @@ function UnidadesConteudo() {
   }, []);
 
   function hrefPara(s: Station): string {
-    const qs = new URLSearchParams({ stationId: s.id, stationName: s.name });
+    const qs = new URLSearchParams({ stationName: s.name });
     if (programa) qs.set("programa", programa);
-    return `/app/lavagem?${qs.toString()}`;
+    return `/app/unidade/${s.id}?${qs.toString()}`;
   }
 
   return (
@@ -45,32 +45,14 @@ function UnidadesConteudo() {
           {stations.map((s) => {
             const sit = SITUACAO[s.situacao] ?? SITUACAO.INATIVO;
             return (
-              <div key={s.id} className="opt" style={{ display: "block" }}>
-                <div style={{ marginBottom: 14 }}>
-                  <span className="nome">{s.name}</span>
-                  <span className="sub" style={{ display: "block" }}>{s.address} · {s.city}/{s.state}</span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 4, background: sit.cor, display: "inline-block" }} />
-                    <span className="sub">{sit.label}</span>
-                  </span>
-                </div>
-                <Link href={hrefPara(s)} className="btn" style={{ display: "block", textAlign: "center" }}>
-                  Reservar lavagem
-                </Link>
-                {(() => {
-                  const vacuumMachine = s.machines.find((m) => m.vacuumEnabled);
-                  if (!vacuumMachine) return null;
-                  return (
-                    <Link
-                      href={`/app/aspirador?machineId=${encodeURIComponent(vacuumMachine.id)}`}
-                      className="btn"
-                      style={{ display: "block", textAlign: "center", marginTop: 10 }}
-                    >
-                      Só aspiração de pó
-                    </Link>
-                  );
-                })()}
-              </div>
+              <Link key={s.id} href={hrefPara(s)} className="opt" style={{ display: "block" }}>
+                <span className="nome">{s.name}</span>
+                <span className="sub" style={{ display: "block" }}>{s.address} · {s.city}/{s.state}</span>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 4, background: sit.cor, display: "inline-block" }} />
+                  <span className="sub">{sit.label}</span>
+                </span>
+              </Link>
             );
           })}
         </div>
