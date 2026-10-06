@@ -39,6 +39,7 @@
 #include "soc/rtc_cntl_reg.h"
 #include <esp_system.h>
 #include <nvs_flash.h>
+#include <Update.h>
 #include "pili_cam_config.h"
 
 /* ===================== HARD RESET no boot (via firmware) =====================
@@ -819,6 +820,61 @@ static void atenderComandoSerial() {
   g_tReconn = 0;
 }
 
+/* OTA: confere a versão publicada pelo backend (arquivo estático em
+ * server/public/firmware/) e, se for maior que a gravada aqui, baixa e
+ * aplica. Só reinicia se Update.end() fechar OK -- senão o ESP32 mantém
+ * rodando o firmware atual (nunca troca pra uma imagem incompleta). */
+static void verificarOTA() {
+  if (WiFi.status() != WL_CONNECTED || g_api_url.length() < 8) return;
+
+  HTTPClient http;
+  WiFiClientSecure tls; tls.setInsecure();
+  if (!http.begin(tls, g_api_url + PILI_OTA_VERSION_PATH)) return;
+  http.setTimeout(PILI_HTTP_TIMEOUT);
+  int code = http.GET();
+  if (code != 200) { http.end(); return; }
+  StaticJsonDocument<128> doc;
+  auto err = deserializeJson(doc, http.getString());
+  http.end();
+  if (err) return;
+  int versaoNova = doc["version"] | 0;
+  if (versaoNova <= PILI_FW_VERSION) return;
+
+  Serial.printf("[ota] versao nova disponivel: %d (atual: %d) -> baixando...\n", versaoNova, PILI_FW_VERSION);
+  HTTPClient httpBin;
+  WiFiClientSecure tlsBin; tlsBin.setInsecure();
+  if (!httpBin.begin(tlsBin, g_api_url + PILI_OTA_BIN_PATH)) return;
+  httpBin.setTimeout(60000);
+  int codeBin = httpBin.GET();
+  int len = httpBin.getSize();
+  if (codeBin != 200 || len <= 0) {
+    Serial.printf("[ota] download falhou (code=%d len=%d)\n", codeBin, len);
+    httpBin.end();
+    return;
+  }
+  if (!Update.begin(len)) {
+    Serial.printf("[ota] Update.begin falhou: %s\n", Update.errorString());
+    httpBin.end();
+    return;
+  }
+  WiFiClient* stream = httpBin.getStreamPtr();
+  size_t escrito = Update.writeStream(*stream);
+  httpBin.end();
+  if (escrito != (size_t)len) {
+    Serial.printf("[ota] gravou %u de %d bytes -- abortando\n", (unsigned)escrito, len);
+    Update.abort();
+    return;
+  }
+  if (!Update.end() || !Update.isFinished()) {
+    Serial.printf("[ota] Update.end falhou: %s\n", Update.errorString());
+    return;
+  }
+  Serial.println("[ota] gravado OK -- reiniciando");
+  Serial.flush();
+  delay(200);
+  ESP.restart();
+}
+
 /* Aplica credenciais novas recebidas do display (MSG_WIFI_CFG). */
 static void aplicarCfgNovo() {
   g_ssid = String((const char*)g_cfg_ssid);
@@ -1115,10 +1171,13 @@ void loop() {
     return;
   }
 
-  // CONECTADA: heartbeat + LPR + relay de eventos.
+  // CONECTADA: heartbeat + LPR + relay de eventos + OTA.
   if (millis() - tHb >= PILI_HB_INTERVALO_MS) { tHb = millis(); fazerHeartbeat(); }
   processarEvento();
   processarProvisionamento();
+
+  static uint32_t tOta = 0;
+  if (millis() - tOta >= PILI_OTA_CHECK_MS) { tOta = millis(); verificarOTA(); }
 
   if (!g_cam_ok) {
     static uint32_t tCamRetry = 0;

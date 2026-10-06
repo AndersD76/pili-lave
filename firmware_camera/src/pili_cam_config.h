@@ -62,3 +62,15 @@
 //   — não precisa mais cortar o timeout de UMA tentativa pra isso.
 #define PILI_LPR_HTTP_TIMEOUT   PILI_HTTP_TIMEOUT  // 15000ms, igual ao heartbeat
 #define PILI_LPR_RETRY_DELAY_MS  800  // ms, multiplicado pelo nº da tentativa
+
+// ── OTA (atualização por Wi-Fi) ────────────────────────────────
+//   A cada PILI_OTA_CHECK_MS, pergunta pro backend a versão mais recente do
+//   firmware (server/public/firmware/camera-version.json). Diferente da
+//   gravada aqui -> baixa o .bin novo e aplica via Update.h, reiniciando só
+//   se a gravação fechar certinho (senão continua rodando o firmware atual
+//   -- o ESP32 nunca troca pra uma imagem incompleta/corrompida sozinho).
+//   SUBIR A VERSÃO aqui a cada firmware novo, senão ele nunca se atualiza.
+#define PILI_FW_VERSION       1
+#define PILI_OTA_VERSION_PATH "/firmware/camera-version.json"
+#define PILI_OTA_BIN_PATH     "/firmware/camera.bin"
+#define PILI_OTA_CHECK_MS     (10UL * 60UL * 1000UL)  // confere a cada 10min
