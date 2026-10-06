@@ -66,8 +66,17 @@ export type Order = {
   voucherCode: string; createdAt: string;
   program: Program; vehicle: Vehicle | null;
 };
+export type Machine = {
+  id: string; name: string; status: string; remainingSec: number;
+  vacuumEnabled: boolean; vacuumPriceCents: number | null; vacuumDurationMin: number | null;
+};
 export type Station = {
   id: string; name: string; address: string; city: string; state: string;
   situacao: "ABERTO" | "OCUPADO" | "MANUTENCAO" | "INATIVO";
-  machines: { id: string; name: string; status: string; remainingSec: number }[];
+  machines: Machine[];
+};
+export type VacuumUse = {
+  id: string; machineId: string; amountCents: number; durationSec: number;
+  status: "PAID" | "ACTIVE" | "COMPLETED";
+  startedAt: string | null; completedAt: string | null;
 };

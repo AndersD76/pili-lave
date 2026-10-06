@@ -45,14 +45,29 @@ function UnidadesConteudo() {
           {stations.map((s) => {
             const sit = SITUACAO[s.situacao] ?? SITUACAO.INATIVO;
             return (
-              <Link key={s.id} href={hrefPara(s)} className="opt" style={{ display: "block" }}>
-                <span className="nome">{s.name}</span>
-                <span className="sub" style={{ display: "block" }}>{s.address} · {s.city}/{s.state}</span>
-                <span style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 4, background: sit.cor, display: "inline-block" }} />
-                  <span className="sub">{sit.label}</span>
-                </span>
-              </Link>
+              <div key={s.id}>
+                <Link href={hrefPara(s)} className="opt" style={{ display: "block" }}>
+                  <span className="nome">{s.name}</span>
+                  <span className="sub" style={{ display: "block" }}>{s.address} · {s.city}/{s.state}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 4, background: sit.cor, display: "inline-block" }} />
+                    <span className="sub">{sit.label}</span>
+                  </span>
+                </Link>
+                {(() => {
+                  const vacuumMachine = s.machines.find((m) => m.vacuumEnabled);
+                  if (!vacuumMachine) return null;
+                  return (
+                    <Link
+                      href={`/app/aspirador?machineId=${encodeURIComponent(vacuumMachine.id)}`}
+                      className="btn ghost"
+                      style={{ display: "block", marginTop: 6 }}
+                    >
+                      Só aspiração de pó — {s.name}
+                    </Link>
+                  );
+                })()}
+              </div>
             );
           })}
         </div>

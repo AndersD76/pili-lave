@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { useEffect, useState } from "react";
-import { api, money, type Me, type Order, type Program } from "../client";
+import { api, money, type Me, type Order, type Program, type Station } from "../client";
 
 type Saude = { disponivel: boolean; motivo: string | null; cameraOffline: boolean };
 
@@ -21,6 +21,10 @@ function NovaLavagemConteudo() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [saude, setSaude] = useState<Saude | null>(null);
+  /** Primeira máquina da unidade com aspirador habilitado — oferecido como
+   *  add-on depois de comprar a lavagem (decisão de produto: só nesse
+   *  sentido, aspirador avulso não oferece lavagem de volta). */
+  const [vacuumMachine, setVacuumMachine] = useState<Station["machines"][number] | null>(null);
 
   useEffect(() => {
     if (!stationId) return;
@@ -32,6 +36,12 @@ function NovaLavagemConteudo() {
       if (pre && ps.some((x) => x.id === pre)) setSel(pre);
     }).catch(() => {});
     api<Me>("/api/me").then(setMe).catch(() => router.replace("/app/login"));
+    api<{ stations: Station[] }>("/api/stations", { auth: false })
+      .then(({ stations }) => {
+        const st = stations.find((s) => s.id === stationId);
+        setVacuumMachine(st?.machines.find((m) => m.vacuumEnabled) ?? null);
+      })
+      .catch(() => {});
     // saúde da máquina: não deixa pagar por lavagem que não vai acontecer
     const verSaude = () => api<Saude>("/api/saude", { auth: false }).then(setSaude).catch(() => {});
     verSaude();
@@ -59,6 +69,15 @@ function NovaLavagemConteudo() {
       await api<Order>("/api/orders", {
         body: { programId: selected.id, jaEstouNaMaquina, stationId },
       });
+      if (vacuumMachine && vacuumMachine.vacuumPriceCents && vacuumMachine.vacuumDurationMin) {
+        const quer = window.confirm(
+          `Lavagem paga! Quer liberar o aspirador por ${vacuumMachine.vacuumDurationMin} min por ${money(vacuumMachine.vacuumPriceCents)}?`
+        );
+        if (quer) {
+          router.replace(`/app/aspirador?machineId=${encodeURIComponent(vacuumMachine.id)}`);
+          return;
+        }
+      }
       /* Volta para a tela inicial: é lá que está o acompanhamento da
        * lavagem (status da máquina, progresso, câmera ao vivo e o botão
        * de liberar sem a câmera). O voucher só interessa no fluxo antigo,
