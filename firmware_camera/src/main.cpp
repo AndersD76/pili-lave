@@ -40,6 +40,7 @@
 #include <esp_system.h>
 #include <nvs_flash.h>
 #include <Update.h>
+#include <esp_task_wdt.h>
 #include "pili_cam_config.h"
 
 /* ===================== HARD RESET no boot (via firmware) =====================
@@ -706,7 +707,7 @@ static bool conectarWifi(uint32_t timeout_ms) {
   // Canal já descoberto no scan -> associa direto, sem passear por outros.
   WiFi.begin(g_ssid.c_str(), g_pass.c_str(), canalAlvo);
   uint32_t t = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t < timeout_ms) { blink(1, 250); Serial.print("."); delay(250); }
+  while (WiFi.status() != WL_CONNECTED && millis() - t < timeout_ms) { esp_task_wdt_reset(); blink(1, 250); Serial.print("."); delay(250); }
   if (WiFi.status() == WL_CONNECTED) {
     g_canal_radio = WiFi.channel();
     Serial.printf("\n[wifi] ok: %s canal %d\n", WiFi.localIP().toString().c_str(), g_canal_radio);
@@ -841,25 +842,32 @@ static void verificarOTA() {
   if (versaoNova <= PILI_FW_VERSION) return;
 
   Serial.printf("[ota] versao nova disponivel: %d (atual: %d) -> baixando...\n", versaoNova, PILI_FW_VERSION);
+  // Update.writeStream() bloqueia sem chance de "alimentar" o watchdog no
+  // meio -- numa rede lenta pode passar dos 30s. Desliga só durante esse
+  // trecho e religa em TODO caminho de saída (senão perde a proteção geral).
+  esp_task_wdt_delete(NULL);
   HTTPClient httpBin;
   WiFiClientSecure tlsBin; tlsBin.setInsecure();
-  if (!httpBin.begin(tlsBin, g_api_url + PILI_OTA_BIN_PATH)) return;
+  if (!httpBin.begin(tlsBin, g_api_url + PILI_OTA_BIN_PATH)) { esp_task_wdt_add(NULL); return; }
   httpBin.setTimeout(60000);
   int codeBin = httpBin.GET();
   int len = httpBin.getSize();
   if (codeBin != 200 || len <= 0) {
     Serial.printf("[ota] download falhou (code=%d len=%d)\n", codeBin, len);
     httpBin.end();
+    esp_task_wdt_add(NULL);
     return;
   }
   if (!Update.begin(len)) {
     Serial.printf("[ota] Update.begin falhou: %s\n", Update.errorString());
     httpBin.end();
+    esp_task_wdt_add(NULL);
     return;
   }
   WiFiClient* stream = httpBin.getStreamPtr();
   size_t escrito = Update.writeStream(*stream);
   httpBin.end();
+  esp_task_wdt_add(NULL);   // religa ANTES de qualquer outro return
   if (escrito != (size_t)len) {
     Serial.printf("[ota] gravou %u de %d bytes -- abortando\n", (unsigned)escrito, len);
     Update.abort();
@@ -1107,6 +1115,14 @@ void setup() {
 #endif
   Serial.println("\nPILI LAVE — Camera GATEWAY + LPR (Opcao A, creds do display via NVS)");
 
+  // Watchdog geral: se o loop() travar por qualquer motivo (não só o sensor
+  // de imagem — já tratado à parte) por 30s sem conseguir "alimentar" o
+  // watchdog, reinicia sozinha. Alimentado no topo do loop() e nos trechos
+  // bloqueantes mais longos (conectarWifi, OTA).
+  esp_task_wdt_config_t wdt_cfg = { .timeout_ms = 30000, .idle_core_mask = 0, .trigger_panic = true };
+  esp_task_wdt_init(&wdt_cfg);
+  esp_task_wdt_add(NULL);
+
   // HARD RESET via firmware: reinicia 1x ao energizar; rádio zerado; sensor com ciclo de energia
   hardResetFase1("CAM");
   hardResetRadio();
@@ -1126,6 +1142,7 @@ void setup() {
 }
 
 void loop() {
+  esp_task_wdt_reset();
   static uint32_t tHb = 0, tCanal = 0;
 
   // (0) Aplica credenciais novas que chegaram do display
