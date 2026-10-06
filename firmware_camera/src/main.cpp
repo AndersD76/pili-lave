@@ -937,6 +937,8 @@ static bool cameraInit() {
   return true;
 }
 
+static void hardResetSensor();   // definida mais abaixo; usada na recuperação de enviarFotoPeriodica()
+
 /* Envia o frame cru pro /api/lpr/frame; resposta {plate, light} é só logada.
  * Timeout curto (PILI_LPR_HTTP_TIMEOUT) de propósito: quem controla as
  * tentativas/repouso é a máquina de estados em enviarFotoPeriodica(), que
@@ -980,6 +982,13 @@ static camera_fb_t *g_lprFb      = nullptr;
 static int      g_lprTentativa   = 0;
 static uint32_t g_lprProxTentativaMs = 0;
 
+/* Falhas seguidas de esp_camera_fb_get() = sensor travado (achado real: erros
+ * de I2C/SCCB no boot deixavam o sensor preso, sem nenhum log depois disso —
+ * a câmera continuava respondendo heartbeat normal (rádio ok), mas nunca
+ * mais capturava nada, só "destravando" sozinha minutos depois, às vezes). */
+static uint8_t g_fbFailCount = 0;
+#define FB_FAIL_RECOVERY 3   // ~3 tentativas (24s) seguidas falhando -> reinicia o sensor
+
 static void enviarFotoPeriodica() {
   static uint32_t tUltimoEnvio = 0;
 
@@ -987,7 +996,19 @@ static void enviarFotoPeriodica() {
     if (millis() - tUltimoEnvio < PILI_ENVIO_INTERVALO_MS) return;
     tUltimoEnvio = millis();
     g_lprFb = esp_camera_fb_get();
-    if (!g_lprFb) return;
+    if (!g_lprFb) {
+      g_fbFailCount++;
+      Serial.printf("[cam] fb_get falhou (%d/%d)\n", g_fbFailCount, FB_FAIL_RECOVERY);
+      if (g_fbFailCount >= FB_FAIL_RECOVERY) {
+        g_fbFailCount = 0;
+        Serial.println("[cam] sensor travado -> reiniciando (deinit + hard reset + init)");
+        esp_camera_deinit();
+        hardResetSensor();
+        g_cam_ok = cameraInit();
+      }
+      return;
+    }
+    g_fbFailCount = 0;
     g_lprTentativa = 0;
     g_lprProxTentativaMs = millis();     // primeira tentativa: já, mas só na próxima volta do loop()
     g_lprEmAndamento = true;
