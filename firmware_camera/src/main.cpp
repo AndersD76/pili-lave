@@ -268,6 +268,7 @@ typedef struct __attribute__((packed)) {
   uint8_t   start_prog;
   uint32_t  start_dur;
   char      start_res[40];
+  int16_t   vacuum_seg;  // aspirador: segundos restantes; -1 = inativo
 } MsgHbResp;
 
 static uint8_t _light_code(const String& s) {
@@ -661,7 +662,8 @@ static int8_t anunciarCanalAntesDeConectar() {
   }
   WiFi.scanDelete();
   if (canalAlvo < 1 || canalAlvo > 13) {
-    Serial.println("[wifi] rede nao apareceu no scan -> conecta direto (sem handoff)");
+    Serial.println("[wifi] rede nao apareceu no scan");
+    esp_wifi_set_channel(g_canal_radio, WIFI_SECOND_CHAN_NONE);   // scan pode ter deixado o radio solto — volta pro canal combinado
     return -1;
   }
   // O scan pode ter deixado o radio em outro canal — volta pro canal atual
@@ -686,15 +688,22 @@ static int8_t anunciarCanalAntesDeConectar() {
 static bool conectarWifi(uint32_t timeout_ms) {
   if (!temCreds()) return false;
   int8_t canalAlvo = anunciarCanalAntesDeConectar();
+  // Rede não apareceu no scan -> NÃO tenta WiFi.begin() sem canal: o driver
+  // faria seu PRÓPRIO scan interno pra achar o roteador, vasculhando os 13
+  // canais sozinho por até timeout_ms tentando uma conexão já sabida
+  // impossível (a rede nem existe aqui) — isso tira o rádio do canal
+  // combinado com o display e quebra o ESP-NOW (achado real: "Buscar"
+  // nunca chegava na câmera porque ela ficava neste looping). Sem o
+  // canal na mão, desiste cedo e mantém o rádio parado.
+  if (canalAlvo < 1 || canalAlvo > 13) {
+    Serial.println("[wifi] rede nao existe por aqui -> nao tenta conectar (mantem radio parado)");
+    return false;
+  }
   Serial.printf("[wifi] conectando em %s\n", g_ssid.c_str());
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
-  // Passa o canal já descoberto pro WiFi.begin() — sem isso, o driver faz o
-  // PRÓPRIO scan interno pra achar o roteador, podendo passear por outros
-  // canais durante a associação (quebra a garantia de "vai direto pro canal
-  // certo"). Com o canal na mão, ele associa direto, sem procurar de novo.
-  if (canalAlvo >= 1 && canalAlvo <= 13) WiFi.begin(g_ssid.c_str(), g_pass.c_str(), canalAlvo);
-  else                                   WiFi.begin(g_ssid.c_str(), g_pass.c_str());
+  // Canal já descoberto no scan -> associa direto, sem passear por outros.
+  WiFi.begin(g_ssid.c_str(), g_pass.c_str(), canalAlvo);
   uint32_t t = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t < timeout_ms) { blink(1, 250); Serial.print("."); delay(250); }
   if (WiFi.status() == WL_CONNECTED) {
@@ -712,6 +721,14 @@ static bool conectarWifi(uint32_t timeout_ms) {
 static void atenderScanRequest() {
   Serial.println("[scan] pedido do display -> escaneando...");
   int n = WiFi.scanNetworks();
+  // O scan deixa o rádio "esquecido" em outro canal (tipicamente o último
+  // visitado, 13) — PRECISA voltar pro canal onde o display está ouvindo
+  // ANTES de mandar as respostas por ESP-NOW, senão nenhuma página chega
+  // (bug real: scan achava as redes de verdade, mas a tela nunca recebia
+  // nenhuma — todo MSG_SCAN_RESP saía no canal errado). NÃO chama
+  // WiFi.scanDelete() aqui ainda — isso apagaria os resultados (SSID/
+  // canal/RSSI por índice) que o loop abaixo ainda precisa ler.
+  esp_wifi_set_channel(g_canal_radio, WIFI_SECOND_CHAN_NONE);
   uint8_t totalPaginas = (n <= 0) ? 0 : (uint8_t)((n + SCAN_POR_PAGINA - 1) / SCAN_POR_PAGINA);
   if (totalPaginas == 0) totalPaginas = 1;  // manda 1 página vazia pra avisar "nada encontrado"
 
@@ -732,12 +749,6 @@ static void atenderScanRequest() {
     delay(50);   // não afoga o rádio mandando tudo de uma vez
   }
   WiFi.scanDelete();
-  // O scan pode deixar o rádio "esquecido" em outro canal (ex: parado no
-  // último visitado, tipicamente 13) se a câmera não estiver 100% estável
-  // no momento — sem isso, ela para de anunciar o canal certo pro
-  // display/waveshares até cair e reconectar de novo. Garante explicitamente,
-  // como já é feito em anunciarCanalAntesDeConectar().
-  esp_wifi_set_channel(g_canal_radio, WIFI_SECOND_CHAN_NONE);
   Serial.printf("[scan] %d rede(s) encontrada(s), enviado em %d pagina(s)\n", n < 0 ? 0 : n, totalPaginas);
 }
 
@@ -789,6 +800,25 @@ static void atenderUniRequest() {
 
 static uint32_t g_tReconn = 0;   // usado pelo loop() (!conectada) e por aplicarCfgNovo() p/ forçar retry imediato
 
+/* Comando de emergência via USB-serial: "WIFI:<ssid>:<senha>" + Enter.
+ * Só existe pra contornar a tela de config quando o touch não alcança o
+ * botão Salvar (achado real: canto inferior esquerdo do display morto) —
+ * grava direto na NVS da câmera, sem precisar do fluxo normal MSG_WIFI_CFG. */
+static void atenderComandoSerial() {
+  if (!Serial.available()) return;
+  String linha = Serial.readStringUntil('\n');
+  linha.trim();
+  if (!linha.startsWith("WIFI:")) return;
+  int sep = linha.indexOf(':', 5);
+  if (sep < 0) { Serial.println("[cfg-serial] formato: WIFI:<ssid>:<senha>"); return; }
+  g_ssid = linha.substring(5, sep);
+  g_pass = linha.substring(sep + 1);
+  nvsSalvar();
+  Serial.printf("[cfg-serial] gravado: ssid='%s' (pass_len=%d)\n", g_ssid.c_str(), g_pass.length());
+  WiFi.disconnect();
+  g_tReconn = 0;
+}
+
 /* Aplica credenciais novas recebidas do display (MSG_WIFI_CFG). */
 static void aplicarCfgNovo() {
   g_ssid = String((const char*)g_cfg_ssid);
@@ -825,6 +855,7 @@ static void fazerHeartbeat() {
 
   MsgHbResp r = {};
   r.cab.tipo = MSG_HB_RESP; r.cab.id_maquina = ID_MAQUINA; r.cab.origem = ORIGEM_CAMERA; r.cab.seq = 0;
+  r.vacuum_seg = -1;
   if (code == 200) {
     StaticJsonDocument<512> doc;
     if (deserializeJson(doc, resp) == DeserializationError::Ok) {
@@ -842,6 +873,10 @@ static void fazerHeartbeat() {
           r.start_valido = 1; r.start_prog = pid; r.start_dur = dur;
           strncpy(r.start_res, resId.c_str(), sizeof(r.start_res) - 1);
         }
+      }
+      if (doc.containsKey("vacuum") && !doc["vacuum"].isNull()) {
+        int32_t seg = doc["vacuum"]["segundosRestantes"] | 0;
+        r.vacuum_seg = (int16_t)min<int32_t>(seg, 32767);
       }
       Serial.printf("[hb] 200 state=%s lamp=%d dias=%d blk=%d start=%d\n",
                     (const char*)g_hb_state, r.lightState, r.lic_days, r.lic_blocked, r.start_valido);
@@ -1018,6 +1053,7 @@ void loop() {
 
   // (0) Aplica credenciais novas que chegaram do display
   if (g_cfg_novo) { g_cfg_novo = false; aplicarCfgNovo(); }
+  atenderComandoSerial();   // comando de emergência via USB (ver comentário da função)
   // (0b) Display pediu a lista de redes (tela de config) -> escaneia e responde
   if (g_scan_pedido) { g_scan_pedido = false; atenderScanRequest(); }
   // (0b2) Display pediu unidades já cadastradas nesta cidade (tela de cadastro)
@@ -1043,6 +1079,10 @@ void loop() {
     // pra "canal=1" a cada 1s, arrancando o display (que estava travado
     // certo no canal do roteador) pra um canal errado, mesmo a queda sendo
     // curta e a câmera prestes a reconectar no MESMO canal de sempre.
+    // Isso é proposital: câmera/display ficam TRAVADOS no canal depois de
+    // configurado, mesmo com oscilação de sinal — só saem do canal quando
+    // o técnico aperta "Buscar" de novo (a câmera varre os 13 canais,
+    // acha a rede e só então anuncia MSG_CANAL pro display migrar junto).
     static uint32_t tReq = 0;
     blink(1, 250);
     if (!temCreds()) irParaCanal(1);

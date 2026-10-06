@@ -17,6 +17,7 @@
 // =======================================================================
 static lv_obj_t* scr_wifi          = nullptr;
 static lv_obj_t* dd_redes          = nullptr;   // lista clicável de redes (do scan)
+static lv_obj_t* ta_ssid_manual    = nullptr;   // SSID digitado à mão — usado quando o scan falha/nao acha a rede
 static lv_obj_t* ta_senha          = nullptr;
 static lv_obj_t* ta_api_base       = nullptr;
 static lv_obj_t* ta_device_key     = nullptr;
@@ -130,8 +131,15 @@ static void cb_wifi_scan(lv_event_t* e) {
 static void cb_wifi_salvar(lv_event_t* e) {
     // Opção A: o display NÃO conecta — ele MANDA as credenciais pra CÂMERA (que é o
     // gateway). URL e device-key também vão (pré-preenchidos, mas editáveis aqui).
-    char _ssbuf[40]; lv_dropdown_get_selected_str(dd_redes, _ssbuf, sizeof(_ssbuf));
-    String ssid       = String(_ssbuf);                              ssid.trim();
+    // SSID digitado manualmente tem prioridade — existe justamente pros casos em
+    // que o scan (via câmera) falha ou a rede não aparece na lista (ver
+    // comentário da falha de 2026-10: rede errada salva + câmera sem achar a
+    // nova -> ficava impossível reconfigurar sem apagar a flash).
+    String ssid = String(lv_textarea_get_text(ta_ssid_manual)); ssid.trim();
+    if (ssid.length() == 0) {
+        char _ssbuf[40]; lv_dropdown_get_selected_str(dd_redes, _ssbuf, sizeof(_ssbuf));
+        ssid = String(_ssbuf); ssid.trim();
+    }
     String pass       = String(lv_textarea_get_text(ta_senha));
     String api_base   = String(lv_textarea_get_text(ta_api_base));
     String device_key = String(lv_textarea_get_text(ta_device_key));
@@ -230,23 +238,39 @@ void tela_wifi_criar(void (*cb_voltar)()) {
     lv_label_set_text(lbl_scan, LV_SYMBOL_REFRESH " Buscar");
     lv_obj_center(lbl_scan);
     lv_obj_add_event_cb(btn_scan, cb_wifi_scan, LV_EVENT_CLICKED, nullptr);
+    // SSID manual — alternativa ao scan: se o scan falhar ou a câmera não achar
+    // a rede nova (ex: trocou de roteador, ou a câmera ficou presa tentando
+    // reconectar numa rede antiga e nunca responde o pedido de scan), dá pra
+    // digitar o nome da rede direto aqui em vez de depender da lista.
+    lv_obj_t* lbl_rm = lv_label_create(scr_wifi);
+    lv_label_set_text(lbl_rm, "ou digite:");
+    lv_obj_set_style_text_color(lbl_rm, COR_TEXTO, 0);
+    lv_obj_set_pos(lbl_rm, 10, 100);
+    ta_ssid_manual = lv_textarea_create(scr_wifi);
+    lv_textarea_set_one_line(ta_ssid_manual, true);
+    lv_textarea_set_placeholder_text(ta_ssid_manual, "nome da rede (SSID)");
+    lv_obj_set_size(ta_ssid_manual, 420, 44);
+    lv_obj_set_pos(ta_ssid_manual, 80, 95);
+    lv_obj_set_style_bg_color(ta_ssid_manual, COR_ATIVO, 0);
+    lv_obj_set_style_text_color(ta_ssid_manual, COR_TEXTO, 0);
+    lv_obj_add_event_cb(ta_ssid_manual, cb_wifi_ta_focus, LV_EVENT_FOCUSED, nullptr);
     // Senha
     lv_obj_t* lbl_s = lv_label_create(scr_wifi);
     lv_label_set_text(lbl_s, "Senha:");
     lv_obj_set_style_text_color(lbl_s, COR_TEXTO, 0);
-    lv_obj_set_pos(lbl_s, 10, 100);
+    lv_obj_set_pos(lbl_s, 10, 148);
     ta_senha = lv_textarea_create(scr_wifi);
     lv_textarea_set_password_mode(ta_senha, true);
     lv_textarea_set_one_line(ta_senha, true);
     lv_obj_set_size(ta_senha, 420, 44);
-    lv_obj_set_pos(ta_senha, 80, 95);
+    lv_obj_set_pos(ta_senha, 80, 143);
     lv_obj_set_style_bg_color(ta_senha, COR_ATIVO, 0);
     lv_obj_set_style_text_color(ta_senha, COR_TEXTO, 0);
     lv_obj_add_event_cb(ta_senha, cb_wifi_ta_focus, LV_EVENT_FOCUSED, nullptr);
     // Botão do olho — revela/esconde a senha
     lv_obj_t* btn_eye = lv_btn_create(scr_wifi);
     lv_obj_set_size(btn_eye, 120, 44);
-    lv_obj_set_pos(btn_eye, 510, 95);
+    lv_obj_set_pos(btn_eye, 510, 143);
     lv_obj_set_style_bg_color(btn_eye, COR_ATIVO, 0);
     lv_obj_t* lbl_eye = lv_label_create(btn_eye);
     lv_label_set_text(lbl_eye, LV_SYMBOL_EYE_OPEN);   // senha começa oculta
@@ -256,7 +280,7 @@ void tela_wifi_criar(void (*cb_voltar)()) {
     lv_obj_t* lbl_u = lv_label_create(scr_wifi);
     lv_label_set_text(lbl_u, "URL:");
     lv_obj_set_style_text_color(lbl_u, COR_TEXTO, 0);
-    lv_obj_set_pos(lbl_u, 10, 155);
+    lv_obj_set_pos(lbl_u, 10, 203);
     ta_api_base = lv_textarea_create(scr_wifi);
     lv_textarea_set_one_line(ta_api_base, true);
     {
@@ -265,7 +289,7 @@ void tela_wifi_criar(void (*cb_voltar)()) {
         lv_textarea_set_text(ta_api_base, _api.c_str());
     }
     lv_obj_set_size(ta_api_base, 600, 44);
-    lv_obj_set_pos(ta_api_base, 80, 150);
+    lv_obj_set_pos(ta_api_base, 80, 198);
     lv_obj_set_style_bg_color(ta_api_base, COR_ATIVO, 0);
     lv_obj_set_style_text_color(ta_api_base, COR_TEXTO, 0);
     lv_obj_add_event_cb(ta_api_base, cb_wifi_ta_focus, LV_EVENT_FOCUSED, nullptr);
@@ -273,14 +297,14 @@ void tela_wifi_criar(void (*cb_voltar)()) {
     lv_obj_t* lbl_k = lv_label_create(scr_wifi);
     lv_label_set_text(lbl_k, "Chave:");
     lv_obj_set_style_text_color(lbl_k, COR_TEXTO, 0);
-    lv_obj_set_pos(lbl_k, 10, 210);
+    lv_obj_set_pos(lbl_k, 10, 258);
     ta_device_key = lv_textarea_create(scr_wifi);
     lv_textarea_set_one_line(ta_device_key, true);
     // Chave pré-preenchida VAZIA (o backend não usa device-key — acessa pela URL).
     // Continua editável caso um dia precise.
     lv_textarea_set_text(ta_device_key, nvs_get_device_key().c_str());
     lv_obj_set_size(ta_device_key, 600, 44);
-    lv_obj_set_pos(ta_device_key, 80, 205);
+    lv_obj_set_pos(ta_device_key, 80, 253);
     lv_obj_set_style_bg_color(ta_device_key, COR_ATIVO, 0);
     lv_obj_set_style_text_color(ta_device_key, COR_TEXTO, 0);
     lv_obj_add_event_cb(ta_device_key, cb_wifi_ta_focus, LV_EVENT_FOCUSED, nullptr);
@@ -290,12 +314,12 @@ void tela_wifi_criar(void (*cb_voltar)()) {
     lv_obj_set_style_text_color(lbl_wifi_status, COR_AMARELO, 0);
     lv_obj_set_style_text_font(lbl_wifi_status, &lv_font_montserrat_16, 0);
     lv_obj_set_width(lbl_wifi_status, 780);
-    lv_obj_set_pos(lbl_wifi_status, 10, 262);
+    lv_obj_set_pos(lbl_wifi_status, 10, 310);
     lbl_wifi_ip = lv_label_create(scr_wifi);
     lv_label_set_text(lbl_wifi_ip, "---");
     lv_obj_set_style_text_color(lbl_wifi_ip, COR_TEXTO_FRACO, 0);
     lv_obj_set_style_text_font(lbl_wifi_ip, &lv_font_montserrat_16, 0);
-    lv_obj_set_pos(lbl_wifi_ip, 10, 285);
+    lv_obj_set_pos(lbl_wifi_ip, 10, 333);
     // Botões Salvar / Voltar — ficam no topo, ao lado do título (NÃO em baixo:
     // o teclado virtual (kb_wifi) é 800x200 ancorado no rodapé, cobrindo y=280..480;
     // um botão em y=315 fica por baixo do teclado quando ele abre e nunca recebe o toque).
