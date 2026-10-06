@@ -32,11 +32,20 @@ function UnidadeConteudo() {
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
   const [semLavagem, setSemLavagem] = useState(false);
 
+  // Poll periódico — sem isso o status só atualizava ao reabrir a página, e
+  // a cadeia display->câmera->backend já leva uns 15s sozinha pra propagar
+  // uma mudança real (ex: sensor que destravou), então sem poll a tela
+  // parecia muito mais lenta do que realmente é.
   useEffect(() => {
-    api<{ stations: Station[] }>("/api/stations", { auth: false })
-      .then(({ stations }) => setStation(stations.find((s) => s.id === id) ?? null))
-      .catch(() => {})
-      .finally(() => setLoaded(true));
+    const load = () => {
+      api<{ stations: Station[] }>("/api/stations", { auth: false })
+        .then(({ stations }) => setStation(stations.find((s) => s.id === id) ?? null))
+        .catch(() => {})
+        .finally(() => setLoaded(true));
+    };
+    load();
+    const t = setInterval(load, 8000);
+    return () => clearInterval(t);
   }, [id]);
 
   // Câmera ao vivo: só existe enquanto o cliente tem lavagem em andamento

@@ -49,9 +49,15 @@ export default function UnidadeDetalhe() {
     setLoaded(true);
   }, [id]);
 
+  // Poll periódico enquanto a tela está em foco — sem isso o status só
+  // atualizava ao reabrir a tela, e a cadeia display->câmera->backend já
+  // leva uns 15s sozinha pra propagar uma mudança real (ex: sensor que
+  // destravou), então sem poll o app parecia muito mais lento do que é.
   useFocusEffect(
     useCallback(() => {
       load();
+      const t = setInterval(load, 8000);
+      return () => clearInterval(t);
     }, [load])
   );
 
