@@ -131,7 +131,7 @@ export default function UnidadeDetalhe() {
           if (!vacuumMachine) return null;
           return (
             <Btn
-              title="Só aspiração de pó"
+              title={`${vacuumMachine.vacuumDurationMin} min de aspirador de pó`}
               onPress={() => router.push({ pathname: "/aspirador", params: { machineId: vacuumMachine.id } })}
             />
           );

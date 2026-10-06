@@ -82,7 +82,7 @@ function UnidadeConteudo() {
             className="btn"
             style={{ display: "block", textAlign: "center" }}
           >
-            Só aspiração de pó
+            {vacuumMachine.vacuumDurationMin} min de aspirador de pó
           </Link>
         )}
       </div>
