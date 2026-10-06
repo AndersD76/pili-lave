@@ -105,6 +105,16 @@ export default async function AdminMaquinas() {
       })
     )
   );
+  // Aspirador desde o último fechamento — sempre pago pela carteira (nunca
+  // em espécie), por isso entra só do lado "app" na divisão por escopo.
+  const vacuumPorMaquina = await Promise.all(
+    machines.map((m) =>
+      prisma.vacuumUse.aggregate({
+        where: { machineId: m.id, status: "COMPLETED", completedAt: { gte: m.lastPaymentDate ?? new Date(0) } },
+        _sum: { amountCents: true },
+      })
+    )
+  );
   const programas = await prisma.program.findMany({ orderBy: { ordem: "asc" } });
   const nomePrograma = new Map(programas.map((p) => [p.id, p.nome]));
 
@@ -150,6 +160,19 @@ export default async function AdminMaquinas() {
       divisao = { participantes: porParticipante, totalPresencialCents, totalAppCents };
     }
 
+    // Mesma divisão, só pro aspirador (percentuais do escopo ASPIRADOR) —
+    // sempre "app" (carteira), nunca presencial.
+    const participacoesAsp = participacoesAspiradorPorMaquina[i];
+    let divisaoAspirador: {
+      participantes: ReturnType<typeof divisaoCompleta>["porParticipante"];
+      totalAppCents: number;
+    } | null = null;
+    if (participacoesAsp.length > 0) {
+      const totalAppCents = vacuumPorMaquina[i]._sum.amountCents ?? 0;
+      const { porParticipante } = divisaoCompleta(participacoesAsp, 0, totalAppCents);
+      divisaoAspirador = { participantes: porParticipante, totalAppCents };
+    }
+
     return {
       id: m.id,
       numero: m.numero,
@@ -182,6 +205,17 @@ export default async function AdminMaquinas() {
           label: p.tipo === "ADMIN" ? "Admin" : userLabelMap.get(p.userId ?? "") ?? "—",
           percentual: p.percentual,
           presencial: money(p.presencialCents),
+          app: money(p.appCents),
+          saldoCents: p.saldoCents,
+          saldo: money(Math.abs(p.saldoCents)),
+        })),
+      },
+      divisaoAspirador: divisaoAspirador && {
+        totalApp: money(divisaoAspirador.totalAppCents),
+        participantes: divisaoAspirador.participantes.map((p) => ({
+          tipo: p.tipo,
+          label: p.tipo === "ADMIN" ? "Admin" : userLabelMap.get(p.userId ?? "") ?? "—",
+          percentual: p.percentual,
           app: money(p.appCents),
           saldoCents: p.saldoCents,
           saldo: money(Math.abs(p.saldoCents)),

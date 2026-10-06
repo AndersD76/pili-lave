@@ -38,6 +38,11 @@ type Divisao = {
   totalApp: string;
   participantes: DivisaoParticipante[];
 };
+type DivisaoAspiradorParticipante = Omit<DivisaoParticipante, "presencial">;
+type DivisaoAspirador = {
+  totalApp: string;
+  participantes: DivisaoAspiradorParticipante[];
+};
 
 type Maquina = {
   id: string;
@@ -58,6 +63,7 @@ type Maquina = {
   participantes: ParticipanteAtual[];
   participantesAspirador: ParticipanteAtual[];
   divisao: Divisao | null;
+  divisaoAspirador: DivisaoAspirador | null;
   historico: Lavagem[];
 };
 
@@ -373,6 +379,44 @@ function PainelMaquina({ m, lavadores, participantesPossiveis }: { m: Maquina; l
                   <td></td>
                   <td style={{ fontWeight: 700 }}>{m.divisao.totalPresencial}</td>
                   <td style={{ fontWeight: 700 }}>{m.divisao.totalApp}</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {m.divisaoAspirador && (
+        <>
+          <h4 className="section-title" style={{ margin: "26px 0 10px" }}>
+            Divisão entre participantes — Aspirador (desde o último fechamento)
+          </h4>
+          <p style={{ color: "var(--aco-d)", fontSize: 13, marginBottom: 12 }}>
+            O aspirador é sempre pago pela carteira — o admin já fica com 100% na hora (deve a parte de todo mundo).
+          </p>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Participante</th><th>%</th><th>App</th><th>Saldo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {m.divisaoAspirador.participantes.map((p) => (
+                  <tr key={p.tipo}>
+                    <td>{p.tipo === "ADMIN" ? "Admin" : `${LABEL_TIPO[p.tipo as TipoParticipacao]} (${p.label})`}</td>
+                    <td>{p.percentual.toFixed(1)}%</td>
+                    <td>{p.app}</td>
+                    <td style={{ fontWeight: 700 }}>
+                      {p.saldoCents === 0 ? "—" : p.saldoCents > 0 ? `a receber ${p.saldo}` : `deve repassar ${p.saldo}`}
+                    </td>
+                  </tr>
+                ))}
+                <tr>
+                  <td style={{ fontWeight: 700 }}>Total</td>
+                  <td></td>
+                  <td style={{ fontWeight: 700 }}>{m.divisaoAspirador.totalApp}</td>
                   <td></td>
                 </tr>
               </tbody>
