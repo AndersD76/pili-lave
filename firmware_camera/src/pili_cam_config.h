@@ -37,7 +37,13 @@
 //   na nuvem, não aqui.
 #define PILI_LPR_PATH        "/api/lpr/frame"
 #define PILI_HB_PATH         "/api/machine/heartbeat"
-#define PILI_JPEG_QUALITY    12
+// Achado real (2026-10-06): upload de foto falhando quase sempre
+// ("Failed to send chunk") -- a TLS write precisa de um bloco de memória
+// GRANDE e contíguo; com heap fragmentado (câmera+Wi-Fi+ESP-NOW rodando
+// juntos por muito tempo), um arquivo menor facilita achar esse bloco.
+// Resolução mantida (1600x1200, legibilidade da placa) -- só mais
+// compressão JPEG (12->20, ~100-130KB->bem menor).
+#define PILI_JPEG_QUALITY    20
 #define PILI_HTTP_TIMEOUT    15000  // ms
 #define PILI_HB_INTERVALO_MS 10000  // heartbeat a cada 10s
 #define PILI_CANAL_ANUNCIO_MS 1000  // anuncia MSG_CANAL no canal atual a cada 1s
@@ -70,7 +76,7 @@
 //   se a gravação fechar certinho (senão continua rodando o firmware atual
 //   -- o ESP32 nunca troca pra uma imagem incompleta/corrompida sozinho).
 //   SUBIR A VERSÃO aqui a cada firmware novo, senão ele nunca se atualiza.
-#define PILI_FW_VERSION       2
+#define PILI_FW_VERSION       4
 #define PILI_OTA_VERSION_PATH "/firmware/camera-version.json"
 #define PILI_OTA_BIN_PATH     "/firmware/camera.bin"
 #define PILI_OTA_CHECK_MS     (10UL * 60UL * 1000UL)  // confere a cada 10min

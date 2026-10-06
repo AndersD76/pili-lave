@@ -1002,6 +1002,7 @@ static bool cameraInit() {
 }
 
 static void hardResetSensor();   // definida mais abaixo; usada na recuperação de enviarFotoPeriodica()
+static volatile bool g_lpr_enviando = false;   // true durante o POST da foto (ver loop(): pausa o anuncio de canal)
 
 /* Envia o frame cru pro /api/lpr/frame; resposta {plate, light} é só logada.
  * Timeout curto (PILI_LPR_HTTP_TIMEOUT) de propósito: quem controla as
@@ -1026,7 +1027,9 @@ static bool enviarFrame(camera_fb_t *fb) {
   // do watchdog sem travar de verdade (achado real: o watchdog geral
   // derrubava a câmera NO MEIO do envio da foto, mesmo progredindo normal).
   esp_task_wdt_delete(NULL);
+  g_lpr_enviando = true;   // pausa o anuncio ESP-NOW de canal durante o envio (ver loop())
   int code = http.POST(fb->buf, fb->len);
+  g_lpr_enviando = false;
   esp_task_wdt_add(NULL);
   bool ok = (code >= 200 && code < 300); // 202 = aceito p/ análise em segundo plano
   if (ok) Serial.printf("[lpr] %uKB -> %s\n", (unsigned)(fb->len / 1024), http.getString().substring(0, 140).c_str());
@@ -1174,8 +1177,12 @@ void loop() {
   bool conectada = (WiFi.status() == WL_CONNECTED);
 
   // (1) Anuncia o canal SEMPRE (conectada = canal do roteador; config = canal 1),
-  //     pra display+waveshares acharem a câmera pelo hunt.
-  if (millis() - tCanal >= PILI_CANAL_ANUNCIO_MS) { tCanal = millis(); anunciarCanal(); }
+  //     pra display+waveshares acharem a câmera pelo hunt. EXCETO durante o
+  //     envio da foto -- achado real: o anúncio ESP-NOW (1x/s) disputando o
+  //     mesmo rádio com o upload HTTPS (maior, ~100KB+) causava falha de
+  //     escrita quase toda vez ("Failed to send chunk"), enquanto o
+  //     heartbeat (payload pequeno, termina rápido) quase não era afetado.
+  if (!g_lpr_enviando && millis() - tCanal >= PILI_CANAL_ANUNCIO_MS) { tCanal = millis(); anunciarCanal(); }
   espnowWatchdogTick();   // reinicia sozinha se o ESP-NOW parar de sair (ver comentario acima)
 
   if (!conectada) {
