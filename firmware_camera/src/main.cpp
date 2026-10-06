@@ -1021,7 +1021,13 @@ static bool enviarFrame(camera_fb_t *fb) {
 
   Serial.printf("[dbg] heap %u (max_bloco=%u) | frame %uKB\n",
                 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap(), (unsigned)(fb->len / 1024));
+  // http.setTimeout() não limita o tempo TOTAL do upload (só inatividade) —
+  // um frame de ~100KB+ numa rede fraca pode legitimamente passar dos 30s
+  // do watchdog sem travar de verdade (achado real: o watchdog geral
+  // derrubava a câmera NO MEIO do envio da foto, mesmo progredindo normal).
+  esp_task_wdt_delete(NULL);
   int code = http.POST(fb->buf, fb->len);
+  esp_task_wdt_add(NULL);
   bool ok = (code >= 200 && code < 300); // 202 = aceito p/ análise em segundo plano
   if (ok) Serial.printf("[lpr] %uKB -> %s\n", (unsigned)(fb->len / 1024), http.getString().substring(0, 140).c_str());
   else    Serial.printf("[lpr] envio falhou (%d: %s) | rssi=%d heap=%u max_bloco=%u\n",
@@ -1119,8 +1125,15 @@ void setup() {
   // de imagem — já tratado à parte) por 30s sem conseguir "alimentar" o
   // watchdog, reinicia sozinha. Alimentado no topo do loop() e nos trechos
   // bloqueantes mais longos (conectarWifi, OTA).
+  // O core do ESP32 (Arduino 3.x) já sobe com um watchdog padrão ativo
+  // (timeout curto, poucos segundos) -- esp_task_wdt_init() nesse caso falha
+  // com "already initialized" e o timeout de 30s configurado aqui NUNCA
+  // entrava em vigor; a tarefa ficava registrada no watchdog CURTO de
+  // fábrica, derrubando a câmera em loop de boot (achado real, bem na hora
+  // de gravar). esp_task_wdt_reconfigure() troca o timeout do watchdog que
+  // já está rodando, em vez de tentar iniciar um novo.
   esp_task_wdt_config_t wdt_cfg = { .timeout_ms = 30000, .idle_core_mask = 0, .trigger_panic = true };
-  esp_task_wdt_init(&wdt_cfg);
+  if (esp_task_wdt_reconfigure(&wdt_cfg) != ESP_OK) esp_task_wdt_init(&wdt_cfg);
   esp_task_wdt_add(NULL);
 
   // HARD RESET via firmware: reinicia 1x ao energizar; rádio zerado; sensor com ciclo de energia

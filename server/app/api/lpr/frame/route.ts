@@ -4,10 +4,12 @@ import { plateCandidates, pareceMesmaPlaca } from "@/lib/placa";
 import { handlePlateRead, suggestFromWeakRead } from "@/lib/lpr";
 import { recognizePlate, lastPlateScore } from "@/lib/vision";
 import { cenaMudou } from "@/lib/vision-claude";
-import { saveFrame, updateFrame, readFrame } from "@/lib/frames";
+import { saveFrame, updateFrame, readFrame, iniciarLimpezaPeriodica } from "@/lib/frames";
 import { prisma } from "@/lib/prisma";
 
 export const maxDuration = 60;
+
+iniciarLimpezaPeriodica();   // apaga capturas com mais de 2min, a cada 20s (1x por processo)
 
 /**
  * Câmera dedicada (ESP32-CAM): envia o FRAME JPEG cru e recebe 202 NA HORA

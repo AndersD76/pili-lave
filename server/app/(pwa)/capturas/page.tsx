@@ -51,16 +51,31 @@ export default function Capturas() {
           const cls = f.plate ? (ok ? "ok" : "at") : "off";
           return (
             <div key={f.id} className="card" style={{ padding: 10 }}>
-              <img
-                src={`/api/lpr/frame?id=${f.id}`}
-                alt={f.plate ?? "sem placa"}
-                // Espelhado SÓ na exibição (CSS) — os bytes crus que vão pro
-                // OCR (vision.ts) continuam intocados. O OCR foi calibrado
-                // pra ler bem o frame como a câmera manda de verdade (sem
-                // hmirror no firmware); mas esse mesmo frame cru fica
-                // invertido pra quem olha na tela, então corrigimos só aqui.
-                style={{ width: "100%", borderRadius: 12, display: "block", background: "#000", transform: "scaleX(-1)" }}
-              />
+              {f.bytes > 0 ? (
+                <img
+                  src={`/api/lpr/frame?id=${f.id}`}
+                  alt={f.plate ?? "sem placa"}
+                  // Espelhado SÓ na exibição (CSS) — os bytes crus que vão pro
+                  // OCR (vision.ts) continuam intocados. O OCR foi calibrado
+                  // pra ler bem o frame como a câmera manda de verdade (sem
+                  // hmirror no firmware); mas esse mesmo frame cru fica
+                  // invertido pra quem olha na tela, então corrigimos só aqui.
+                  style={{ width: "100%", borderRadius: 12, display: "block", background: "#000", transform: "scaleX(-1)" }}
+                />
+              ) : (
+                // Imagem já limpa pela rotina de 2min (lib/frames.ts) — o
+                // registro (placa/status/horário) continua, só a foto some.
+                <div
+                  className="sub"
+                  style={{
+                    width: "100%", aspectRatio: "4/3", borderRadius: 12,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: "#000",
+                  }}
+                >
+                  imagem expirada
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, gap: 8 }}>
                 <span className={`chip ${cls}`}>
                   {f.plate ? f.plate : "sem placa"}

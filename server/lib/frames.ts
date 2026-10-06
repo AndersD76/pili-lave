@@ -50,3 +50,26 @@ export async function readFrame(id?: string | null): Promise<Buffer | null> {
     : await prisma.capture.findFirst({ orderBy: { at: "desc" }, select: { jpeg: true } });
   return row ? Buffer.from(row.jpeg) : null;
 }
+
+/** Limpa só os BYTES da imagem (jpeg) das capturas com mais de RETENCAO_MS,
+ *  conferindo a cada INTERVALO_MS — a linha em si (placa, status, horário,
+ *  nota) continua existindo, é histórico e não pode sumir. As fotos é que
+ *  pesam (1 frame a cada ~8s, sem limpeza a tabela cresce sem parar).
+ *  Idempotente: chamar mais de uma vez não duplica o timer. */
+const RETENCAO_MS = 2 * 60 * 1000;   // 2 minutos
+const INTERVALO_MS = 20 * 1000;      // confere a cada 20s
+let limpezaIniciada = false;
+
+export function iniciarLimpezaPeriodica(): void {
+  if (limpezaIniciada) return;
+  limpezaIniciada = true;
+  setInterval(() => {
+    const corte = new Date(Date.now() - RETENCAO_MS);
+    prisma.capture
+      .updateMany({
+        where: { at: { lt: corte }, bytes: { gt: 0 } },
+        data: { jpeg: new Uint8Array(0), bytes: 0 },
+      })
+      .catch(() => {});
+  }, INTERVALO_MS);
+}

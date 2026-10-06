@@ -70,7 +70,7 @@
 //   se a gravação fechar certinho (senão continua rodando o firmware atual
 //   -- o ESP32 nunca troca pra uma imagem incompleta/corrompida sozinho).
 //   SUBIR A VERSÃO aqui a cada firmware novo, senão ele nunca se atualiza.
-#define PILI_FW_VERSION       1
+#define PILI_FW_VERSION       2
 #define PILI_OTA_VERSION_PATH "/firmware/camera-version.json"
 #define PILI_OTA_BIN_PATH     "/firmware/camera.bin"
 #define PILI_OTA_CHECK_MS     (10UL * 60UL * 1000UL)  // confere a cada 10min
