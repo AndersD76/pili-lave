@@ -46,13 +46,16 @@ function UnidadesConteudo() {
             const sit = SITUACAO[s.situacao] ?? SITUACAO.INATIVO;
             return (
               <div key={s.id} className="opt" style={{ display: "block" }}>
-                <Link href={hrefPara(s)} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
+                <div style={{ marginBottom: 14 }}>
                   <span className="nome">{s.name}</span>
                   <span className="sub" style={{ display: "block" }}>{s.address} · {s.city}/{s.state}</span>
                   <span style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
                     <span style={{ width: 8, height: 8, borderRadius: 4, background: sit.cor, display: "inline-block" }} />
                     <span className="sub">{sit.label}</span>
                   </span>
+                </div>
+                <Link href={hrefPara(s)} className="btn" style={{ display: "block", textAlign: "center" }}>
+                  Reservar lavagem
                 </Link>
                 {(() => {
                   const vacuumMachine = s.machines.find((m) => m.vacuumEnabled);
@@ -60,11 +63,8 @@ function UnidadesConteudo() {
                   return (
                     <Link
                       href={`/app/aspirador?machineId=${encodeURIComponent(vacuumMachine.id)}`}
-                      style={{
-                        display: "block", marginTop: 10, paddingTop: 10,
-                        borderTop: "1px solid var(--linha, rgba(255,255,255,0.08))",
-                        color: "var(--jato)", fontWeight: 600, fontSize: 14, textDecoration: "none",
-                      }}
+                      className="btn"
+                      style={{ display: "block", textAlign: "center", marginTop: 10 }}
                     >
                       Só aspiração de pó
                     </Link>
