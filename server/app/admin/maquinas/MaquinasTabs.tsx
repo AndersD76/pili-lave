@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { marcarPagamento, alternarManutencao, definirOperador, salvarParticipante, removerParticipante } from "./actions";
+import { marcarPagamento, alternarManutencao, definirOperador, salvarParticipante, removerParticipante, salvarAspirador } from "./actions";
 import { salvarPrecoUnidade } from "../precos/actions";
 
 type Lavagem = {
@@ -51,6 +51,9 @@ type Maquina = {
   sensores: string;
   licenca: { label: string; classe: "ok" | "at" | "off" | "err" };
   operadorId: string | null;
+  vacuumEnabled: boolean;
+  vacuumPriceCents: number | null;
+  vacuumDurationMin: number | null;
   valorDesdeFechamento: string;
   participantes: ParticipanteAtual[];
   divisao: Divisao | null;
@@ -167,6 +170,55 @@ function LinhaParticipante({
   );
 }
 
+function AspiradorMaquina({ m }: { m: Maquina }) {
+  const [habilitado, setHabilitado] = useState(m.vacuumEnabled);
+
+  return (
+    <div style={{ marginTop: 18 }}>
+      <h4 className="section-title" style={{ margin: "0 0 10px" }}>Aspirador de pó</h4>
+      <form action={salvarAspirador} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <input type="hidden" name="id" value={m.id} />
+        <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, color: "var(--aco-d)" }}>
+          <input
+            type="checkbox"
+            name="habilitado"
+            defaultChecked={m.vacuumEnabled}
+            onChange={(e) => setHabilitado(e.target.checked)}
+          />
+          Esta máquina tem aspirador
+        </label>
+        {habilitado && (
+          <>
+            <span style={{ fontSize: 13 }}>R$</span>
+            <input
+              className="field"
+              style={{ width: 80, height: 32, fontSize: 13, padding: "0 8px" }}
+              name="preco"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="0,00"
+              defaultValue={m.vacuumPriceCents ? (m.vacuumPriceCents / 100).toFixed(2) : ""}
+            />
+            <input
+              className="field"
+              style={{ width: 70, height: 32, fontSize: 13, padding: "0 8px" }}
+              name="duracaoMin"
+              type="number"
+              step="1"
+              min="1"
+              placeholder="min"
+              defaultValue={m.vacuumDurationMin ?? ""}
+            />
+            <span style={{ fontSize: 13, color: "var(--aco-d)" }}>minutos</span>
+          </>
+        )}
+        <button className="btn ghost" type="submit" style={{ height: 32, padding: "0 10px", fontSize: 12 }}>Salvar</button>
+      </form>
+    </div>
+  );
+}
+
 function ParticipantesMaquina({ m, participantesPossiveis }: { m: Maquina; participantesPossiveis: Participante[] }) {
   const somaCadastrada = m.participantes.reduce((s, p) => s + p.percentual, 0);
   const sobraAdmin = Math.max(0, 100 - somaCadastrada);
@@ -251,6 +303,8 @@ function PainelMaquina({ m, lavadores, participantesPossiveis }: { m: Maquina; l
         </select>
         <button className="btn ghost" type="submit" style={{ height: 36 }}>Salvar</button>
       </form>
+
+      <AspiradorMaquina m={m} />
 
       <ParticipantesMaquina m={m} participantesPossiveis={participantesPossiveis} />
 

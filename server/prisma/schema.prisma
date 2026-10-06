@@ -72,8 +72,37 @@ enum OrderStatus {
 enum WalletTxKind {
   TOPUP  // recarga confirmada (+)
   WASH   // compra de lavagem (-)
+  VACUUM // compra de aspirador (-)
   REFUND // estorno (+)
   ADJUST // ajuste manual admin (+/-)
+}
+
+enum VacuumStatus {
+  PAID      // pago, aguardando o cliente apertar "começar agora"
+  ACTIVE    // contando — display recebe o comando no heartbeat
+  COMPLETED // tempo esgotado
+}
+
+/// Uso do aspirador: pode ser comprado solto ou junto de uma lavagem (sem
+/// vínculo obrigatório com Order/Reservation — o cliente pode usar só o
+/// aspirador sem lavar o carro). Débito de crédito acontece na compra
+/// (PAID); o cliente decide quando começar a contar (ACTIVE).
+model VacuumUse {
+  id          String       @id @default(cuid())
+  userId      String
+  machineId   String
+  amountCents Int // preço no momento da compra
+  durationSec Int // duração no momento da compra
+  status      VacuumStatus @default(PAID)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  machine Machine @relation(fields: [machineId], references: [id])
+
+  @@index([userId, status])
+  @@index([machineId, status])
 }
 
 enum ReservationStatus {
@@ -117,6 +146,7 @@ model User {
   redemptions  Order[]       @relation("redeemedBy")
   arrivals     Arrival[]
   reservations Reservation[]
+  vacuumUses   VacuumUse[]
   pushSubs PushSubscription[]
   /// Máquinas que este usuário (role LAVADOR) administra — vê status,
   /// lavagens e faturamento só delas; recebe aviso se derem erro.
@@ -367,11 +397,19 @@ model Machine {
   /// designado ainda (só os ADMINs são avisados, como já era antes).
   operadorId String?
 
+  /// Aspirador de pó: cada máquina define se tem, e o próprio preço/tempo
+  /// (lavadores diferentes podem cobrar/durar diferente). Sem isto = não
+  /// oferece a opção no app para esta máquina.
+  vacuumEnabled     Boolean @default(false)
+  vacuumPriceCents  Int?
+  vacuumDurationMin Int?
+
   station       WashStation   @relation(fields: [stationId], references: [id])
   operador      User?         @relation("MachineOperador", fields: [operadorId], references: [id])
   reservations  Reservation[]
   presenciais   LavagemPresencial[]
   participantes MachineParticipante[]
+  vacuumUses    VacuumUse[]
 
   @@unique([stationId, numero])
   @@index([stationId])

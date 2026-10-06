@@ -161,6 +161,9 @@ export default async function AdminMaquinas() {
       sensores: `X14:${m.sensorX14 ? "1" : "0"} X15:${m.sensorX15 ? "1" : "0"} · ${m.remainingSec}s restante`,
       licenca: licencaDe(m.lastPaymentDate),
       operadorId: m.operadorId,
+      vacuumEnabled: m.vacuumEnabled,
+      vacuumPriceCents: m.vacuumPriceCents,
+      vacuumDurationMin: m.vacuumDurationMin,
       valorDesdeFechamento: money(totalDesdeFechamentoPorMaquina[i]),
       participantes: TIPOS_PARTICIPACAO.map((tipo) => {
         const p = participacoesPorMaquina[i].find((x) => x.tipo === tipo);

@@ -23,6 +23,29 @@ export async function alternarManutencao(formData: FormData) {
   revalidatePath("/admin/maquinas");
 }
 
+export async function salvarAspirador(formData: FormData) {
+  if (!(await isAdmin())) return;
+  const id = String(formData.get("id"));
+  const habilitado = formData.get("habilitado") === "on";
+  const precoStr = String(formData.get("preco") || "").trim().replace(",", ".");
+  const duracaoStr = String(formData.get("duracaoMin") || "").trim();
+  const precoCents = Math.round(Number(precoStr) * 100);
+  const duracaoMin = Number(duracaoStr);
+
+  if (habilitado && (!precoStr || !Number.isFinite(precoCents) || precoCents <= 0)) return;
+  if (habilitado && (!duracaoStr || !Number.isFinite(duracaoMin) || duracaoMin <= 0)) return;
+
+  await prisma.machine.update({
+    where: { id },
+    data: {
+      vacuumEnabled: habilitado,
+      vacuumPriceCents: habilitado ? precoCents : null,
+      vacuumDurationMin: habilitado ? duracaoMin : null,
+    },
+  });
+  revalidatePath("/admin/maquinas");
+}
+
 export async function definirOperador(formData: FormData) {
   if (!(await isAdmin())) return;
   const id = String(formData.get("id"));

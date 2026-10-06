@@ -20,7 +20,12 @@ export async function GET() {
       const stale =
         !m.lastHeartbeat || now - m.lastHeartbeat.getTime() > HEARTBEAT_OFFLINE_S * 1000;
       const status = stale && (m.status === "FREE" || m.status === "WASHING") ? "OFFLINE" : m.status;
-      return { id: m.id, name: m.name, status, remainingSec: m.remainingSec };
+      return {
+        id: m.id, name: m.name, status, remainingSec: m.remainingSec,
+        vacuumEnabled: m.vacuumEnabled,
+        vacuumPriceCents: m.vacuumPriceCents,
+        vacuumDurationMin: m.vacuumDurationMin,
+      };
     });
 
     let situacao: "ABERTO" | "OCUPADO" | "MANUTENCAO" | "INATIVO";

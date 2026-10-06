@@ -87,9 +87,27 @@ export async function POST(req: NextRequest) {
     ? Math.floor((now.getTime() - machine.lastPaymentDate.getTime()) / 86_400_000)
     : 0;
 
+  // Aspirador: comando separado do `start` da lavagem — nunca interfere no
+  // ciclo de lavagem em andamento (o firmware trata num estado próprio).
+  let vacuumPayload: null | { segundosRestantes: number } = null;
+  const vacuumAtivo = await prisma.vacuumUse.findFirst({
+    where: { machineId: machine.id, status: "ACTIVE" },
+    orderBy: { startedAt: "asc" },
+  });
+  if (vacuumAtivo && vacuumAtivo.startedAt) {
+    const decorridoSeg = Math.floor((now.getTime() - vacuumAtivo.startedAt.getTime()) / 1000);
+    const restante = vacuumAtivo.durationSec - decorridoSeg;
+    if (restante > 0) {
+      vacuumPayload = { segundosRestantes: restante };
+    } else {
+      await prisma.vacuumUse.update({ where: { id: vacuumAtivo.id }, data: { status: "COMPLETED", completedAt: now } });
+    }
+  }
+
   return NextResponse.json({
     lightState: light,
     start: startPayload,
+    vacuum: vacuumPayload,
     license: {
       daysWithoutPayment,
       blocked: daysWithoutPayment >= 50,

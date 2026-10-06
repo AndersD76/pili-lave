@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { finalizarAspiradoresVencidos } from "@/lib/vacuum";
 
 /**
  * Divisão de comissão por máquina — múltiplos participantes possíveis
@@ -39,7 +40,8 @@ export async function percentualDoUsuarioNaMaquina(machineId: string, userId: st
  * só totalGeralCents continua bruto.
  */
 export async function relatorioMaquinaPara(machineId: string, percentual: number, inicio: Date, fim: Date) {
-  const [appPorPrograma, presencialPorPrograma] = await Promise.all([
+  await finalizarAspiradoresVencidos(machineId);
+  const [appPorPrograma, presencialPorPrograma, vacuumAgg] = await Promise.all([
     prisma.reservation.groupBy({
       by: ["programId"],
       where: { machineId, status: "COMPLETED", completedAt: { gte: inicio, lte: fim } },
@@ -49,6 +51,13 @@ export async function relatorioMaquinaPara(machineId: string, percentual: number
     prisma.lavagemPresencial.groupBy({
       by: ["programId"],
       where: { machineId, completedAt: { gte: inicio, lte: fim } },
+      _sum: { amountCents: true },
+      _count: { _all: true },
+    }),
+    // Aspirador: pago pela carteira (como o app), entra no lado "app" do
+    // lavador — ele não fica com o dinheiro na hora, o admin repassa.
+    prisma.vacuumUse.aggregate({
+      where: { machineId, status: "COMPLETED", completedAt: { gte: inicio, lte: fim } },
       _sum: { amountCents: true },
       _count: { _all: true },
     }),
@@ -75,8 +84,13 @@ export async function relatorioMaquinaPara(machineId: string, percentual: number
     };
   });
 
+  const vacuumCents = vacuumAgg._sum.amountCents ?? 0;
+  totalGeralCents += vacuumCents;
+  totalAppCents += vacuumCents;
+
   return {
     porTipo,
+    aspirador: { usos: vacuumAgg._count._all, valorCents: parte(vacuumCents, percentual) },
     totalGeralCents,
     suaParticipacaoCents: participacaoDe(percentual, totalPresencialCents, totalAppCents),
   };
