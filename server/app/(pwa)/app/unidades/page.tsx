@@ -45,8 +45,8 @@ function UnidadesConteudo() {
           {stations.map((s) => {
             const sit = SITUACAO[s.situacao] ?? SITUACAO.INATIVO;
             return (
-              <div key={s.id}>
-                <Link href={hrefPara(s)} className="opt" style={{ display: "block" }}>
+              <div key={s.id} className="opt" style={{ display: "block" }}>
+                <Link href={hrefPara(s)} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
                   <span className="nome">{s.name}</span>
                   <span className="sub" style={{ display: "block" }}>{s.address} · {s.city}/{s.state}</span>
                   <span style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
@@ -60,10 +60,13 @@ function UnidadesConteudo() {
                   return (
                     <Link
                       href={`/app/aspirador?machineId=${encodeURIComponent(vacuumMachine.id)}`}
-                      className="btn ghost"
-                      style={{ display: "block", marginTop: 6 }}
+                      style={{
+                        display: "block", marginTop: 10, paddingTop: 10,
+                        borderTop: "1px solid var(--linha, rgba(255,255,255,0.08))",
+                        color: "var(--jato)", fontWeight: 600, fontSize: 14, textDecoration: "none",
+                      }}
                     >
-                      Só aspiração de pó — {s.name}
+                      Só aspiração de pó
                     </Link>
                   );
                 })()}
