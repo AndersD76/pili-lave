@@ -11,13 +11,13 @@
 // backend_client.h — Heartbeat + fila NVS de eventos
 //
 // REGRAS:
-//   1. Heartbeat a cada 10s — sempre, independente do estado da máquina.
+//   1. Heartbeat a cada 5s — sempre, independente do estado da máquina.
 //   2. Resposta traz: lightState, start (opcional), license.
 //   3. Fila NVS: car-entered, wash-complete, fault — reenvio até 200 OK.
 //   4. Um evento por ciclo de heartbeat (não sobrecarrega).
 //   5. Nunca bloqueia o loop — timeout HTTP de 8s máximo.
 // =======================================================================
-#define HB_INTERVAL_MS       10000   // heartbeat a cada 10s
+#define HB_INTERVAL_MS       5000    // heartbeat a cada 5s
 #define HB_FAILSAFE_MS       60000   // 60s sem OK -> lâmpada OFF
 #define HTTP_TIMEOUT_MS       8000   // timeout de cada request HTTP
 // Estados da lâmpada (espelha o lightState do backend)
@@ -41,6 +41,7 @@ static LampState g_lamp_state        = LAMP_OFF;
 static StartCmd  g_start_cmd;
 static uint32_t  g_hb_last_ok        = 0;   // millis() do último 200 OK
 static bool      g_backend_ok        = false;
+static int32_t   g_vacuum_restante_seg = -1; // aspirador: -1 = inativo (ver _backend_processar_vacuum)
 // -----------------------------------------------------------------------
 // Monta o estado atual da máquina para enviar no heartbeat
 // -----------------------------------------------------------------------
@@ -187,8 +188,10 @@ bool backend_espnow_handle(const uint8_t* mac, const uint8_t* data, int len) {
         g_start_cmd.programId     = m->start_prog;
         g_start_cmd.duracaoSeg    = m->start_dur;
     }
-    Serial.printf("[HB] OK(via cam) lamp=%d start=%d dias=%d blk=%d\n",
-                  (int)g_lamp_state, (int)g_start_cmd.valido, m->lic_days, m->lic_blocked);
+    g_vacuum_restante_seg = m->vacuum_seg;
+    Serial.printf("[HB] OK(via cam) lamp=%d start=%d dias=%d blk=%d vacuum=%d\n",
+                  (int)g_lamp_state, (int)g_start_cmd.valido, m->lic_days, m->lic_blocked,
+                  (int)g_vacuum_restante_seg);
     return true;
 }
 // (parser JSON antigo — mantido só como referência morta abaixo, não usado)
@@ -233,6 +236,23 @@ static void _backend_processar_start() {
     Serial.printf("[HB] START: prog=%d res=%s\n",
                   g_start_cmd.programId,
                   g_start_cmd.reservationId.c_str());
+}
+// -----------------------------------------------------------------------
+// Aspirador (DO8 waveshare2) — comando SEPARADO do `start` da lavagem.
+// NUNCA depende de g_estado_auto: liga/desliga só conforme o backend manda,
+// então nunca interfere num ciclo de lavagem em andamento. Sem estado local
+// de contagem — o backend é a fonte da verdade (manda segundosRestantes a
+// cada heartbeat); aqui só reflete ligado/desligado.
+// -----------------------------------------------------------------------
+static bool g_aspirador_ligado = false;
+static void _backend_processar_vacuum() {
+    bool deveLigar = g_vacuum_restante_seg > 0;
+    if (deveLigar != g_aspirador_ligado) {
+        g_aspirador_ligado = deveLigar;
+        SET_ASPIRADOR(deveLigar);
+        Serial.printf("[VACUUM] aspirador %s (restante=%d s)\n",
+                      deveLigar ? "LIGADO" : "desligado", (int)g_vacuum_restante_seg);
+    }
 }
 // -----------------------------------------------------------------------
 // Reenvio da fila de eventos — 1 evento por ciclo, VIA CÂMERA (MSG_EVT).
@@ -340,6 +360,7 @@ void backend_tick() {
         _hb_last_t = agora;
         _backend_heartbeat();
         _backend_processar_start();
+        _backend_processar_vacuum();
         _backend_flush_fila();
     }
 }

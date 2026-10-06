@@ -3,6 +3,7 @@
 #include "tipos.h"
 #include "comm_espnow.h"
 #include "nvs_manager.h"
+#include "logo_pili.h"   // logo real (imagem), gerada por gerar_logo.py
 
 // -----------------------------------------------------------------------
 // Objetos LVGL
@@ -431,11 +432,9 @@ void tela_manual_criar(void (*cb_config)(), void (*cb_auto)(), void (*cb_pagamen
     lv_obj_set_style_radius(logo_fundo, 0, 0);
     lv_obj_clear_flag(logo_fundo, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t* lbl_logo = lv_label_create(logo_fundo);
-    lv_label_set_text(lbl_logo, "[ " LV_SYMBOL_HOME " ] PILI");
-    lv_obj_set_style_text_color(lbl_logo, COR_TEXTO, 0);
-    lv_obj_set_style_text_font(lbl_logo, &lv_font_montserrat_28, 0);
-    lv_obj_center(lbl_logo);
+    lv_obj_t* img_logo = lv_img_create(logo_fundo);
+    lv_img_set_src(img_logo, &logo_pili);
+    lv_obj_center(img_logo);
 
     // --- Carrinho (y=128) ---
     lv_obj_t* lbl_carr = lv_label_create(scr_manual);

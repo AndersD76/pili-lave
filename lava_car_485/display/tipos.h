@@ -314,6 +314,7 @@ typedef struct __attribute__((packed)) {      // Câmera -> Display (resposta do
     uint8_t   start_prog;  // 1..4
     uint32_t  start_dur;   // duracaoSeg
     char      start_res[40]; // reservationId (dedup)
+    int16_t   vacuum_seg;  // aspirador: segundos restantes; -1 = inativo
 } MsgHbResp;
 
 // ----- Relay de eventos pela câmera (débito! wash-complete é o único ponto

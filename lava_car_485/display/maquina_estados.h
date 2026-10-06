@@ -68,6 +68,7 @@ static bool     x14_estava_ativo = false;
 #define SET_Y14(v) io2_set_do(4, v)   // contator deslocamento (trava Y4<->Y14)
 //   (DO5 = Y15 BLOQUEADO no firmware da waveshare2 — nao usar)
 #define SET_Y0(v)  io2_set_do(6, v)   // Y0 (DO6 waveshare2) — aciona JUNTO com a Cor Magica
+#define SET_ASPIRADOR(v) io2_set_do(8, v)   // DO8 waveshare2 — aspirador de po (liberado pelo app)
 
 // -----------------------------------------------------------------------
 // Desliga TODAS as saidas de processo + para o motor
