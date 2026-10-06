@@ -126,6 +126,16 @@ export default function UnidadeDetalhe() {
           title="Reservar lavagem"
           onPress={() => router.push({ pathname: "/nova-lavagem", params: { stationId: station.id, stationName: station.name } })}
         />
+        {(() => {
+          const vacuumMachine = station.machines.find((m) => m.vacuumEnabled);
+          if (!vacuumMachine) return null;
+          return (
+            <Btn
+              title="Só aspiração de pó"
+              onPress={() => router.push({ pathname: "/aspirador", params: { machineId: vacuumMachine.id } })}
+            />
+          );
+        })()}
       </ScrollView>
     </Screen>
   );

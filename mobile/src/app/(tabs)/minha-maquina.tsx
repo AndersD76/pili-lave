@@ -210,6 +210,17 @@ export default function MinhaMaquina() {
                 })()}
               </View>
 
+              {m.aspirador.usos > 0 && (
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+                  <Text style={{ fontFamily: F.body, fontSize: 13, color: C.cromo }}>
+                    Aspirador · {m.aspirador.usos}x
+                  </Text>
+                  <Text style={{ fontFamily: F.bodyBold, fontSize: 13, color: C.cromo }}>
+                    {money(m.aspirador.valorCents)}
+                  </Text>
+                </View>
+              )}
+
               <View style={{ height: 1, backgroundColor: C.linha, marginVertical: 12 }} />
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                 <Text style={{ fontFamily: F.bodyBold, fontSize: 15, color: C.cromo }}>Sua participação</Text>

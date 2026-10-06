@@ -39,6 +39,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="veiculo-novo" options={{ title: "Novo veículo", presentation: "modal" }} />
         <Stack.Screen name="nova-lavagem" options={{ title: "Reservar lavagem" }} />
+        <Stack.Screen name="aspirador" options={{ title: "Aspiração de pó" }} />
         <Stack.Screen name="recarga" options={{ title: "Adicionar saldo" }} />
         <Stack.Screen name="historico" options={{ title: "Histórico" }} />
         <Stack.Screen name="meus-dados" options={{ title: "Meus dados" }} />

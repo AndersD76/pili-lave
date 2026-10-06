@@ -1,7 +1,7 @@
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
-import { api, ApiError, type Program, type Vehicle, type WalletResp } from "@/lib/api";
+import { api, ApiError, type Machine, type Program, type Station, type Vehicle, type WalletResp } from "@/lib/api";
 import { Btn, Card, ErrText, Label, Screen, Sub } from "@/ui";
 import { C, F, fmtPlate, money } from "@/theme";
 
@@ -16,11 +16,23 @@ export default function NovaLavagem() {
   const [error, setError] = useState("");
   /** availableCents retornado pelo 402 (saldo disponível insuficiente). */
   const [insufficient, setInsufficient] = useState<number | null>(null);
+  /** Primeira máquina da unidade com aspirador habilitado — usada pro add-on
+   *  oferecido depois de reservar (lavagem SEM reserva ainda não oferece,
+   *  por decisão do produto). */
+  const [vacuumMachine, setVacuumMachine] = useState<Machine | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       const qs = stationId ? `?stationId=${encodeURIComponent(stationId)}` : "";
       api<Program[]>(`/api/programs${qs}`, { auth: false }).then(setPrograms).catch(() => {});
+      if (stationId) {
+        api<{ stations: Station[] }>("/api/stations", { auth: false })
+          .then(({ stations }) => {
+            const st = stations.find((s) => s.id === stationId);
+            setVacuumMachine(st?.machines.find((m) => m.vacuumEnabled) ?? null);
+          })
+          .catch(() => {});
+      }
       api<Vehicle[]>("/api/vehicles")
         .then((v) => {
           setVehicles(v);
@@ -55,11 +67,26 @@ export default function NovaLavagem() {
     setLoading(true);
     try {
       await api("/api/reservations", { body: { programId: selected.id, vehicleId, stationId } });
-      Alert.alert(
-        "Reserva feita!",
-        "Válida por 1 hora. Aproxime o carro da câmera e entre no verde.",
-        [{ text: "OK", onPress: () => router.replace("/(tabs)") }]
-      );
+      if (vacuumMachine && vacuumMachine.vacuumPriceCents && vacuumMachine.vacuumDurationMin) {
+        Alert.alert(
+          "Reserva feita!",
+          `Válida por 1 hora. Aproxime o carro da câmera e entre no verde.\n\nQuer liberar o aspirador por ${vacuumMachine.vacuumDurationMin} min por ${money(vacuumMachine.vacuumPriceCents)}?`,
+          [
+            { text: "Não, obrigado", style: "cancel", onPress: () => router.replace("/(tabs)") },
+            {
+              text: "Quero o aspirador",
+              onPress: () =>
+                router.replace({ pathname: "/aspirador", params: { machineId: vacuumMachine.id } }),
+            },
+          ]
+        );
+      } else {
+        Alert.alert(
+          "Reserva feita!",
+          "Válida por 1 hora. Aproxime o carro da câmera e entre no verde.",
+          [{ text: "OK", onPress: () => router.replace("/(tabs)") }]
+        );
+      }
     } catch (e) {
       if (e instanceof ApiError && e.status === 402) {
         const d = e.data as { availableCents?: number } | null;

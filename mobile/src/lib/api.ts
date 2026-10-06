@@ -75,6 +75,15 @@ export type Machine = {
   id: string; name: string;
   status: "FREE" | "WASHING" | "FAULT" | "OFFLINE" | "MAINTENANCE";
   remainingSec: number;
+  vacuumEnabled: boolean;
+  vacuumPriceCents: number | null;
+  vacuumDurationMin: number | null;
+};
+
+export type VacuumUse = {
+  id: string; machineId: string; amountCents: number; durationSec: number;
+  status: "PAID" | "ACTIVE" | "COMPLETED";
+  startedAt: string | null; completedAt: string | null;
 };
 
 export type Station = {
@@ -124,6 +133,7 @@ export type MaquinaLavador = {
   totalGeralCents: number;
   suaParticipacaoCents: number;
   porTipo: TipoLavagemLavador[];
+  aspirador: { usos: number; valorCents: number };
 };
 
 /** Painel do parceiro (Comissão 1/2, Aluguel) — igual ao do lavador, sem
@@ -139,4 +149,5 @@ export type MaquinaParceiro = {
   totalGeralCents: number;
   suaParticipacaoCents: number;
   porTipo: TipoLavagemLavador[];
+  aspirador: { usos: number; valorCents: number };
 };
