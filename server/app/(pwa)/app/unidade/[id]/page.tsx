@@ -2,7 +2,9 @@
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { api, type Station } from "../../client";
+import { api, getToken, type Station } from "../../client";
+
+type AoVivoFrame = { id: string; at: string; plate: string | null; clientName: string | null } | null;
 import { Nav } from "../../nav";
 
 const SITUACAO: Record<Station["situacao"], { label: string; cor: string }> = {
@@ -27,6 +29,8 @@ function UnidadeConteudo() {
   const programa = params.get("programa");
   const [station, setStation] = useState<Station | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  const [semLavagem, setSemLavagem] = useState(false);
 
   useEffect(() => {
     api<{ stations: Station[] }>("/api/stations", { auth: false })
@@ -34,6 +38,37 @@ function UnidadeConteudo() {
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, [id]);
+
+  // Câmera ao vivo: só existe enquanto o cliente tem lavagem em andamento
+  // (o backend barra com 403 fora disso). Poll leve nos metadados; só baixa
+  // o JPEG de novo quando o id da captura muda.
+  useEffect(() => {
+    let frameIdAtual: string | null = null;
+    let cancelado = false;
+    const tick = async () => {
+      try {
+        const r = await api<{ frame: AoVivoFrame }>("/api/lpr/ao-vivo");
+        if (cancelado) return;
+        setSemLavagem(false);
+        if (!r.frame) return;
+        if (r.frame.id === frameIdAtual) return;
+        frameIdAtual = r.frame.id;
+        const token = getToken();
+        const res = await fetch(`/api/lpr/ao-vivo?img=${encodeURIComponent(r.frame.id)}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok || cancelado) return;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        setFrameUrl((old) => { if (old) URL.revokeObjectURL(old); return url; });
+      } catch {
+        if (!cancelado) setSemLavagem(true);
+      }
+    };
+    tick();
+    const t = setInterval(tick, 4000);
+    return () => { cancelado = true; clearInterval(t); };
+  }, []);
 
   if (!station) {
     return <p className="sub">{loaded ? "Unidade não encontrada." : "Carregando…"}</p>;
@@ -69,7 +104,15 @@ function UnidadeConteudo() {
 
       <h2 style={{ marginTop: 18, fontSize: 14 }}>Câmera ao vivo</h2>
       <div className="card">
-        <p className="sub">Câmera em manutenção — disponível em breve.</p>
+        {frameUrl ? (
+          <img src={frameUrl} alt="Câmera ao vivo" style={{ width: "100%", borderRadius: 8, display: "block" }} />
+        ) : (
+          <p className="sub">
+            {semLavagem
+              ? "Disponível quando sua lavagem estiver em andamento."
+              : "Aguardando imagem da câmera…"}
+          </p>
+        )}
       </div>
 
       <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 10 }}>

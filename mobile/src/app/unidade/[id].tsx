@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
-import { api, type Machine, type Station } from "@/lib/api";
+import { Image, ScrollView, Text, View } from "react-native";
+import { api, API_URL, getToken, type Machine, type Station } from "@/lib/api";
+
+type AoVivoFrame = { id: string; at: string; plate: string | null; clientName: string | null } | null;
 import { Btn, Card, Label, Screen, Sub } from "@/ui";
 import { C, F } from "@/theme";
 
@@ -33,6 +35,8 @@ export default function UnidadeDetalhe() {
   const [loaded, setLoaded] = useState(false);
   const [loadedAt, setLoadedAt] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
+  const [frameUri, setFrameUri] = useState<string | null>(null);
+  const [semLavagem, setSemLavagem] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -57,6 +61,41 @@ export default function UnidadeDetalhe() {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [hasWashing]);
+
+  // Câmera ao vivo: só existe enquanto o cliente tem lavagem em andamento
+  // (o backend barra com 403 fora disso). Poll leve nos metadados; só baixa
+  // o JPEG de novo quando o id da captura muda.
+  useEffect(() => {
+    let frameIdAtual: string | null = null;
+    let cancelado = false;
+    const tick = async () => {
+      try {
+        const r = await api<{ frame: AoVivoFrame }>("/api/lpr/ao-vivo");
+        if (cancelado) return;
+        setSemLavagem(false);
+        if (!r.frame || r.frame.id === frameIdAtual) return;
+        frameIdAtual = r.frame.id;
+        const token = await getToken();
+        const res = await fetch(`${API_URL}/api/lpr/ao-vivo?img=${encodeURIComponent(r.frame.id)}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok || cancelado) return;
+        const blob = await res.blob();
+        const base64: string = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve((reader.result as string).split(",")[1] ?? "");
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        if (!cancelado) setFrameUri(`data:image/jpeg;base64,${base64}`);
+      } catch {
+        if (!cancelado) setSemLavagem(true);
+      }
+    };
+    tick();
+    const t = setInterval(tick, 4000);
+    return () => { cancelado = true; clearInterval(t); };
+  }, []);
 
   if (!station) {
     return (
@@ -114,12 +153,20 @@ export default function UnidadeDetalhe() {
 
         <View>
           <Label>Câmera ao vivo</Label>
-          <Card style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-            <Ionicons name="videocam" size={26} color={C.aco} />
-            <Text style={{ flex: 1, fontFamily: F.body, fontSize: 14, color: C.acoD }}>
-              Câmera em manutenção — disponível em breve.
-            </Text>
-          </Card>
+          {frameUri ? (
+            <Card style={{ padding: 0, overflow: "hidden" }}>
+              <Image source={{ uri: frameUri }} style={{ width: "100%", aspectRatio: 4 / 3 }} resizeMode="cover" />
+            </Card>
+          ) : (
+            <Card style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+              <Ionicons name="videocam" size={26} color={C.aco} />
+              <Text style={{ flex: 1, fontFamily: F.body, fontSize: 14, color: C.acoD }}>
+                {semLavagem
+                  ? "Disponível quando sua lavagem estiver em andamento."
+                  : "Aguardando imagem da câmera…"}
+              </Text>
+            </Card>
+          )}
         </View>
 
         <Btn
