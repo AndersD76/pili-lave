@@ -62,7 +62,8 @@ export default async function AdminMaquinas() {
     }),
   ]);
 
-  const participacoesPorMaquina = await Promise.all(machines.map((m) => participacoesDaMaquina(m.id)));
+  const participacoesPorMaquina = await Promise.all(machines.map((m) => participacoesDaMaquina(m.id, "LAVAGEM")));
+  const participacoesAspiradorPorMaquina = await Promise.all(machines.map((m) => participacoesDaMaquina(m.id, "ASPIRADOR")));
   const userLabelMap = new Map(participantesPossiveis.map((u) => [u.id, u.name ?? u.phone]));
 
   const historicos = await Promise.all(
@@ -167,6 +168,10 @@ export default async function AdminMaquinas() {
       valorDesdeFechamento: money(totalDesdeFechamentoPorMaquina[i]),
       participantes: TIPOS_PARTICIPACAO.map((tipo) => {
         const p = participacoesPorMaquina[i].find((x) => x.tipo === tipo);
+        return { tipo, userId: p?.userId ?? "", percentual: p?.percentual ?? 0 };
+      }),
+      participantesAspirador: TIPOS_PARTICIPACAO.map((tipo) => {
+        const p = participacoesAspiradorPorMaquina[i].find((x) => x.tipo === tipo);
         return { tipo, userId: p?.userId ?? "", percentual: p?.percentual ?? 0 };
       }),
       divisao: divisao && {

@@ -24,10 +24,25 @@ export async function GET(req: NextRequest) {
   const auth = await requireUser(req);
   if ("error" in auth) return auth.error;
 
-  const vinculos = await prisma.machineParticipante.findMany({
+  // Lavagem e aspirador têm percentuais independentes agora — busca os dois
+  // escopos e junta numa linha por máquina (uma pessoa pode ter vínculo só
+  // num dos dois, ex: comissão só no aspirador, sem participar da lavagem).
+  const todosVinculos = await prisma.machineParticipante.findMany({
     where: { userId: auth.user.id },
     include: { machine: { include: { station: true } } },
     orderBy: [{ machine: { station: { city: "asc" } } }, { machine: { numero: "asc" } }],
+  });
+  const porMaquina = new Map<string, typeof todosVinculos[number][]>();
+  for (const v of todosVinculos) {
+    const arr = porMaquina.get(v.machineId) ?? [];
+    arr.push(v);
+    porMaquina.set(v.machineId, arr);
+  }
+  const vinculos = Array.from(porMaquina.values()).map((rows) => {
+    const lavagem = rows.find((r) => r.escopo === "LAVAGEM");
+    const aspirador = rows.find((r) => r.escopo === "ASPIRADOR");
+    const base = lavagem ?? rows[0];
+    return { ...base, percentualLavagem: lavagem?.percentual ?? 0, percentualAspirador: aspirador?.percentual ?? 0 };
   });
 
   const de = req.nextUrl.searchParams.get("de");
@@ -44,7 +59,7 @@ export async function GET(req: NextRequest) {
         : new Date(new Date().setHours(0, 0, 0, 0));
       const fim = ate ? new Date(`${ate}T23:59:59`) : new Date();
 
-      const relatorio = await relatorioMaquinaPara(m.id, v.percentual, inicio, fim);
+      const relatorio = await relatorioMaquinaPara(m.id, v.percentualLavagem, inicio, fim, v.percentualAspirador);
       const offline =
         !m.lastHeartbeat || Date.now() - m.lastHeartbeat.getTime() > HEARTBEAT_OFFLINE_S * 1000;
 

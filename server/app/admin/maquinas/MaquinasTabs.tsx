@@ -56,6 +56,7 @@ type Maquina = {
   vacuumDurationMin: number | null;
   valorDesdeFechamento: string;
   participantes: ParticipanteAtual[];
+  participantesAspirador: ParticipanteAtual[];
   divisao: Divisao | null;
   historico: Lavagem[];
 };
@@ -114,11 +115,13 @@ function PrecosUnidade({ stationId, precos }: { stationId: string; precos: Preco
 function LinhaParticipante({
   machineId,
   tipo,
+  escopo,
   atual,
   participantesPossiveis,
 }: {
   machineId: string;
   tipo: TipoParticipacao;
+  escopo: "LAVAGEM" | "ASPIRADOR";
   atual: ParticipanteAtual | undefined;
   participantesPossiveis: Participante[];
 }) {
@@ -131,6 +134,7 @@ function LinhaParticipante({
         <form action={formAction} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           <input type="hidden" name="machineId" value={machineId} />
           <input type="hidden" name="tipo" value={tipo} />
+          <input type="hidden" name="escopo" value={escopo} />
           <select name="userId" defaultValue={atual?.userId ?? ""} className="field" style={{ height: 32, fontSize: 13, padding: "0 8px" }}>
             <option value="">— ninguém —</option>
             {participantesPossiveis.map((p) => (
@@ -162,6 +166,7 @@ function LinhaParticipante({
           <form action={removerParticipante}>
             <input type="hidden" name="machineId" value={machineId} />
             <input type="hidden" name="tipo" value={tipo} />
+            <input type="hidden" name="escopo" value={escopo} />
             <button className="btn ghost" type="submit" style={{ height: 28, padding: "0 8px", fontSize: 11 }}>Remover</button>
           </form>
         )}
@@ -219,14 +224,26 @@ function AspiradorMaquina({ m }: { m: Maquina }) {
   );
 }
 
-function ParticipantesMaquina({ m, participantesPossiveis }: { m: Maquina; participantesPossiveis: Participante[] }) {
-  const somaCadastrada = m.participantes.reduce((s, p) => s + p.percentual, 0);
+function ParticipantesMaquina({
+  m,
+  escopo,
+  titulo,
+  participantes,
+  participantesPossiveis,
+}: {
+  m: Maquina;
+  escopo: "LAVAGEM" | "ASPIRADOR";
+  titulo: string;
+  participantes: ParticipanteAtual[];
+  participantesPossiveis: Participante[];
+}) {
+  const somaCadastrada = participantes.reduce((s, p) => s + p.percentual, 0);
   const sobraAdmin = Math.max(0, 100 - somaCadastrada);
 
   return (
     <>
       <h4 className="section-title" style={{ margin: "26px 0 10px" }}>
-        Participação na máquina
+        {titulo}
       </h4>
       <p style={{ color: "var(--aco-d)", fontSize: 13, marginBottom: 12 }}>
         A soma de todos os participantes cadastrados nunca passa de 100% — o que sobra fica automaticamente com o admin
@@ -243,7 +260,8 @@ function ParticipantesMaquina({ m, participantesPossiveis }: { m: Maquina; parti
                 key={tipo}
                 machineId={m.id}
                 tipo={tipo}
-                atual={m.participantes.find((p) => p.tipo === tipo)}
+                escopo={escopo}
+                atual={participantes.find((p) => p.tipo === tipo)}
                 participantesPossiveis={participantesPossiveis}
               />
             ))}
@@ -306,7 +324,21 @@ function PainelMaquina({ m, lavadores, participantesPossiveis }: { m: Maquina; l
 
       <AspiradorMaquina m={m} />
 
-      <ParticipantesMaquina m={m} participantesPossiveis={participantesPossiveis} />
+      <ParticipantesMaquina
+        m={m}
+        escopo="LAVAGEM"
+        titulo="Participação na máquina — Lavagens"
+        participantes={m.participantes}
+        participantesPossiveis={participantesPossiveis}
+      />
+
+      <ParticipantesMaquina
+        m={m}
+        escopo="ASPIRADOR"
+        titulo="Participação na máquina — Aspirador de pó"
+        participantes={m.participantesAspirador}
+        participantesPossiveis={participantesPossiveis}
+      />
 
       {m.divisao && (
         <>

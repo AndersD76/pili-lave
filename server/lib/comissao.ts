@@ -19,27 +19,37 @@ import { finalizarAspiradoresVencidos } from "@/lib/vacuum";
  * sempre credores dos dois lados (presencial via lavador, app via admin).
  */
 
+export type Escopo = "LAVAGEM" | "ASPIRADOR";
 export type ParticipacaoRow = { tipo: "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL"; userId: string; percentual: number };
 
-export async function participacoesDaMaquina(machineId: string): Promise<ParticipacaoRow[]> {
-  const rows = await prisma.machineParticipante.findMany({ where: { machineId } });
+/** Lavagens e aspirador têm participantes/percentuais INDEPENDENTES — por
+ *  isso sempre filtra por escopo (nunca mistura os dois). */
+export async function participacoesDaMaquina(machineId: string, escopo: Escopo = "LAVAGEM"): Promise<ParticipacaoRow[]> {
+  const rows = await prisma.machineParticipante.findMany({ where: { machineId, escopo } });
   return rows.map((r) => ({ tipo: r.tipo, userId: r.userId, percentual: r.percentual }));
 }
 
-/** Percentual do usuário numa máquina específica (0 se não tiver vínculo). */
-export async function percentualDoUsuarioNaMaquina(machineId: string, userId: string): Promise<number> {
-  const row = await prisma.machineParticipante.findFirst({ where: { machineId, userId } });
+/** Percentual do usuário numa máquina específica, num escopo (0 se não tiver vínculo). */
+export async function percentualDoUsuarioNaMaquina(machineId: string, userId: string, escopo: Escopo = "LAVAGEM"): Promise<number> {
+  const row = await prisma.machineParticipante.findFirst({ where: { machineId, userId, escopo } });
   return row?.percentual ?? 0;
 }
 
 /**
- * Relatório de uma máquina, no período dado, pro percentual de UM
+ * Relatório de uma máquina, no período dado, pros percentuais de UM
  * participante — usado tanto pelo painel do lavador quanto pelo dos
- * outros participantes (comissão/aluguel), só muda de onde vem o %.
+ * outros participantes (comissão/aluguel), só muda de onde vêm os %.
  * Cada coluna (presencial/app) já sai com a PARTE DELE, não o bruto —
- * só totalGeralCents continua bruto.
+ * só totalGeralCents continua bruto. percentualAspirador é INDEPENDENTE
+ * do percentual das lavagens (escopos separados no admin).
  */
-export async function relatorioMaquinaPara(machineId: string, percentual: number, inicio: Date, fim: Date) {
+export async function relatorioMaquinaPara(
+  machineId: string,
+  percentual: number,
+  inicio: Date,
+  fim: Date,
+  percentualAspirador: number = percentual
+) {
   await finalizarAspiradoresVencidos(machineId);
   const [appPorPrograma, presencialPorPrograma, vacuumAgg] = await Promise.all([
     prisma.reservation.groupBy({
@@ -84,15 +94,17 @@ export async function relatorioMaquinaPara(machineId: string, percentual: number
     };
   });
 
+  // Aspirador usa percentualAspirador (escopo separado) — NÃO entra em
+  // totalAppCents (que é só lavagem) pra não misturar os dois percentuais.
   const vacuumCents = vacuumAgg._sum.amountCents ?? 0;
   totalGeralCents += vacuumCents;
-  totalAppCents += vacuumCents;
 
   return {
     porTipo,
-    aspirador: { usos: vacuumAgg._count._all, valorCents: parte(vacuumCents, percentual) },
+    aspirador: { usos: vacuumAgg._count._all, valorCents: parte(vacuumCents, percentualAspirador) },
     totalGeralCents,
-    suaParticipacaoCents: participacaoDe(percentual, totalPresencialCents, totalAppCents),
+    suaParticipacaoCents:
+      participacaoDe(percentual, totalPresencialCents, totalAppCents) + parte(vacuumCents, percentualAspirador),
   };
 }
 

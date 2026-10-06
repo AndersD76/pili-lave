@@ -66,6 +66,8 @@ export type SalvarParticipanteState = { error: string } | null;
  * em silêncio — antes disso um erro de validação simplesmente não salvava
  * nada e o admin não tinha como saber por quê).
  */
+const ESCOPOS = ["LAVAGEM", "ASPIRADOR"] as const;
+
 export async function salvarParticipante(
   _prev: SalvarParticipanteState,
   formData: FormData
@@ -73,6 +75,7 @@ export async function salvarParticipante(
   if (!(await isAdmin())) return { error: "Sessão de admin expirou — faça login de novo." };
   const machineId = String(formData.get("machineId"));
   const tipo = String(formData.get("tipo"));
+  const escopoStr = String(formData.get("escopo") || "LAVAGEM");
   const userId = String(formData.get("userId") || "");
   const percentualStr = String(formData.get("percentual") || "").trim().replace(",", ".");
   const percentual = Number(percentualStr);
@@ -80,26 +83,32 @@ export async function salvarParticipante(
   if (!TIPOS_PARTICIPACAO.includes(tipo as (typeof TIPOS_PARTICIPACAO)[number])) {
     return { error: "Tipo de participação inválido." };
   }
+  if (!ESCOPOS.includes(escopoStr as (typeof ESCOPOS)[number])) {
+    return { error: "Escopo inválido." };
+  }
+  const escopo = escopoStr as (typeof ESCOPOS)[number];
   if (!userId) return { error: "Escolha uma pessoa." };
   if (!percentualStr || !Number.isFinite(percentual) || percentual <= 0) {
     return { error: "Informe um percentual maior que zero." };
   }
 
+  // Teto de 100% é POR ESCOPO — lavagens e aspirador têm percentuais
+  // independentes, não competem pelo mesmo total.
   const outros = await prisma.machineParticipante.findMany({
-    where: { machineId, tipo: { not: tipo as (typeof TIPOS_PARTICIPACAO)[number] } },
+    where: { machineId, escopo, tipo: { not: tipo as (typeof TIPOS_PARTICIPACAO)[number] } },
   });
   const somaOutros = outros.reduce((s, p) => s + p.percentual, 0);
   const maxDisponivel = Math.max(0, 100 - somaOutros);
   if (percentual > maxDisponivel) {
     return {
-      error: `Só sobram ${maxDisponivel.toFixed(1)}% pra esse tipo (os outros participantes já somam ${somaOutros.toFixed(1)}%).`,
+      error: `Só sobram ${maxDisponivel.toFixed(1)}% pra esse tipo neste escopo (os outros participantes já somam ${somaOutros.toFixed(1)}%).`,
     };
   }
 
   await prisma.machineParticipante.upsert({
-    where: { machineId_tipo: { machineId, tipo: tipo as (typeof TIPOS_PARTICIPACAO)[number] } },
+    where: { machineId_tipo_escopo: { machineId, tipo: tipo as (typeof TIPOS_PARTICIPACAO)[number], escopo } },
     update: { userId, percentual },
-    create: { machineId, tipo: tipo as (typeof TIPOS_PARTICIPACAO)[number], userId, percentual },
+    create: { machineId, tipo: tipo as (typeof TIPOS_PARTICIPACAO)[number], escopo, userId, percentual },
   });
   revalidatePath("/admin/maquinas");
   return null;
@@ -109,7 +118,11 @@ export async function removerParticipante(formData: FormData) {
   if (!(await isAdmin())) return;
   const machineId = String(formData.get("machineId"));
   const tipo = String(formData.get("tipo"));
+  const escopoStr = String(formData.get("escopo") || "LAVAGEM");
   if (!TIPOS_PARTICIPACAO.includes(tipo as (typeof TIPOS_PARTICIPACAO)[number])) return;
-  await prisma.machineParticipante.deleteMany({ where: { machineId, tipo: tipo as (typeof TIPOS_PARTICIPACAO)[number] } });
+  if (!ESCOPOS.includes(escopoStr as (typeof ESCOPOS)[number])) return;
+  await prisma.machineParticipante.deleteMany({
+    where: { machineId, tipo: tipo as (typeof TIPOS_PARTICIPACAO)[number], escopo: escopoStr as (typeof ESCOPOS)[number] },
+  });
   revalidatePath("/admin/maquinas");
 }

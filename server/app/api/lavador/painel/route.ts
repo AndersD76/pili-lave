@@ -48,8 +48,9 @@ export async function GET(req: NextRequest) {
         : new Date(new Date().setHours(0, 0, 0, 0));
       const fim = ate ? new Date(`${ate}T23:59:59`) : new Date();
 
-      const percentual = (await percentualDoUsuarioNaMaquina(m.id, auth.user.id)) || FALLBACK_SEM_CONFIGURACAO;
-      const relatorio = await relatorioMaquinaPara(m.id, percentual, inicio, fim);
+      const percentual = (await percentualDoUsuarioNaMaquina(m.id, auth.user.id, "LAVAGEM")) || FALLBACK_SEM_CONFIGURACAO;
+      const percentualAspirador = (await percentualDoUsuarioNaMaquina(m.id, auth.user.id, "ASPIRADOR")) || FALLBACK_SEM_CONFIGURACAO;
+      const relatorio = await relatorioMaquinaPara(m.id, percentual, inicio, fim, percentualAspirador);
 
       const offline =
         !m.lastHeartbeat || Date.now() - m.lastHeartbeat.getTime() > HEARTBEAT_OFFLINE_S * 1000;

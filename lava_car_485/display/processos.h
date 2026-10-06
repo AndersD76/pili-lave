@@ -366,7 +366,7 @@ static inline bool x12_estavel() {
 // -----------------------------------------------------------------------
 #define CARRO_WD_MS  4000   // watchdog do X0: se nao pulsar por esse tempo -> CARRO TRAVADO (era 2000)
 #define X10_FWD_LOST_MS  150   // no avanco, o X10 precisa ficar em 0 por esse tempo p/ valer "perdeu X10" (anti-fantasma)
-#define CARR_RAMPA_MS       500   // duracao da rampa de desaceleracao no avanco, apos perder o X10
+#define CARR_RAMPA_MS       350   // duracao da rampa de desaceleracao (avanco apos X10 e retorno no X12) — era 500ms, padronizado com o HOME
 #define CARR_RAMPA_STEP_MS  100   // recalcula a rampa a cada 100ms (mesmo espirito da rampa do giro)
 static uint8_t     _cf_st = 0;
 static uint32_t    _cf_t_x10 = 0, _cf_t_pulso = 0, _cf_dwell = 0;

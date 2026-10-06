@@ -44,17 +44,26 @@ enum TipoParticipacao {
 /// é do admin (calculado, nunca guardado). Um único tipo por máquina (não
 /// dá pra ter 2 "Comissão 1" na mesma máquina, por exemplo).
 model MachineParticipante {
-  id         String            @id @default(cuid())
+  id         String                     @id @default(cuid())
   machineId  String
   userId     String
   tipo       TipoParticipacao
-  percentual Float             // 0-100
+  /// Lavagens e aspirador têm percentuais INDEPENDENTES — o aspirador pode
+  /// ser repassado de forma diferente (ex: 100% pro lavador, nada de
+  /// comissão) sem afetar a divisão das lavagens.
+  escopo     ParticipacaoEscopo @default(LAVAGEM)
+  percentual Float                      // 0-100
 
   machine Machine @relation(fields: [machineId], references: [id])
   user    User    @relation(fields: [userId], references: [id])
 
-  @@unique([machineId, tipo])
+  @@unique([machineId, tipo, escopo])
   @@index([userId])
+}
+
+enum ParticipacaoEscopo {
+  LAVAGEM
+  ASPIRADOR
 }
 
 enum TopupStatus {
