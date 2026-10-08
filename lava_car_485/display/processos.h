@@ -901,7 +901,7 @@ static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
 static void _off_espa() { SET_Y7(false); SET_Y2(false); }
 static bool tick_espuma_a() {
     if (_pst == SP_HOME) { SET_Y2(true); SET_Y7(true); saj_set_freq(35.0f); }   // solenoide ANTES do Y7 (intertravamento)
-    return _proc_simples(true, 1000, 2, 3, _off_espa, 2000, 15000);   // espera 15s apos desligar
+    return _proc_simples(true, 1000, 2, 3, _off_espa, 2000, 60000);   // espera 60s apos desligar
 }
 
 // ---- Espuma B: Y7 + Y3, SEM giro (etapa desl=4) ----
@@ -919,7 +919,7 @@ static bool tick_espuma_b() {
 static void _off_cm() { SET_Y1(false); SET_Y7(false); SET_Y0(false); }
 static bool tick_cor_magica() {
     if (_pst == SP_HOME) { SET_Y1(true); SET_Y7(true); SET_Y0(true); saj_set_freq(35.0f); }   // Y0 junto com a Cor Magica
-    return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, 45000);   // espera 45s apos desligar
+    return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, 60000);   // espera 60s apos desligar
 }
 
 // ---- Cera de agua: Y7 + Y10, SEM giro (usa etapa 0 como default) ----
