@@ -1,0 +1,8 @@
+node_modules/
+.next/
+next-env.d.ts
+tsconfig.tsbuildinfo
+# banco local da loja (estoque, vendas) — nunca vai pro repositório
+dados/*.db
+dados/*.db-journal
+.env

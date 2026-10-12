@@ -115,7 +115,7 @@ O item 1 depende de o computador da loja ter Windows Pro e TPM, o que deve entra
 | # | Etapa | Situação |
 |---|---|---|
 | 1 | **Nuvem e app**: termo de uso, data de nascimento, código do cliente, foto do rosto, tela de escolha, cadastro de lojas no admin, dono de loja, bloqueio e suporte | Construída no ambiente local; falta testar no celular |
-| 2 | **Gestão local**: produtos, estoque, entrada de mercadoria, alerta de compra | A fazer |
+| 2 | **Gestão local**: produtos, estoque, entrada de mercadoria, alerta de compra | Em andamento: primeiro uso, senha de gestão, painel, produtos e estoque prontos; faltam entrada por nota fiscal e relatórios |
 | 3 | **Totem**: carrinho por código de barras, carteira e maquininha, fila offline e sincronização | A fazer |
 | 4 | **Entrada**: porta por BLE, credencial offline, capacidade, mensagem de lotação (firmware da trava: Giovani) | A fazer |
 | 5 | **Câmeras**: zonas de prateleira, rastreamento, divergência com imagens para o dono | A fazer |
@@ -140,6 +140,40 @@ Feito no servidor e na PWA:
 Falta na etapa 1:
 - Testar o app nativo no celular (principalmente a tela da foto e a área do dono).
 - Aplicar as três migrations em produção quando for a hora (não foi feito).
+
+### Etapa 2 — especificação do programa do computador da loja
+
+Parte do prompt original de controle de estoque (feito no Claude web), ajustada às decisões acima.
+
+**O que foi mantido do prompt original**
+- Banco local no próprio computador (SQLite), criado sozinho na primeira execução.
+- Cadastro de produtos com código de barras, custo, preço de venda, estoque atual e estoque mínimo.
+- Entrada de mercadoria por nota fiscal, com tela de conferência dos itens antes de dar entrada.
+- Produto que não existe é criado na entrada, com estoque mínimo padrão de 5.
+- Baixa por venda, perda e ajuste de inventário.
+- Alerta de produtos abaixo do mínimo e relatórios (estoque, críticos, entradas e saídas por período).
+- Interface web local, em português.
+
+**O que mudou**
+| Prompt original | Como fica | Por quê |
+|---|---|---|
+| Python + Flask + Bootstrap | Next.js + Prisma, com o mesmo visual do painel admin | Mesmos moldes do resto do sistema; o totem (etapa 3) reaproveita tudo. Python fica só com as câmeras. |
+| Abre direto no painel | **Primeiro uso**: escolhe o endereço da loja (existente ou novo) e cria a senha de gestão | Cadastro da loja com a mesma lógica da máquina de lavagem. |
+| Sem senha | Gestão protegida por senha | O computador fica num container sem funcionário; o totem roda na mesma máquina. |
+| Tabela `saidas` | Tabela única de **movimentações** (entrada, venda, perda, ajuste), com o saldo depois de cada uma | É o extrato do estoque, no mesmo padrão do extrato da carteira; permite auditar e sincronizar. |
+| Leitura de **PDF** da NF-e | **XML da NF-e como forma principal**; PDF como alternativa, sempre com conferência | O PDF (DANFE) normalmente não traz o código de barras dos produtos, só o código interno do fornecedor. O XML traz. |
+| Casar item da nota pelo EAN | Pelo EAN quando existir; senão, o sistema **lembra** qual produto corresponde a cada código daquele fornecedor | Na segunda nota do mesmo fornecedor a conferência já vem preenchida. |
+| Produto criado pela nota já pode ser vendido | Nasce **sem preço de venda** e aparece em destaque até o preço ser definido | A nota traz o custo, não o preço de venda. |
+| Valores em reais com vírgula | Valores guardados em centavos (inteiros) | Evita erro de arredondamento; é como o resto do sistema guarda dinheiro. |
+| 5 produtos de exemplo automáticos | Botão "carregar exemplos", só para teste | Uma loja de verdade não pode nascer com produto falso no estoque. |
+| Mesma nota pode entrar duas vezes | A chave da NF-e é única: a segunda tentativa é recusada | Evita duplicar estoque. |
+
+**O que fica para depois (já previsto no desenho)**
+- Baixa automática pela venda no totem (etapa 3).
+- Aviso de estoque mínimo no app do dono e indicadores, que dependem da sincronização com a nuvem (etapas 3 e 7).
+- Backup diário para a nuvem.
+
+**Onde fica**: pasta `loja/` do repositório, rodando no computador da loja em `http://localhost:3100`.
 
 ---
 

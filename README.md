@@ -10,6 +10,7 @@ pili-lave/
 ├── server/        Backend + painel admin + PWA (Next.js 16 + Prisma 6 + Postgres/Neon)
 ├── lava_car_485/  Firmware do display (ESP32-S3, LVGL) + Waveshares (RS-485)
 ├── firmware_camera/ Firmware da câmera (ESP32-CAM) — gateway de internet da máquina
+├── loja/          Programa do computador da loja de conveniência (Next.js + SQLite local) — ver loja/README.md
 └── design/        Direção de marca (BRAND.md — "verniz molhado", dark-first)
 ```
 

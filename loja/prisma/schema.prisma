@@ -1,0 +1,136 @@
+// PROGRAMA DA LOJA — banco LOCAL (SQLite) do computador central de cada
+// loja de conveniência. Cada loja tem o seu, independente: produtos,
+// estoque, entradas de mercadoria. A nuvem (server/) só guarda o cadastro
+// da loja, usuários e carteira.
+//
+// O arquivo fica em loja/dados/loja.db e é criado sozinho na primeira
+// execução (npm run dev / npm start rodam `prisma migrate deploy` antes).
+//
+// SQLite não tem enum: os campos "tipo"/"origem" são texto, com os valores
+// possíveis listados em lib/estoque.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../dados/loja.db"
+}
+
+/// Configuração da própria loja, em pares chave/valor: identidade do
+/// computador (deviceKey), loja vinculada na nuvem, senha de gestão…
+/// Ver lib/config.ts pra lista de chaves.
+model Config {
+  chave String @id
+  valor String
+}
+
+model Produto {
+  id            String   @id @default(cuid())
+  /// Código de barras. Opcional: existe produto sem EAN (item avulso).
+  ean           String?  @unique
+  nome          String
+  unidade       String   @default("UN")
+  /// Último custo de compra (vem da nota de entrada).
+  custoCents    Int      @default(0)
+  /// Preço de venda. null = ainda sem preço — NÃO pode ser vendido no totem
+  /// (é como nasce um produto criado por uma nota de entrada).
+  precoCents    Int?
+  /// Cache do saldo — a fonte da verdade é a soma de Movimento.
+  estoqueAtual  Int      @default(0)
+  estoqueMinimo Int      @default(5)
+  ativo         Boolean  @default(true)
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+
+  movimentos   Movimento[]
+  entradaItens EntradaItem[]
+  codigos      CodigoFornecedor[]
+
+  @@index([nome])
+}
+
+/// Extrato do estoque: TODA mudança de saldo passa por aqui (nunca se mexe
+/// em Produto.estoqueAtual direto — ver lib/estoque.ts).
+model Movimento {
+  id         String   @id @default(cuid())
+  produtoId  String
+  /// ENTRADA | VENDA | PERDA | AJUSTE
+  tipo       String
+  /// Positivo soma, negativo baixa.
+  quantidade Int
+  /// Saldo do produto logo depois deste movimento.
+  saldoApos  Int
+  nota       String?
+  /// Entrada.id (entrada de nota) ou, no futuro, o id da venda no totem.
+  refId      String?
+  criadoEm   DateTime @default(now())
+  /// Quando este movimento foi enviado pra nuvem (indicadores) — null =
+  /// ainda na fila. A sincronização em si entra na etapa 3.
+  sincronizadoEm DateTime?
+
+  produto Produto @relation(fields: [produtoId], references: [id])
+
+  @@index([produtoId, criadoEm])
+  @@index([tipo, criadoEm])
+}
+
+model Fornecedor {
+  id   String @id @default(cuid())
+  cnpj String @unique // só dígitos
+  nome String
+
+  entradas Entrada[]
+  codigos  CodigoFornecedor[]
+}
+
+/// Uma entrada de mercadoria (uma nota fiscal, ou um lançamento manual).
+model Entrada {
+  id           String   @id @default(cuid())
+  /// XML | PDF | MANUAL
+  origem       String
+  numeroNf     String?
+  /// Chave de acesso da NF-e (44 dígitos) — única: a mesma nota não entra
+  /// duas vezes.
+  chaveNfe     String?  @unique
+  dataEmissao  DateTime?
+  fornecedorId String?
+  totalCents   Int      @default(0)
+  criadaEm     DateTime @default(now())
+
+  fornecedor Fornecedor?   @relation(fields: [fornecedorId], references: [id])
+  itens      EntradaItem[]
+
+  @@index([criadaEm])
+}
+
+model EntradaItem {
+  id               String @id @default(cuid())
+  entradaId        String
+  produtoId        String
+  /// Como o item veio escrito na nota (código e descrição do fornecedor).
+  codigoFornecedor String?
+  descricao        String
+  quantidade       Int
+  custoUnitCents   Int
+
+  entrada Entrada @relation(fields: [entradaId], references: [id])
+  produto Produto @relation(fields: [produtoId], references: [id])
+
+  @@index([entradaId])
+}
+
+/// Memória de "o código X deste fornecedor é o produto Y" — o PDF da nota
+/// (DANFE) quase nunca traz o código de barras, só o código interno do
+/// fornecedor. Na segunda nota a conferência já vem preenchida.
+model CodigoFornecedor {
+  fornecedorId String
+  codigo       String
+  produtoId    String
+
+  fornecedor Fornecedor @relation(fields: [fornecedorId], references: [id])
+  produto    Produto    @relation(fields: [produtoId], references: [id])
+
+  @@id([fornecedorId, codigo])
+}

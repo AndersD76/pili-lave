@@ -392,7 +392,16 @@ Produto paralelo à lavagem, no mesmo app. O conceito, as decisões e a ordem de
 - As duas rotas são protegidas pelo mesmo `PROVISION_SECRET` das máquinas (header `x-provision-secret`).
 - Quem chama essas rotas é a tela de primeiro uso do programa local da loja, que ainda não existe (etapa 2).
 
-Ainda não existe: tudo das etapas seguintes (gestão local, totem, entrada por BLE, câmeras). O bloqueio ainda não impede nada fisicamente — passa a valer quando a entrada por BLE consultar `LojaBloqueio`.
+**Programa do computador da loja — `loja/`** (etapa 2, em andamento): app Next.js separado do `server/`, com banco **SQLite local** (`loja/dados/loja.db`, fora do Git), em `http://localhost:3100`. Cada loja tem o seu, independente.
+
+- `lib/config.ts`: tabela `Config` (chave/valor) com a identidade do computador (`deviceKey`, gerada aqui), a loja vinculada e a senha de gestão. `NUVEM_URL` e `SENHA_FABRICA` vêm do `loja/.env`.
+- `/primeiro-uso`: chama `/api/loja/unidades` e `/api/loja/provisionar` da nuvem; depois de cadastrada, a tela não abre mais.
+- `lib/sessao.ts`: senha única de gestão (scrypt) + cookie JWT de 12h; `exigirGestao()` protege toda página e ação.
+- `lib/estoque.ts`: `movimentar()` é o **único** caminho pra mudar saldo — grava `Movimento` (ENTRADA/VENDA/PERDA/AJUSTE, com `saldoApos`) e atualiza o cache `Produto.estoqueAtual` na mesma transação. `baixarVenda()` já existe pro totem usar.
+- Telas: painel (para comprar, sem preço, valor em estoque), produtos e estoque (busca, cadastro), produto (edição, perda, contagem de inventário, extrato).
+- Tabelas de entrada de nota (`Entrada`, `EntradaItem`, `Fornecedor`, `CodigoFornecedor`) já estão no banco; as telas ainda não.
+
+Ainda não existe: entrada por nota fiscal e relatórios (resto da etapa 2), e tudo das etapas seguintes (totem, sincronização, entrada por BLE, câmeras). O bloqueio ainda não impede nada fisicamente — passa a valer quando a entrada por BLE consultar `LojaBloqueio`.
 
 ---
 
