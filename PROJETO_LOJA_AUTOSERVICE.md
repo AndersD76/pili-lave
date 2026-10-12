@@ -80,6 +80,14 @@ como produto paralelo. Ao abrir o app, o cliente escolhe entre
 - A sessão dura 30 minutos, porque a máquina fica na frente dos clientes.
 - Tirar uma permissão ou desativar um funcionário vale na hora, mesmo que ele esteja logado.
 
+### Preço de venda
+- **Todo produto tem um percentual de venda guardado** (40 = custo mais 40%). O preço é sempre custo + percentual e é **recalculado sozinho** quando o custo muda: nota fiscal nova, entrada manual com custo ou alteração no cadastro.
+- A digitação livre de preço é exceção: o lojista marca **"Preço manual"** no produto. O sistema pergunta "Este item não sofrerá mais reajustes automáticos. Deseja prosseguir?".
+- Os produtos com preço manual ficam numa lista própria, **"Sem reajuste automático"**, para o lojista saber quais não acompanham o custo.
+- A lista **"Sem percentual"** mostra os produtos que ainda não têm percentual. O objetivo é ela ficar vazia.
+- O reajuste automático vale mesmo quando quem lança a nota é um funcionário sem permissão de preço: a regra é do lojista. Mudar o percentual, sim, exige a permissão.
+- Todo reajuste fica registrado em Atividades, com o custo, o percentual e a nota que o causou.
+
 ### Reposição de estoque e abertura remota (a construir com a porta e as câmeras)
 - **Modo reposição**: o funcionário entra pelo app como qualquer pessoa, faz o acesso administrativo no computador e inicia a reposição. É uma permissão própria ("Fazer reposição"), marcada pelo lojista.
 - **Durante a reposição a loja fica bloqueada para clientes.** Quem tentar entrar vê no app: "Em reposição de estoque. Por favor aguarde um pouco". Como a mensagem de lotação, ela vem do computador local por BLE.

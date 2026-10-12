@@ -8,6 +8,7 @@ export const ROTULO_ACAO: Record<string, string> = {
   PRODUTO_CRIADO: "Cadastrou produto",
   PRODUTO_ALTERADO: "Alterou produto",
   PRECO_ALTERADO: "Alterou preço",
+  PERCENTUAL_ALTERADO: "Alterou percentual de venda",
   ENTRADA: "Deu entrada",
   NOTA_ENTRADA: "Deu entrada por nota fiscal",
   PERDA: "Registrou perda",

@@ -80,6 +80,14 @@ model Produto {
   /// Preço de venda. null = ainda sem preço — NÃO pode ser vendido no totem
   /// (é como nasce um produto criado por uma nota de entrada).
   precoCents    Int?
+  /// Percentual de venda sobre o custo (30 = custo + 30%). Com ele
+  /// preenchido e precoManual desligado, o preço é SEMPRE custo × (1 + %),
+  /// recalculado sozinho quando o custo muda (ver lib/precos.ts).
+  /// null = produto ainda sem percentual.
+  margemPct     Float?
+  /// true = o lojista fixou o preço à mão: não sofre reajuste automático
+  /// quando o custo muda. Esses produtos aparecem numa lista própria.
+  precoManual   Boolean  @default(false)
   /// Cache do saldo — a fonte da verdade é a soma de Movimento.
   estoqueAtual  Int      @default(0)
   estoqueMinimo Int      @default(5)

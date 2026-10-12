@@ -1,8 +1,9 @@
 import { reaisCampo } from "@/lib/dinheiro";
+import { CampoPreco } from "./CampoPreco";
 
 type ProdutoForm = {
   nome: string; ean: string | null; unidade: string; custoCents: number; precoCents: number | null;
-  estoqueMinimo: number;
+  estoqueMinimo: number; margemPct: number | null; precoManual: boolean;
 };
 
 /** Campos do cadastro de produto — os mesmos pra criar e pra editar.
@@ -15,8 +16,6 @@ export function CamposProduto({
 }: { produto?: ProdutoForm; podeCadastro?: boolean; podePreco?: boolean }) {
   const travado = { readOnly: true, style: { opacity: 0.6 } } as const;
   const cad = podeCadastro ? {} : travado;
-  // preço só pode ficar vazio em produto que JÁ está sem preço (criado por nota)
-  const precoObrigatorio = !produto || produto.precoCents !== null;
   return (
     <>
       <div className="linha-form">
@@ -30,10 +29,6 @@ export function CamposProduto({
         </label>
       </div>
       <div className="linha-form">
-        <label className="rotulo" style={{ width: 150 }} title="Digite o preço (5,90) ou um percentual sobre o custo (30%)">
-          Preço de venda (R$ ou %)
-          <input className="field" name="preco" defaultValue={reaisCampo(produto?.precoCents ?? null)} inputMode="decimal" placeholder={precoObrigatorio ? "5,90 ou 30%" : "sem preço"} required={precoObrigatorio} {...(podePreco ? {} : travado)} />
-        </label>
         <label className="rotulo" style={{ width: 130 }}>
           Custo (R$)
           <input className="field" name="custo" defaultValue={reaisCampo(produto?.custoCents ?? 0)} inputMode="decimal" {...cad} />
@@ -47,6 +42,10 @@ export function CamposProduto({
           <input className="field" name="unidade" defaultValue={produto?.unidade ?? "UN"} maxLength={4} {...cad} />
         </label>
       </div>
+      <CampoPreco
+        custoCents={produto?.custoCents ?? 0} margemPct={produto?.margemPct ?? null}
+        precoCents={produto?.precoCents ?? null} precoManual={produto?.precoManual ?? false} travado={!podePreco}
+      />
     </>
   );
 }

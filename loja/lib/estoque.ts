@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { registrarAtividade } from "./atividade";
 import { reais } from "./dinheiro";
 import type { UsuarioGestao } from "./permissoes";
+import { reajustarPreco } from "./precos";
 import { prisma } from "./prisma";
 
 /** Tipos de movimento do estoque (campo Movimento.tipo). */
@@ -68,7 +69,11 @@ export function entradaManual(
         itens: { create: [{ produtoId, descricao: produto.nome, quantidade, custoUnitCents: custo }] },
       },
     });
-    if (custoUnitCents !== null) await tx.produto.update({ where: { id: produtoId }, data: { custoCents: custoUnitCents } });
+    if (custoUnitCents !== null) {
+      await tx.produto.update({ where: { id: produtoId }, data: { custoCents: custoUnitCents } });
+      // custo novo: o preço acompanha o percentual do produto
+      await reajustarPreco(tx, usuario, produtoId, "entrada manual");
+    }
     const saldo = await movimentar(tx, {
       produtoId, tipo: "ENTRADA", quantidade, nota: nota || "Entrada manual", refId: entrada.id, usuarioId: usuario.id,
     });

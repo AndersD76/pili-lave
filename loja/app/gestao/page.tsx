@@ -5,7 +5,7 @@ import { produtosCriticos } from "@/lib/estoque";
 import { exigirGestao } from "@/lib/sessao";
 import { pode } from "@/lib/permissoes";
 import { Nav } from "./nav";
-import { definirPrecos } from "./produtos/actions";
+import { definirPercentuais } from "./produtos/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +19,10 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
     prisma.produto.findMany({ where: { ativo: true }, select: { estoqueAtual: true, custoCents: true } }),
     produtosCriticos(),
     prisma.produto.findMany({ where: { ativo: true, precoCents: null }, orderBy: { nome: "asc" } }),
+  ]);
+  const [semPct, manuais] = await Promise.all([
+    prisma.produto.count({ where: { ativo: true, precoManual: false, margemPct: null } }),
+    prisma.produto.count({ where: { ativo: true, precoManual: true } }),
   ]);
   const valorEmEstoque = ativos.reduce((soma, p) => soma + Math.max(0, p.estoqueAtual) * p.custoCents, 0);
 
@@ -42,6 +46,16 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
           <div className="val">{semPreco.length}</div>
           <div className="sub">não podem ser vendidos</div>
         </div>
+        <Link href="/gestao/produtos?f=sempct" className={`stat${semPct > 0 ? " alerta" : ""}`} style={{ color: "inherit" }}>
+          <div className="lab">Sem percentual</div>
+          <div className="val">{semPct}</div>
+          <div className="sub">preço não acompanha o custo</div>
+        </Link>
+        <Link href="/gestao/produtos?f=manual" className="stat" style={{ color: "inherit" }}>
+          <div className="lab">Sem reajuste automático</div>
+          <div className="val">{manuais}</div>
+          <div className="sub">preço fixado à mão</div>
+        </Link>
         <div className="stat">
           <div className="lab">Valor em estoque</div>
           <div className="val">{reais(valorEmEstoque)}</div>
@@ -80,16 +94,17 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
         <>
           <h2 className="section-title">Sem preço de venda ({semPreco.length})</h2>
           <p className="sub" style={{ marginBottom: 10 }}>
-            Produtos criados por uma nota de entrada nascem sem preço. Defina o preço para liberar a venda.
-            {podePreco && " Na coluna Preço de venda, digite um percentual sobre o custo (30% = custo mais 30%) ou o preço direto (5,90), e clique em Salvar preços. O que ficar em branco continua sem preço."}
+            Estes produtos ainda não podem ser vendidos.
+            {podePreco && " Informe o percentual de venda de cada um (40 = custo mais 40%) e clique em Salvar percentuais: o preço é calculado na hora e passa a acompanhar o custo."}
           </p>
-          {ok && <p className="ok-msg" style={{ marginBottom: 10 }}>Preços salvos.</p>}
+          {ok && <p className="ok-msg" style={{ marginBottom: 10 }}>Percentuais salvos.</p>}
           {/* um formulário só pra tabela inteira: preenche vários e salva de uma vez */}
-          <form action={definirPrecos}>
+          <form action={definirPercentuais}>
+            <input type="hidden" name="voltar" value="painel" />
             <div className="tbl-wrap">
               <table className="tbl">
                 <thead>
-                  <tr><th>Produto</th><th>Custo</th><th>Estoque</th>{podePreco && <th>Preço de venda</th>}</tr>
+                  <tr><th>Produto</th><th>Custo</th><th>Estoque</th>{podePreco && <th>% de venda</th>}</tr>
                 </thead>
                 <tbody>
                   {semPreco.map((p) => (
@@ -100,8 +115,8 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
                       {podePreco && (
                         <td>
                           <input
-                            className="field" name={`preco_${p.id}`} inputMode="decimal" placeholder="30% ou 5,90"
-                            style={{ width: 140, height: 38, fontSize: 14, padding: "0 10px" }}
+                            className="field" name={`pct_${p.id}`} inputMode="decimal" placeholder="ex.: 40"
+                            style={{ width: 110, height: 38, fontSize: 14, padding: "0 10px" }}
                           />
                         </td>
                       )}
@@ -110,7 +125,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
                 </tbody>
               </table>
             </div>
-            {podePreco && <button className="btn" type="submit" style={{ marginTop: 12 }}>Salvar preços</button>}
+            {podePreco && <button className="btn" type="submit" style={{ marginTop: 12 }}>Salvar percentuais</button>}
           </form>
         </>
       )}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { reais } from "@/lib/dinheiro";
 import { pode } from "@/lib/permissoes";
+import { formatarPercentual, precoPelaMargem } from "@/lib/precos";
 import { formatarCnpj, lerNfe } from "@/lib/nfe";
 import { prisma } from "@/lib/prisma";
 import { exigirPermissao } from "@/lib/sessao";
@@ -32,7 +33,7 @@ export default async function ConferirNota({
   const { nota } = leitura;
 
   const [produtos, fornecedor] = await Promise.all([
-    prisma.produto.findMany({ where: { ativo: true }, orderBy: { nome: "asc" }, select: { id: true, nome: true, ean: true, precoCents: true } }),
+    prisma.produto.findMany({ where: { ativo: true }, orderBy: { nome: "asc" }, select: { id: true, nome: true, ean: true, precoCents: true, margemPct: true, precoManual: true } }),
     nota.fornecedor.cnpj
       ? prisma.fornecedor.findUnique({ where: { cnpj: nota.fornecedor.cnpj }, include: { codigos: true } })
       : null,
@@ -53,6 +54,18 @@ export default async function ConferirNota({
   const novos = linhas.filter((l) => !l.sugerido).length;
   const podePreco = pode(usuario, "PRECO");
   const precoDe = new Map(produtos.map((p) => [p.id, p.precoCents]));
+  const pctDe = new Map(produtos.map((p) => [p.id, p.margemPct]));
+  const manualDe = new Set(produtos.filter((p) => p.precoManual).map((p) => p.id));
+  /** O que vai acontecer com o preço deste item, pra mostrar embaixo do campo. */
+  function dicaPreco(produtoId: string | undefined, custoCents: number): string {
+    if (!produtoId) return "produto novo: sem percentual, fica sem preço";
+    const hoje = precoDe.get(produtoId);
+    if (manualDe.has(produtoId)) return `fixo em ${hoje != null ? reais(hoje) : "—"}: não reajusta`;
+    const pct = pctDe.get(produtoId);
+    if (pct == null) return hoje != null ? `sem percentual: preço fica ${reais(hoje)}` : "sem percentual e sem preço";
+    const novo = precoPelaMargem(custoCents, pct);
+    return novo === hoje ? `preço continua ${reais(novo)}` : `preço vai de ${hoje != null ? reais(hoje) : "sem preço"} para ${reais(novo)}`;
+  }
 
   return (
     <main className="admin-wrap">
@@ -72,14 +85,14 @@ export default async function ConferirNota({
         <p className="sub" style={{ marginBottom: 10 }}>
           Confira o produto e a quantidade em <b>unidades de venda</b> de cada item. Se a nota veio em caixas,
           corrija para o número de unidades que vão para a prateleira.
-          {novos > 0 && ` ${novos} ${novos === 1 ? "item não foi reconhecido" : "itens não foram reconhecidos"} e será criado como produto novo, sem preço de venda.`}
+          {novos > 0 && ` ${novos} ${novos === 1 ? "item não foi reconhecido e será criado como produto novo" : "itens não foram reconhecidos e serão criados como produtos novos"}; informe o percentual de venda para já saírem com preço.`}
         </p>
         <div className="tbl-wrap">
           <table className="tbl">
             <thead>
               <tr>
                 <th>Item da nota</th><th>Veio como</th><th>Produto na loja</th><th>Unidades</th><th>Total do item</th>
-                {podePreco && <th>Preço de venda</th>}
+                {podePreco && <th>% de venda</th>}
               </tr>
             </thead>
             <tbody>
@@ -117,12 +130,17 @@ export default async function ConferirNota({
                   </td>
                   {podePreco && (
                     <td>
-                      <input
-                        className="field" name={`preco_${i}`} inputMode="decimal" placeholder="30% ou 5,90"
-                        style={{ width: 120, height: 38, fontSize: 14, padding: "0 10px" }}
-                      />
+                      {manualDe.has(sugerido ?? "") ? (
+                        <span className="chip off">preço manual</span>
+                      ) : (
+                        <input
+                          className="field" name={`pct_${i}`} inputMode="decimal"
+                          placeholder={sugerido && pctDe.get(sugerido) != null ? formatarPercentual(pctDe.get(sugerido)!) : "ex.: 40"}
+                          style={{ width: 110, height: 38, fontSize: 14, padding: "0 10px" }}
+                        />
+                      )}
                       <span className="sub" style={{ display: "block", fontSize: 12, marginTop: 4 }}>
-                        {sugerido && precoDe.get(sugerido) != null ? `hoje ${reais(precoDe.get(sugerido)!)}` : "sem preço hoje"}
+                        {dicaPreco(sugerido, item.quantidade > 0 ? Math.round(item.totalCents / item.quantidade) : 0)}
                       </span>
                     </td>
                   )}
@@ -133,7 +151,7 @@ export default async function ConferirNota({
         </div>
         <p className="sub" style={{ marginTop: 10 }}>
           O custo de cada produto passa a ser o total do item dividido pelas unidades informadas.
-          {podePreco && " Na coluna Preço de venda, digite um percentual sobre esse custo (30% = custo mais 30%) ou o preço direto (5,90). Em branco, o preço do produto não muda."}
+          {podePreco && " O preço de venda é recalculado pelo percentual de cada produto. Na coluna % de venda, deixe em branco para manter o percentual atual (mostrado em cinza) ou digite um novo. Produto com preço manual não é reajustado."}
         </p>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button className="btn" type="submit">Confirmar e dar entrada</button>

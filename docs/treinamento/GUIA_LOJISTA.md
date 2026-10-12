@@ -112,7 +112,8 @@ No fim da página, em **"Novo produto"**:
 |---|---|
 | Nome | Como o produto aparece no caixa e nos relatórios |
 | Código de barras | O número lido pelo leitor (8 a 14 dígitos). Dois produtos não podem ter o mesmo |
-| Preço de venda | Quanto o cliente paga. Obrigatório no cadastro feito à mão. Só fica "sem preço" o produto criado por uma nota de entrada, até você definir o valor |
+| Percentual de venda | Quanto você põe em cima do custo: 40 = custo mais 40%. O preço é calculado por ele e acompanha o custo sozinho (ver seção 5b) |
+| Preço manual | Marque só se quiser fixar o preço à mão; o produto deixa de ser reajustado |
 | Custo | Quanto você pagou na última compra |
 | Estoque mínimo | Abaixo ou igual a isso, o produto entra na lista "Para comprar". Padrão: 5 |
 | Unidade | Normalmente UN |
@@ -125,6 +126,33 @@ Clique no nome do produto. Na tela dele você muda qualquer campo do cadastro e 
 ![Tela de um produto](imagens/lojista/05-produto.png)
 
 ---
+
+## 5b. Preço de venda: percentual e reajuste automático
+
+A regra da loja é: **preço = custo + percentual do produto**.
+
+- Cada produto guarda o seu **percentual de venda**. Com custo de R$ 4,00 e percentual de 50, o preço é R$ 6,00.
+- Quando o **custo muda**, o preço é **recalculado sozinho**. Isso acontece ao lançar uma nota fiscal com custo novo, ao dar entrada manual informando o custo, ou ao alterar o custo no cadastro.
+- Cada reajuste fica em **Atividades**, por exemplo: "Coca-Cola: R$ 5,90 → R$ 8,00 — reajuste automático (custo R$ 4,00 + 100%; NF 801)".
+
+### Onde definir o percentual
+
+- **Aba "Sem percentual"**, em Produtos e estoque: mostra todos os produtos que ainda não têm percentual, com um campo em cada linha. Preencha quantos quiser e clique em **Salvar percentuais**. O objetivo é essa lista ficar vazia. O painel mostra quantos faltam.
+- **Na conferência da nota**: a coluna **"% de venda"** mostra em cinza o percentual atual de cada produto. Em branco, ele é mantido; digitando, passa a valer o novo. Embaixo do campo aparece o que vai acontecer com o preço ("preço vai de R$ 5,90 para R$ 8,00").
+- **Na tela do produto**: campo "Percentual de venda (%)", com o preço calculado ao lado.
+- **No painel**, na tabela "Sem preço de venda", para os produtos novos que chegaram por nota.
+
+![Aba Sem percentual](imagens/lojista/05g-sem-percentual.png)
+
+### Preço manual (a exceção)
+
+Se você quiser fixar o preço de um produto à mão, abra o produto e marque **"Preço manual (sem reajuste automático)"**. O sistema pergunta: *"Este item não sofrerá mais reajustes automáticos. Deseja prosseguir?"*. Confirmando, você digita o preço.
+
+- Esse produto **não muda de preço** quando chega nota com custo novo.
+- Ele aparece na aba **"Sem reajuste automático"**, em Produtos e estoque, e no cartão de mesmo nome no painel. Confira essa lista de tempos em tempos: são os itens em que a sua margem pode estar encolhendo sem você perceber.
+- Para voltar ao automático, desmarque a caixa. O percentual que o produto tinha antes continua guardado.
+
+> 💡 Um funcionário sem a permissão de alterar preço pode lançar uma nota normalmente, e os preços são reajustados pela sua regra. O que ele não pode é mudar o percentual.
 
 ## 6. Entrada, perda e contagem de inventário
 
@@ -153,7 +181,7 @@ No menu do topo, **"Entradas"** (para quem tem a permissão de dar entrada).
 3. Em cada item, confira:
    - **Produto na loja** — o sistema já sugere. Ele reconhece pelo código de barras e, quando a nota não traz, pelo que você escolheu na última nota daquele fornecedor. O que ele não reconhece vem como **"Criar produto novo"**. Você pode trocar por um produto existente ou escolher **"Não dar entrada neste item"**.
    - **Unidades** — quantas unidades de venda vão para a prateleira. Se a nota veio em caixas (a coluna "Veio como" mostra, por exemplo, "2 CX"), confira se o número está em unidades.
-   - **Preço de venda** (só para quem pode alterar preço) — opcional. Digite um **percentual sobre o custo** (`30%` = custo mais 30%) ou o **preço direto** (`5,90`). Em branco, o preço do produto não muda. Embaixo do campo aparece o preço de hoje.
+   - **% de venda** (só para quem pode alterar preço) — opcional. Em cinza aparece o percentual atual do produto; em branco, ele é mantido. Embaixo do campo o sistema mostra o que vai acontecer com o preço. Produto com preço manual aparece como "preço manual" e não é reajustado.
 4. Clique em **"Confirmar e dar entrada"**. Só aí o estoque muda.
 
 ![Conferência da nota](imagens/lojista/05e-conferencia.png)
@@ -161,7 +189,8 @@ No menu do topo, **"Entradas"** (para quem tem a permissão de dar entrada).
 O que acontece na confirmação:
 - O estoque de cada produto sobe e o extrato mostra a entrada com o número da nota.
 - O **custo** do produto passa a ser o total do item dividido pelas unidades.
-- Produto novo nasce **sem preço de venda** e aparece no painel até você definir o preço.
+- O **preço de venda é reajustado** pelo percentual de cada produto (seção 5b).
+- Produto novo sem percentual informado nasce **sem preço de venda** e aparece no painel até você definir o percentual.
 - O sistema guarda qual produto corresponde a cada código daquele fornecedor, para a próxima nota já vir preenchida.
 
 Regras:
@@ -219,7 +248,7 @@ Em **"Novo funcionário"**, informe o nome, o **usuário** que ele vai digitar p
 | Permissão | O que libera |
 |---|---|
 | Cadastrar e editar produtos | Criar produto e mudar nome, código de barras, custo, mínimo, unidade, ativar e desativar |
-| Alterar preço de venda | Mudar o preço |
+| Alterar preço de venda | Definir o percentual de venda e marcar ou desmarcar preço manual |
 | Dar entrada de mercadoria | Lançar quantidade que chegou, à mão ou por nota fiscal |
 | Registrar perda | Baixar produto vencido, quebrado ou furtado |
 | Fazer contagem de inventário | Ajustar o estoque pelo que foi contado |

@@ -3,16 +3,21 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { registrarAtividade } from "@/lib/atividade";
-import { centavosDoCampo, inteiroDoCampo, precoDoCampo, reais } from "@/lib/dinheiro";
+import { centavosDoCampo, inteiroDoCampo, reais } from "@/lib/dinheiro";
 import { ajustarInventario, entradaManual, movimentar, registrarPerda } from "@/lib/estoque";
 import { pode, rotuloPermissao, type Permissao } from "@/lib/permissoes";
+import { formatarPercentual, lerPercentual, precoPelaMargem, reajustarPreco } from "@/lib/precos";
 import { prisma } from "@/lib/prisma";
 import { exigirGestao, exigirPermissao } from "@/lib/sessao";
 
 const BASE = "/gestao/produtos";
 
 /** Campos do cadastro de produto (criar e editar usam os mesmos). Devolve
- *  o texto do erro em vez dos dados quando algo não fecha. */
+ *  o texto do erro em vez dos dados quando algo não fecha.
+ *
+ *  Preço: a regra é o PERCENTUAL sobre o custo (`margem`); o preço sai da
+ *  conta. Com "preço manual" marcado, vale o preço digitado e o produto
+ *  deixa de ser reajustado. */
 async function dadosDoProduto(formData: FormData, idAtual?: string) {
   const nome = String(formData.get("nome") ?? "").trim();
   if (!nome) return "Informe o nome do produto.";
@@ -25,13 +30,22 @@ async function dadosDoProduto(formData: FormData, idAtual?: string) {
   }
 
   const custoCents = centavosDoCampo(formData.get("custo")) ?? 0;
-  // aceita valor ("5,90") ou percentual sobre o custo ("30%")
-  const precoCents = precoDoCampo(formData.get("preco"), custoCents);
-  if (precoCents === "INVALIDO") return "Preço de venda inválido. Use um valor (5,90) ou um percentual sobre o custo (30%).";
   const estoqueMinimo = inteiroDoCampo(formData.get("estoqueMinimo")) ?? 5;
+  const precoManual = formData.get("precoManual") === "on";
+
+  let margemPct: number | null = null;
+  let precoDigitado: number | null = null;
+  if (precoManual) {
+    precoDigitado = centavosDoCampo(formData.get("preco"));
+    if (precoDigitado === null) return "Com preço manual, informe o preço de venda.";
+  } else {
+    const m = lerPercentual(formData.get("margem"));
+    if (m === "INVALIDO") return "Percentual de venda inválido. Use um número, como 40 ou 12,5.";
+    margemPct = m;
+  }
 
   return {
-    nome, ean, precoCents, custoCents, estoqueMinimo,
+    nome, ean, custoCents, estoqueMinimo, precoManual, margemPct, precoDigitado,
     unidade: String(formData.get("unidade") ?? "UN").trim().toUpperCase().slice(0, 4) || "UN",
   };
 }
@@ -42,10 +56,11 @@ export async function criarProduto(formData: FormData) {
 
   const dados = await dadosDoProduto(formData);
   if (typeof dados === "string") erro(dados);
-  const d = dados as Exclude<typeof dados, string>;
-  // Cadastro feito à mão exige preço: "sem preço" só existe pra produto
-  // criado por nota de entrada (que traz o custo, não o preço de venda).
-  if (d.precoCents === null) erro("Informe o preço de venda.");
+  const { precoDigitado, ...d } = dados as Exclude<typeof dados, string>;
+  // Cadastro feito à mão precisa sair vendável: percentual ou preço manual.
+  // "Sem preço" só existe pra produto criado por nota de entrada.
+  if (!d.precoManual && d.margemPct === null) erro("Informe o percentual de venda (ou marque preço manual e informe o preço).");
+  const precoCents = d.precoManual ? precoDigitado : precoPelaMargem(d.custoCents, d.margemPct!);
 
   const estoqueInicial = inteiroDoCampo(formData.get("estoqueInicial")) ?? 0;
   // estoque inicial é uma entrada: sem essa permissão, o produto nasce zerado
@@ -53,10 +68,12 @@ export async function criarProduto(formData: FormData) {
     erro("Você pode cadastrar o produto, mas não tem permissão para dar entrada. Deixe o estoque inicial em 0.");
 
   const produto = await prisma.$transaction(async (tx) => {
-    const p = await tx.produto.create({ data: d });
+    const p = await tx.produto.create({ data: { ...d, precoCents } });
     await registrarAtividade(
       tx, usuario, "PRODUTO_CRIADO",
-      `${p.nome}${p.ean ? ` (${p.ean})` : ""}: preço ${reais(p.precoCents ?? 0)}, custo ${reais(p.custoCents)}, mínimo ${p.estoqueMinimo}`,
+      `${p.nome}${p.ean ? ` (${p.ean})` : ""}: custo ${reais(p.custoCents)}, ` +
+        (p.precoManual ? `preço manual ${reais(p.precoCents ?? 0)}` : `${formatarPercentual(p.margemPct!)} → preço ${reais(p.precoCents ?? 0)}`) +
+        `, mínimo ${p.estoqueMinimo}`,
       p.id
     );
     // estoque inicial também passa pelo extrato, como qualquer mudança de saldo
@@ -84,17 +101,11 @@ export async function salvarProduto(formData: FormData) {
   const a = antes!;
   const dados = await dadosDoProduto(formData, id);
   if (typeof dados === "string") erro(dados);
-  const d = dados as Exclude<typeof dados, string>;
+  const { precoDigitado, ...d } = dados as Exclude<typeof dados, string>;
   const ativo = formData.get("ativo") === "on";
-
-  // Preço já definido não pode ser apagado (pra tirar de venda, desmarque
-  // "Produto ativo"). Quem ainda está sem preço pode ser salvo assim.
-  if (d.precoCents === null && a.precoCents !== null)
-    erro("Informe o preço de venda. Para tirar o produto de venda, desmarque \"Produto ativo\".");
 
   // O que mudou — é isso que vai pro registro, e é por isso que cada
   // permissão é conferida: preço é uma, o resto do cadastro é outra.
-  const mudouPreco = d.precoCents !== a.precoCents;
   const mudancas: string[] = [];
   if (d.nome !== a.nome) mudancas.push(`nome "${a.nome}" → "${d.nome}"`);
   if (d.ean !== a.ean) mudancas.push(`código de barras ${a.ean ?? "—"} → ${d.ean ?? "—"}`);
@@ -103,22 +114,82 @@ export async function salvarProduto(formData: FormData) {
   if (d.unidade !== a.unidade) mudancas.push(`unidade ${a.unidade} → ${d.unidade}`);
   if (ativo !== a.ativo) mudancas.push(ativo ? "reativado" : "desativado");
 
-  if (mudouPreco && !pode(usuario, "PRECO")) semPermissao("PRECO");
+  // regra de preço: percentual, manual, ou as duas coisas mudando
+  const regra: string[] = [];
+  if (d.precoManual !== a.precoManual)
+    regra.push(d.precoManual ? "passou a ter PREÇO MANUAL (sem reajuste automático)" : "voltou ao reajuste automático");
+  if (!d.precoManual && d.margemPct !== a.margemPct)
+    regra.push(`percentual ${a.margemPct === null ? "—" : formatarPercentual(a.margemPct)} → ${d.margemPct === null ? "—" : formatarPercentual(d.margemPct)}`);
+  const mudouPrecoManual = d.precoManual && precoDigitado !== a.precoCents;
+
+  if ((regra.length > 0 || mudouPrecoManual) && !pode(usuario, "PRECO")) semPermissao("PRECO");
   if (mudancas.length > 0 && !pode(usuario, "PRODUTOS")) semPermissao("PRODUTOS");
-  if (!mudouPreco && mudancas.length === 0) redirect(`${BASE}/${id}`);
+  if (mudancas.length === 0 && regra.length === 0 && !mudouPrecoManual) redirect(`${BASE}/${id}`);
 
   await prisma.$transaction(async (tx) => {
-    await tx.produto.update({ where: { id }, data: { ...d, ativo } });
-    if (mudouPreco)
-      await registrarAtividade(
-        tx, usuario, "PRECO_ALTERADO",
-        `${d.nome}: ${a.precoCents === null ? "sem preço" : reais(a.precoCents)} → ${reais(d.precoCents ?? 0)}`, id
-      );
+    await tx.produto.update({
+      where: { id },
+      data: {
+        nome: d.nome, ean: d.ean, custoCents: d.custoCents, estoqueMinimo: d.estoqueMinimo, unidade: d.unidade, ativo,
+        precoManual: d.precoManual,
+        // entrando no manual, o percentual que havia continua guardado pra quando voltar
+        margemPct: d.precoManual ? a.margemPct : d.margemPct,
+        ...(d.precoManual ? { precoCents: precoDigitado } : {}),
+      },
+    });
     if (mudancas.length > 0)
       await registrarAtividade(tx, usuario, "PRODUTO_ALTERADO", `${a.nome}: ${mudancas.join("; ")}`, id);
+    if (regra.length > 0)
+      await registrarAtividade(tx, usuario, "PERCENTUAL_ALTERADO", `${d.nome}: ${regra.join("; ")}`, id);
+    if (mudouPrecoManual)
+      await registrarAtividade(
+        tx, usuario, "PRECO_ALTERADO",
+        `${d.nome}: ${a.precoCents === null ? "sem preço" : reais(a.precoCents)} → ${reais(precoDigitado ?? 0)} (preço manual)`, id
+      );
+    // custo ou percentual novo: o preço acompanha (não faz nada se for manual)
+    await reajustarPreco(tx, usuario, id, "alteração no cadastro");
   });
   revalidatePath(BASE);
   redirect(`${BASE}/${id}?ok=1`);
+}
+
+/**
+ * Define o percentual de venda de vários produtos de uma vez (lista "Sem
+ * percentual" e tabela "Sem preço de venda" do painel). Cada campo
+ * `pct_<id>` é um percentual sobre o custo; em branco, fica como está. O
+ * preço de cada um é recalculado na hora. Se um estiver inválido, nenhum é
+ * salvo.
+ */
+export async function definirPercentuais(formData: FormData) {
+  const { usuario } = await exigirPermissao("PRECO");
+  const voltar = String(formData.get("voltar") ?? "") === "painel" ? "/gestao" : `${BASE}?f=sempct`;
+  const com = (qs: string) => `${voltar}${voltar.includes("?") ? "&" : "?"}${qs}`;
+  const erro = (msg: string): never => redirect(com(`erro=${encodeURIComponent(msg)}`));
+
+  const ids = [...formData.keys()].filter((k) => k.startsWith("pct_")).map((k) => k.slice(4));
+  const produtos = await prisma.produto.findMany({ where: { id: { in: ids }, precoManual: false } });
+  const mudancas: { id: string; nome: string; antes: number | null; depois: number }[] = [];
+  for (const p of produtos) {
+    const pct = lerPercentual(formData.get(`pct_${p.id}`));
+    if (pct === null) continue;
+    if (pct === "INVALIDO") erro(`Percentual inválido em "${p.nome}". Use um número, como 40 ou 12,5.`);
+    if (pct !== p.margemPct) mudancas.push({ id: p.id, nome: p.nome, antes: p.margemPct, depois: pct as number });
+  }
+  if (mudancas.length === 0) redirect(voltar);
+
+  await prisma.$transaction(async (tx) => {
+    for (const m of mudancas) {
+      await tx.produto.update({ where: { id: m.id }, data: { margemPct: m.depois } });
+      await registrarAtividade(
+        tx, usuario, "PERCENTUAL_ALTERADO",
+        `${m.nome}: percentual ${m.antes === null ? "—" : formatarPercentual(m.antes)} → ${formatarPercentual(m.depois)}`, m.id
+      );
+      await reajustarPreco(tx, usuario, m.id, "percentual definido");
+    }
+  });
+  revalidatePath(BASE);
+  revalidatePath("/gestao");
+  redirect(com("ok=1"));
 }
 
 /** Entrada manual (soma), perda (baixa) ou ajuste de inventário (informa o contado). */
@@ -158,15 +229,15 @@ export async function carregarExemplos() {
   const { usuario } = await exigirGestao();
   if (usuario.papel !== "LOJISTA" || (await prisma.produto.count()) > 0) redirect(BASE);
   const exemplos = [
-    { ean: "7894900011517", nome: "Coca-Cola lata 350ml", custoCents: 289, precoCents: 600, estoque: 24, estoqueMinimo: 12 },
-    { ean: "7892840800079", nome: "Doritos Queijo Nacho 96g", custoCents: 649, precoCents: 1200, estoque: 10, estoqueMinimo: 5 },
-    { ean: "7896004000855", nome: "Água mineral sem gás 500ml", custoCents: 95, precoCents: 350, estoque: 4, estoqueMinimo: 12 },
-    { ean: "7622300991456", nome: "Chocolate Lacta ao leite 80g", custoCents: 499, precoCents: 900, estoque: 0, estoqueMinimo: 6 },
-    { ean: "7891991000833", nome: "Guaraná Antarctica lata 350ml", custoCents: 259, precoCents: 550, estoque: 18, estoqueMinimo: 12 },
+    { ean: "7894900011517", nome: "Coca-Cola lata 350ml", custoCents: 289, margemPct: 100, estoque: 24, estoqueMinimo: 12 },
+    { ean: "7892840800079", nome: "Doritos Queijo Nacho 96g", custoCents: 649, margemPct: 85, estoque: 10, estoqueMinimo: 5 },
+    { ean: "7896004000855", nome: "Água mineral sem gás 500ml", custoCents: 95, margemPct: 250, estoque: 4, estoqueMinimo: 12 },
+    { ean: "7622300991456", nome: "Chocolate Lacta ao leite 80g", custoCents: 499, margemPct: 80, estoque: 0, estoqueMinimo: 6 },
+    { ean: "7891991000833", nome: "Guaraná Antarctica lata 350ml", custoCents: 259, margemPct: 110, estoque: 18, estoqueMinimo: 12 },
   ];
   await prisma.$transaction(async (tx) => {
     for (const { estoque, ...dados } of exemplos) {
-      const p = await tx.produto.create({ data: dados });
+      const p = await tx.produto.create({ data: { ...dados, precoCents: precoPelaMargem(dados.custoCents, dados.margemPct) } });
       if (estoque > 0)
         await movimentar(tx, {
           produtoId: p.id, tipo: "AJUSTE", quantidade: estoque, nota: "Estoque inicial (exemplo)", usuarioId: usuario.id,
@@ -176,38 +247,4 @@ export async function carregarExemplos() {
   });
   revalidatePath(BASE);
   redirect(BASE);
-}
-
-/**
- * Define o preço de venda de vários produtos de uma vez (tabela "Sem preço
- * de venda" do painel). Cada campo `preco_<id>` aceita um percentual sobre
- * o custo do produto ("30%") ou o valor ("5,90"); o que vier em branco fica
- * como está. Se um estiver inválido, nenhum é salvo.
- */
-export async function definirPrecos(formData: FormData) {
-  const { usuario } = await exigirPermissao("PRECO");
-  const erro = (msg: string): never => redirect(`/gestao?erro=${encodeURIComponent(msg)}`);
-
-  const ids = [...formData.keys()].filter((k) => k.startsWith("preco_")).map((k) => k.slice(6));
-  const produtos = await prisma.produto.findMany({ where: { id: { in: ids } } });
-  const mudancas: { id: string; nome: string; antes: number | null; depois: number; custoCents: number }[] = [];
-  for (const p of produtos) {
-    const novo = precoDoCampo(formData.get(`preco_${p.id}`), p.custoCents);
-    if (novo === null) continue;
-    if (novo === "INVALIDO") erro(`Preço de venda inválido em "${p.nome}". Use um valor (5,90) ou um percentual sobre o custo (30%).`);
-    if (novo !== p.precoCents) mudancas.push({ id: p.id, nome: p.nome, antes: p.precoCents, depois: novo as number, custoCents: p.custoCents });
-  }
-  if (mudancas.length === 0) redirect("/gestao");
-
-  await prisma.$transaction(async (tx) => {
-    for (const m of mudancas) {
-      await tx.produto.update({ where: { id: m.id }, data: { precoCents: m.depois } });
-      await registrarAtividade(
-        tx, usuario, "PRECO_ALTERADO",
-        `${m.nome}: ${m.antes === null ? "sem preço" : reais(m.antes)} → ${reais(m.depois)} (custo ${reais(m.custoCents)})`, m.id
-      );
-    }
-  });
-  revalidatePath("/gestao");
-  redirect("/gestao?ok=1");
 }
