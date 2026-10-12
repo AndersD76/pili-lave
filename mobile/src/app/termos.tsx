@@ -1,6 +1,6 @@
 import { Redirect, router } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { api } from "@/lib/api";
 import { mascaraNascimento, nascimentoParaApi } from "@/lib/nascimento";
 import { useSession } from "@/lib/session";
@@ -32,6 +32,22 @@ export default function Termos() {
   if (!me) return <Redirect href="/cadastro" />;
   const faltaNascimento = !me.nascimento;
   const nascimentoApi = nascimentoParaApi(nascimento);
+  // O que ainda falta pra liberar o botão — dito na tela, pra ninguém ficar
+  // olhando um botão apagado sem saber por quê.
+  const falta = !termo
+    ? ""
+    : faltaNascimento && !nascimentoApi
+    ? "Informe sua data de nascimento completa (dia, mês e ano)."
+    : !aceito
+    ? "Marque \"Li e aceito o termo de uso\" para continuar."
+    : "";
+
+  function digitarNascimento(v: string) {
+    const mascarado = mascaraNascimento(v);
+    setNascimento(mascarado);
+    // teclado numérico não tem tecla de fechar: some sozinho com a data completa
+    if (mascarado.length === 10) Keyboard.dismiss();
+  }
 
   async function aceitar() {
     if (!termo) return;
@@ -50,7 +66,15 @@ export default function Termos() {
 
   return (
     <Screen>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 14, paddingVertical: 24 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        // tocar fora do campo ou arrastar a tela fecha o teclado, e o toque
+        // na caixa/botão vale mesmo com o teclado aberto
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        contentContainerStyle={{ gap: 14, paddingVertical: 24 }}
+      >
         <View>
           <H1>Termo de uso</H1>
           <Sub>Para usar o app é preciso ler e aceitar o termo abaixo.</Sub>
@@ -68,14 +92,14 @@ export default function Termos() {
             <Label>Data de nascimento</Label>
             <Input
               placeholder="DD/MM/AAAA" keyboardType="number-pad" maxLength={10}
-              value={nascimento} onChangeText={(v) => setNascimento(mascaraNascimento(v))}
+              value={nascimento} onChangeText={digitarNascimento}
             />
           </View>
         )}
         <Pressable
           accessibilityRole="checkbox"
           accessibilityState={{ checked: aceito }}
-          onPress={() => setAceito((a) => !a)}
+          onPress={() => { Keyboard.dismiss(); setAceito((a) => !a); }}
           style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
         >
           <View
@@ -87,11 +111,13 @@ export default function Termos() {
           <Text style={{ fontFamily: F.body, fontSize: 15, color: C.cromo, flex: 1 }}>Li e aceito o termo de uso</Text>
         </Pressable>
         <ErrText>{error}</ErrText>
+        {falta ? <Sub>{falta}</Sub> : null}
         <Btn
           title="Aceitar e continuar" onPress={aceitar} loading={loading}
           disabled={!termo || !aceito || (faltaNascimento && !nascimentoApi)}
         />
       </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
