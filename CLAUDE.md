@@ -4,7 +4,10 @@ Leia isto primeiro, depois (antes de mexer em código) leia **[README.md](README
 e **[GUIA_TECNICO_COMPLETO.md](GUIA_TECNICO_COMPLETO.md)** — esse último é a
 referência técnica completa (arquitetura, firmware, backend, banco de dados,
 pendências conhecidas). Os guias de uso ficam em `docs/treinamento/`
-(`GUIA_ADMIN.md`, `GUIA_LAVADOR.md`, `GUIA_CLIENTE.md`).
+(`GUIA_ADMIN.md`, `GUIA_LAVADOR.md`, `GUIA_CLIENTE.md`, `GUIA_LOJISTA.md`).
+A cada etapa da loja de conveniência, atualizar o `GUIA_LOJISTA.md` e as
+seções de loja do `GUIA_ADMIN.md` (9) e do `GUIA_CLIENTE.md` (13), além do
+`PROJETO_LOJA_AUTOSERVICE.md`.
 
 ## O que é este projeto
 

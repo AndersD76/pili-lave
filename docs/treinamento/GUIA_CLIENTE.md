@@ -177,6 +177,62 @@ Além de cliente, você também pode ter uma capacidade extra no sistema — **L
 
 ---
 
+## 13. Loja de conveniência (em teste)
+
+> ⚠️ **Em construção.** A loja de conveniência e as telas desta seção funcionam hoje só no ambiente de teste, não no app em produção. Quando forem liberadas, o começo deste guia (cadastro e primeira abertura) será ajustado.
+
+### O que muda ao abrir o app
+
+- **Data de nascimento** no cadastro.
+- **Termo de uso**: na primeira abertura é preciso ler e aceitar o termo para usar o app. Quem já tem conta aceita na próxima vez que abrir, e informa a data de nascimento na mesma tela.
+- **Tela de escolha**: depois de entrar, o app pergunta o que você quer usar — **Loja conveniência** ou **Lavagem expressa**. A lavagem continua igual a tudo o que este guia descreve. Dá para trocar de um para o outro a qualquer momento.
+
+![Tela de escolha](imagens/cliente/17-escolha.png)
+
+### Primeira vez na loja: sua foto
+
+Ao tocar em **Loja conveniência** pela primeira vez, o app pede uma **foto do seu rosto**. É por ela que o caixa da loja reconhece você na hora de pagar.
+
+1. Toque em **"Tirar foto"**, de frente, em lugar claro, sem boné nem óculos escuros.
+2. Marque a caixa autorizando o uso da imagem para esse reconhecimento.
+3. Toque em **"Enviar foto"**.
+
+Quem usa só a lavagem não precisa tirar foto. Para refazer, use **"Trocar minha foto"** na tela da loja.
+
+![Tirando a foto do rosto](imagens/cliente/18-foto.png)
+
+### A tela da loja
+
+- **Seu código de cliente** — um número só seu. É por ele que a loja registra sua entrada.
+- **Saldo disponível** — a mesma carteira da lavagem paga as compras da loja.
+- **Lojas** — as lojas abertas, com endereço e capacidade.
+
+![Tela da loja de conveniência](imagens/cliente/19-loja.png)
+
+### Como vai funcionar a compra
+
+1. Você abre a porta pelo app. Entra uma pessoa por vez por abertura; ao entrar com criança, é só declarar.
+2. A loja comporta **3 pessoas por vez**. Se estiver cheia, o app avisa "Ocupação máxima esgotada, aguarde".
+3. Pegue o que quiser e passe cada item no caixa de autoatendimento.
+4. Pague com o saldo do app ou no cartão.
+5. Saia. A porta sempre abre por dentro.
+
+A loja é filmada o tempo todo, e o sistema confere o que saiu das prateleiras com o que foi pago. Isso está descrito no termo de uso.
+
+### Falar com o suporte da loja
+
+Em cada loja da lista há o botão **"Falar com o suporte"**. Sua mensagem vai para o responsável pela loja, e a resposta aparece na mesma tela, em até 24 horas.
+
+### Se sua entrada for bloqueada
+
+O responsável por uma loja pode bloquear a entrada de alguém por problema de conduta. Nesse caso a loja aparece com o aviso de bloqueio e a orientação de falar com o suporte, pelo mesmo botão. O bloqueio vale só para aquela loja.
+
+### Tem uma loja? Vire Dono de loja
+
+Funciona como os outros pedidos da seção 12: marque **"Sou dono de loja"** no cadastro, ou peça em **Perfil**. Depois de aprovado e com a loja vinculada, aparece o botão **"Minha loja"** na tela da loja de conveniência (ver *Guia do Lojista*).
+
+---
+
 ## Resumo rápido
 
 ```
@@ -185,4 +241,5 @@ Cadastrar veículo -> Escolher unidade -> Reservar lavagem (aí sim precisa de s
 Chegar na máquina (câmera reconhece, ou "Cheguei" manual) -> luz verde -> lavar -> pronto
 Quer só aspirador? -> tela da unidade -> botão "X min de aspirador de pó" -> Comprar -> Começar agora
 Quer ser Lavador/Vendedor/Aluguel? -> Perfil -> "Também é lavador, vendedor ou aluguel?" -> Pedir
+Loja de conveniência (em teste) -> aceitar o termo -> escolher "Loja conveniência" -> tirar a foto -> ver as lojas
 ```

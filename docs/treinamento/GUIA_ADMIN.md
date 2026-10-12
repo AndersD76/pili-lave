@@ -31,7 +31,7 @@ Mostra o retrato da operação:
 
 ![Visão geral do admin](imagens/admin/02-visao-geral.png)
 
-No topo, o menu vai te levar pras outras seções: **Lavagens**, **Usuários**, **Preços**, **Máquinas**.
+No topo, o menu vai te levar pras outras seções: **Lavagens**, **Usuários**, **Máquinas**, **Lojas**, **Preços**, **Repasses**.
 
 ---
 
@@ -76,7 +76,7 @@ Um **número vermelho** ao lado do link "Usuários", no menu do topo, mostra qua
 
 ### Filtrando por tipo de cadastro
 
-Acima da lista de usuários tem abas: **Todos / Cliente / Lavador / Comissão 1 / Comissão 2 / Aluguel / Admin**, cada uma com a contagem de pessoas. Clique numa aba pra filtrar a lista só por aquele tipo — útil quando a lista de usuários está grande e você quer achar, por exemplo, só quem recebe aluguel.
+Acima da lista de usuários tem abas: **Todos / Cliente / Lavador / Comissão 1 / Comissão 2 / Aluguel / Dono de loja / Admin**, cada uma com a contagem de pessoas. Clique numa aba pra filtrar a lista só por aquele tipo — útil quando a lista de usuários está grande e você quer achar, por exemplo, só quem recebe aluguel.
 
 ### Como promover alguém direto (sem esperar o pedido)
 
@@ -179,6 +179,49 @@ Se uma máquina falhar, ficar sem internet, ou a câmera parar de mandar foto, v
 
 ---
 
+## 9. Lojas de conveniência (`/admin/lojas`)
+
+> ⚠️ **Em construção.** A loja de conveniência funciona hoje só no ambiente de teste, não em produção. Esta seção é atualizada a cada etapa do projeto.
+
+A loja de conveniência é um produto novo, no mesmo app da lavagem. O dia a dia de cada loja (produtos, estoque, mensagens de clientes) é do **dono da loja** — ver o *Guia do Lojista*. O seu papel como administrador é aprovar os donos e cuidar do cadastro das lojas.
+
+### Aprovando um dono de loja
+
+O pedido de **Dono de loja** chega como os outros, em **Usuários** → "Cadastros a aprovar" (seção 4). A pessoa pede no cadastro ("Sou dono de loja") ou depois, pelo Perfil.
+
+- Aprovar **não muda o papel** da pessoa: ela continua Cliente (ou Lavador/Parceiro, se já era). O que muda é que ela passa a poder ser escolhida como dono de uma loja.
+- Em Usuários, a aba de filtro **"Dono de loja"** mostra quem já foi aprovado.
+
+### A página Lojas
+
+![Página de lojas no admin](imagens/admin/10-lojas.png)
+
+Cada loja aparece num cartão com:
+- **Nome, endereço, cidade e UF**.
+- **Capacidade** — quantas pessoas cabem ao mesmo tempo (padrão: 3).
+- **Dono** — a lista só mostra quem tem o pedido de Dono de loja aprovado.
+- **Loja aberta (aparece no app)** — desmarcada, a loja some da lista dos clientes.
+- Uma linha de situação: se o computador da loja já está vinculado, quantos clientes estão bloqueados e quantas mensagens de suporte estão sem resposta.
+
+### Como uma loja nova chega aqui
+
+O caminho normal é a loja **aparecer sozinha**: quando o computador dela é ligado pela primeira vez, o técnico escolhe o endereço na tela e a loja é criada, **fechada e sem dono**. Você então:
+
+1. Abre **Lojas** e encontra a loja nova.
+2. Escolhe o **Dono**.
+3. Confere a **capacidade**.
+4. Marca **"Loja aberta"** quando ela estiver pronta para receber clientes.
+5. Clica em **Salvar**.
+
+Também dá para cadastrar a loja à mão, no formulário **"Nova loja"** no fim da página. Nesse caso ela fica "sem computador vinculado" até o técnico ligar o computador e escolher essa loja na lista.
+
+### O que o administrador não faz
+
+- **Estoque e produtos**: ficam no computador de cada loja, não no painel.
+- **Bloquear cliente e responder suporte**: é o dono que faz, pelo app. Se a loja ainda não tem dono, as mensagens de suporte dela chegam como aviso para os administradores.
+
+---
+
 ## Resumo rápido
 
 ```
@@ -187,4 +230,5 @@ Login -> Visão geral (números do negócio)
        -> Usuários (Cadastros a aprovar, filtro por tipo, promover direto)
        -> Preços (nome dos 4 tipos)
        -> Máquinas (aba por unidade -> preço, status, aspirador, participação (lavagem + aspirador), divisão, histórico)
+       -> Lojas (em teste: aprovar dono em Usuários -> definir dono, capacidade e abrir a loja)
 ```

@@ -38,7 +38,17 @@ pili-lave/
 ## Documentação
 
 - **[GUIA_TECNICO_COMPLETO.md](GUIA_TECNICO_COMPLETO.md)** — referência técnica completa (arquitetura, firmware, backend, banco de dados). Comece por aqui para entender o sistema inteiro.
-- **[docs/treinamento/](docs/treinamento/)** — guias de uso para cada público: **[GUIA_ADMIN.md](docs/treinamento/GUIA_ADMIN.md)**, **[GUIA_LAVADOR.md](docs/treinamento/GUIA_LAVADOR.md)**, **[GUIA_CLIENTE.md](docs/treinamento/GUIA_CLIENTE.md)**.
+- **[docs/treinamento/](docs/treinamento/)** — guias de uso para cada público: **[GUIA_ADMIN.md](docs/treinamento/GUIA_ADMIN.md)**, **[GUIA_LAVADOR.md](docs/treinamento/GUIA_LAVADOR.md)**, **[GUIA_CLIENTE.md](docs/treinamento/GUIA_CLIENTE.md)**, **[GUIA_LOJISTA.md](docs/treinamento/GUIA_LOJISTA.md)**.
+- **[PROJETO_LOJA_AUTOSERVICE.md](PROJETO_LOJA_AUTOSERVICE.md)** — loja de conveniência: conceito, decisões tomadas, ordem de construção e o que já está pronto.
+
+## Loja de conveniência (em construção)
+
+Produto novo, no mesmo app: loja em container, sem caixa humano. O cliente entra pelo app, pega os produtos, passa no totem de autoatendimento e paga com a carteira ou no cartão; câmeras conferem o que saiu das prateleiras.
+
+- No app, a porta de entrada passa a ser a escolha entre **Loja conveniência** e **Lavagem expressa**.
+- O `server/` guarda o cadastro das lojas, quem é o dono, bloqueio de clientes e suporte.
+- Cada loja roda o programa da pasta `loja/` no seu computador, com banco próprio (produtos, estoque).
+- **Situação**: etapa 1 (cadastro do cliente, lojas, dono, bloqueio e suporte) e o início da etapa 2 (programa da loja: primeiro uso, produtos e estoque) estão prontos **só no ambiente local**; nada disso está em produção.
 
 ## Rodar local
 
@@ -49,6 +59,11 @@ cp .env.example .env   # preencha Neon, Asaas, senha do admin
 npm install
 npx prisma migrate dev
 npm run dev             # http://localhost:3000/app (PWA) e /admin
+
+# programa da loja de conveniência (porta 3100) — precisa do servidor acima no ar
+cd loja
+npm install
+npm run dev             # http://localhost:3100
 
 # app mobile (Expo Go no celular, mesma rede WiFi)
 cd mobile
