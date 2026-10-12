@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { conferirFotoRosto } from "@/lib/rosto";
 import { TERMOS_VERSAO } from "@/lib/termos";
 
 /* A PWA reduz pra 640px antes de mandar (~60 KB); o app nativo depende dos
@@ -35,14 +36,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "A foto precisa ser uma imagem JPEG" }, { status: 400 });
   if (jpeg.length > MAX_BYTES) return NextResponse.json({ error: "Foto grande demais" }, { status: 413 });
 
+  // Tem que ser o rosto de uma pessoa — garrafa, parede ou foto em grupo
+  // não entram. Se não der pra conferir (IA fora do ar), a foto é aceita e
+  // fica marcada como não conferida, pra não travar o cadastro.
+  const conferencia = await conferirFotoRosto(jpeg);
+  if (conferencia.situacao === "RECUSADA") {
+    await prisma.event.create({
+      data: { type: "foto_rosto_recusada", payload: { userId: auth.user.id, mensagem: conferencia.mensagem } },
+    });
+    return NextResponse.json({ error: conferencia.mensagem }, { status: 422 });
+  }
+  const conferida = conferencia.situacao === "APROVADA";
+
   const agora = new Date();
   await prisma.fotoRosto.upsert({
     where: { userId: auth.user.id },
-    create: { userId: auth.user.id, jpeg, bytes: jpeg.length, consentimentoEm: agora },
-    update: { jpeg, bytes: jpeg.length, consentimentoEm: agora, criadaEm: agora },
+    create: { userId: auth.user.id, jpeg, bytes: jpeg.length, consentimentoEm: agora, conferida },
+    update: { jpeg, bytes: jpeg.length, consentimentoEm: agora, criadaEm: agora, conferida },
   });
   await prisma.event.create({
-    data: { type: "foto_rosto_enviada", payload: { userId: auth.user.id, bytes: jpeg.length } },
+    data: {
+      type: "foto_rosto_enviada",
+      payload: {
+        userId: auth.user.id, bytes: jpeg.length, conferida,
+        ...(conferencia.situacao === "NAO_CONFERIDA" ? { motivo: conferencia.motivo } : {}),
+      },
+    },
   });
   return NextResponse.json({ ok: true });
 }

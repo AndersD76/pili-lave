@@ -3,6 +3,7 @@ import {
   ActivityIndicator, Pressable, StyleSheet, Text, TextInput, TextInputProps, View, ViewStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { API_URL } from "./lib/api";
 import { C, F } from "./theme";
 
 export function Screen({ children, style }: { children: ReactNode; style?: ViewStyle }) {
@@ -55,6 +56,19 @@ export function Btn({
 
 export function Input(props: TextInputProps) {
   return <TextInput placeholderTextColor={C.aco} {...props} style={[s.input, props.style]} />;
+}
+
+/** Aviso de que o app está falando com um servidor de TESTE (endereço
+ *  http:// da rede local) — some sozinho quando aponta pra produção
+ *  (https). Existe porque o mesmo app abre no Expo Go pelos dois caminhos e
+ *  não dá pra distinguir de outro jeito. */
+export function SeloServidor() {
+  if (!API_URL.startsWith("http://")) return null;
+  return (
+    <Text style={{ fontFamily: F.body, fontSize: 12, color: C.atencao, textAlign: "center" }}>
+      Servidor de teste · {API_URL.replace("http://", "")}
+    </Text>
+  );
 }
 
 export function ErrText({ children }: { children: ReactNode }) {

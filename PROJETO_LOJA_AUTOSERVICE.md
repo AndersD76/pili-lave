@@ -128,6 +128,7 @@ Feito no servidor e na PWA:
 - Banco: `User.codigoCliente`, `User.nascimento`, `User.termosVersao`, `User.termosAceitosEm` e a tabela `FotoRosto` (migration `20261011150000_loja_cadastro_cliente`, aplicada só no Postgres local).
 - `POST /api/termos` (aceite, exige data de nascimento) e `POST /api/me/foto` (foto com autorização específica).
 - `/api/me`, login e cadastro devolvem `codigoCliente`, `nascimento`, `termosAceitos`, `temFoto`.
+- A foto do rosto é conferida por IA antes de ser aceita: precisa ser uma pessoa só, de frente, com o rosto visível. Sem a chave da IA configurada (caso do ambiente local hoje), a foto é aceita e fica marcada como "não conferida".
 - Telas da PWA: `/app/escolha`, `/app/termos`, `/app/loja`, `/app/loja/foto`; data de nascimento no cadastro. Testadas no servidor local (chamadas da API e carregamento das páginas).
 - As mesmas telas no app nativo (`mobile/`: `escolha`, `termos`, `loja`, `loja-foto`). O código compila, mas **ainda não foi testado num celular**.
 
@@ -139,7 +140,7 @@ Feito no servidor e na PWA:
 
 Falta na etapa 1:
 - Testar o app nativo no celular (principalmente a tela da foto e a área do dono).
-- Aplicar as três migrations em produção quando for a hora (não foi feito).
+- Aplicar as quatro migrations em produção quando for a hora (não foi feito).
 
 ### Etapa 2 — especificação do programa do computador da loja
 

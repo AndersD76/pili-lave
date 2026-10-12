@@ -3,7 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import { Pressable, Text, View } from "react-native";
 import { ONBOARDING_PENDENTE } from "@/lib/nascimento";
 import { useSession } from "@/lib/session";
-import { Screen, Sub } from "@/ui";
+import { Screen, SeloServidor, Sub } from "@/ui";
 import { C, F } from "@/theme";
 
 function Opcao({ titulo, texto, onPress }: { titulo: string; texto: string; onPress: () => void }) {
@@ -28,7 +28,7 @@ function Opcao({ titulo, texto, onPress }: { titulo: string; texto: string; onPr
  * conveniência tem seu próprio caminho (/loja).
  */
 export default function Escolha() {
-  const { me } = useSession();
+  const { me, signOut } = useSession();
 
   if (!me) return <Redirect href="/cadastro" />;
   if (!me.termosAceitos) return <Redirect href="/termos" />;
@@ -56,6 +56,15 @@ export default function Escolha() {
         onPress={() => router.push("/loja")}
       />
       <Opcao titulo="Lavagem expressa" texto="Reserve pelo app e a máquina lava sozinha." onPress={irLavagem} />
+      {/* sair fica aqui também: quem só usa a loja nunca passa pelo Perfil
+          (que mora nas abas da lavagem). Sem sessão, a tela cai no cadastro. */}
+      <Text
+        style={{ fontFamily: F.body, fontSize: 14, color: C.acoD, textAlign: "center", marginTop: 8 }}
+        onPress={signOut}
+      >
+        Sair da conta
+      </Text>
+      <SeloServidor />
     </Screen>
   );
 }

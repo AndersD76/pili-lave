@@ -267,6 +267,10 @@ model FotoRosto {
   jpeg            Bytes
   bytes           Int
   consentimentoEm DateTime
+  /// true = a IA confirmou que é o rosto de UMA pessoa (lib/rosto.ts).
+  /// false = foi aceita sem conferir (IA fora do ar ou sem chave) — fica
+  /// marcada pra poder ser conferida depois.
+  conferida       Boolean  @default(false)
   criadaEm        DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

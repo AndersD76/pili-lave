@@ -5,7 +5,7 @@ import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, Vie
 import { api, type Me, type TipoParceiro } from "@/lib/api";
 import { mascaraNascimento, nascimentoParaApi, ONBOARDING_PENDENTE } from "@/lib/nascimento";
 import { useSession } from "@/lib/session";
-import { Btn, ErrText, Input, Screen, Sub } from "@/ui";
+import { Btn, ErrText, Input, Screen, SeloServidor, Sub } from "@/ui";
 import { C, F } from "@/theme";
 
 const OPCOES_TIPO: { k: TipoParceiro; label: string }[] = [
@@ -142,6 +142,7 @@ export default function Cadastro() {
           >
             Já tenho uma conta
           </Text>
+          <SeloServidor />
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { KeyboardAvoidingView, Platform, Text, View } from "react-native";
 import { api, type Me } from "@/lib/api";
 import { useSession } from "@/lib/session";
-import { Btn, ErrText, Input, Screen, Sub } from "@/ui";
+import { Btn, ErrText, Input, Screen, SeloServidor, Sub } from "@/ui";
 import { C, F } from "@/theme";
 
 export default function Login() {
@@ -63,6 +63,7 @@ export default function Login() {
         >
           Criar conta
         </Text>
+        <SeloServidor />
       </KeyboardAvoidingView>
     </Screen>
   );

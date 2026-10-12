@@ -1,7 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, getToken, type Me } from "../client";
+import { api, getToken, setToken, type Me } from "../client";
 import { Logo } from "../Logo";
 
 /** Marcada pelo cadastro: a primeira ida pra lavagem passa pelo onboarding. */
@@ -51,6 +51,14 @@ export default function Escolha() {
         <span className="nome">Lavagem expressa</span>
         <span className="sub" style={{ display: "block" }}>Reserve pelo app e a máquina lava sozinha.</span>
       </button>
+      {/* sair fica aqui também: quem só usa a loja nunca passa pelo Perfil
+          (que mora na barra da lavagem). */}
+      <p
+        className="sub center" style={{ cursor: "pointer" }}
+        onClick={() => { setToken(null); router.replace("/app/login"); }}
+      >
+        Sair da conta
+      </p>
     </div>
   );
 }

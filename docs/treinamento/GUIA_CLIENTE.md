@@ -197,6 +197,8 @@ Ao tocar em **Loja conveniência** pela primeira vez, o app pede uma **foto do s
 2. Marque a caixa autorizando o uso da imagem para esse reconhecimento.
 3. Toque em **"Enviar foto"**.
 
+O sistema confere a foto na hora: se não for o rosto de uma pessoa só, de frente e bem visível, ele explica o problema e pede outra.
+
 Quem usa só a lavagem não precisa tirar foto. Para refazer, use **"Trocar minha foto"** na tela da loja.
 
 ![Tirando a foto do rosto](imagens/cliente/18-foto.png)
