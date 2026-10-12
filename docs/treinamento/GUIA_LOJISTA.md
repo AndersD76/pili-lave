@@ -153,6 +153,7 @@ No menu do topo, **"Entradas"** (para quem tem a permissão de dar entrada).
 3. Em cada item, confira:
    - **Produto na loja** — o sistema já sugere. Ele reconhece pelo código de barras e, quando a nota não traz, pelo que você escolheu na última nota daquele fornecedor. O que ele não reconhece vem como **"Criar produto novo"**. Você pode trocar por um produto existente ou escolher **"Não dar entrada neste item"**.
    - **Unidades** — quantas unidades de venda vão para a prateleira. Se a nota veio em caixas (a coluna "Veio como" mostra, por exemplo, "2 CX"), confira se o número está em unidades.
+   - **Preço de venda** (só para quem pode alterar preço) — opcional. Digite um **percentual sobre o custo** (`30%` = custo mais 30%) ou o **preço direto** (`5,90`). Em branco, o preço do produto não muda. Embaixo do campo aparece o preço de hoje.
 4. Clique em **"Confirmar e dar entrada"**. Só aí o estoque muda.
 
 ![Conferência da nota](imagens/lojista/05e-conferencia.png)
