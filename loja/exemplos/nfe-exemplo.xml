@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- NOTA FICTÍCIA, só para testar a entrada por nota fiscal no programa da loja.
+     Fornecedor, CNPJ e chave são inventados; não é um documento fiscal. -->
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
+  <NFe>
+    <infNFe Id="NFe43261012345678000199550010000012341000012345" versao="4.00">
+      <ide>
+        <cUF>43</cUF>
+        <natOp>VENDA DE MERCADORIA</natOp>
+        <mod>55</mod>
+        <serie>1</serie>
+        <nNF>1234</nNF>
+        <dhEmi>2026-10-10T09:30:00-03:00</dhEmi>
+        <tpNF>1</tpNF>
+      </ide>
+      <emit>
+        <CNPJ>12345678000199</CNPJ>
+        <xNome>DISTRIBUIDORA EXEMPLO DE BEBIDAS LTDA</xNome>
+        <xFant>Distribuidora Exemplo</xFant>
+      </emit>
+      <det nItem="1">
+        <prod>
+          <cProd>BEB-0001</cProd>
+          <cEAN>7894900011517</cEAN>
+          <xProd>REFRIG COCA-COLA LATA 350ML</xProd>
+          <NCM>22021000</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>UN</uCom>
+          <qCom>24.0000</qCom>
+          <vUnCom>2.9500</vUnCom>
+          <vProd>70.80</vProd>
+          <cEANTrib>7894900011517</cEANTrib>
+          <uTrib>UN</uTrib>
+          <qTrib>24.0000</qTrib>
+          <vUnTrib>2.9500</vUnTrib>
+        </prod>
+      </det>
+      <det nItem="2">
+        <prod>
+          <cProd>BEB-0207</cProd>
+          <cEAN>17896004000852</cEAN>
+          <xProd>AGUA MINERAL SEM GAS 500ML CX C/12</xProd>
+          <NCM>22011000</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>CX</uCom>
+          <qCom>2.0000</qCom>
+          <vUnCom>11.4000</vUnCom>
+          <vProd>22.80</vProd>
+          <cEANTrib>7896004000855</cEANTrib>
+          <uTrib>UN</uTrib>
+          <qTrib>24.0000</qTrib>
+          <vUnTrib>0.9500</vUnTrib>
+        </prod>
+      </det>
+      <det nItem="3">
+        <prod>
+          <cProd>SNK-0310</cProd>
+          <cEAN>7891000100103</cEAN>
+          <xProd>BISCOITO RECHEADO CHOCOLATE 130G</xProd>
+          <NCM>19053100</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>UN</uCom>
+          <qCom>20.0000</qCom>
+          <vUnCom>1.8900</vUnCom>
+          <vProd>37.80</vProd>
+          <cEANTrib>7891000100103</cEANTrib>
+          <uTrib>UN</uTrib>
+          <qTrib>20.0000</qTrib>
+          <vUnTrib>1.8900</vUnTrib>
+        </prod>
+      </det>
+      <det nItem="4">
+        <prod>
+          <cProd>GEL-0042</cProd>
+          <cEAN>SEM GTIN</cEAN>
+          <xProd>GELO EM CUBOS PACOTE 2KG</xProd>
+          <NCM>22019000</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>PC</uCom>
+          <qCom>10.0000</qCom>
+          <vUnCom>3.5000</vUnCom>
+          <vProd>35.00</vProd>
+          <cEANTrib>SEM GTIN</cEANTrib>
+          <uTrib>PC</uTrib>
+          <qTrib>10.0000</qTrib>
+          <vUnTrib>3.5000</vUnTrib>
+        </prod>
+      </det>
+      <total>
+        <ICMSTot>
+          <vProd>166.40</vProd>
+          <vNF>166.40</vNF>
+        </ICMSTot>
+      </total>
+    </infNFe>
+  </NFe>
+  <protNFe versao="4.00">
+    <infProt>
+      <chNFe>43261012345678000199550010000012341000012345</chNFe>
+      <cStat>100</cStat>
+    </infProt>
+  </protNFe>
+</nfeProc>

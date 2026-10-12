@@ -142,6 +142,51 @@ Abaixo ficam os últimos 50 movimentos do produto: quando, o tipo (entrada, vend
 
 ---
 
+## 6d. Entrada de mercadoria por nota fiscal
+
+No menu do topo, **"Entradas"** (para quem tem a permissão de dar entrada).
+
+![Entrada por nota fiscal](imagens/lojista/05d-entradas.png)
+
+1. Em **"Entrada por nota fiscal"**, escolha o arquivo **.xml** da nota do fornecedor e clique em **"Ler nota"**. Tem que ser o XML: o PDF da nota não serve. O fornecedor é obrigado a fornecer o XML.
+2. Abre a **conferência**, com o fornecedor, o número e o total da nota, e uma linha para cada item.
+3. Em cada item, confira:
+   - **Produto na loja** — o sistema já sugere. Ele reconhece pelo código de barras e, quando a nota não traz, pelo que você escolheu na última nota daquele fornecedor. O que ele não reconhece vem como **"Criar produto novo"**. Você pode trocar por um produto existente ou escolher **"Não dar entrada neste item"**.
+   - **Unidades** — quantas unidades de venda vão para a prateleira. Se a nota veio em caixas (a coluna "Veio como" mostra, por exemplo, "2 CX"), confira se o número está em unidades.
+4. Clique em **"Confirmar e dar entrada"**. Só aí o estoque muda.
+
+![Conferência da nota](imagens/lojista/05e-conferencia.png)
+
+O que acontece na confirmação:
+- O estoque de cada produto sobe e o extrato mostra a entrada com o número da nota.
+- O **custo** do produto passa a ser o total do item dividido pelas unidades.
+- Produto novo nasce **sem preço de venda** e aparece no painel até você definir o preço.
+- O sistema guarda qual produto corresponde a cada código daquele fornecedor, para a próxima nota já vir preenchida.
+
+Regras:
+- **A mesma nota não entra duas vezes.** Se você enviar de novo, o sistema avisa quando ela entrou.
+- Nota enviada e não confirmada fica em **"Notas aguardando conferência"**, para continuar depois ou **descartar**.
+- Nada entra pela metade: ou a nota inteira é lançada, ou nada muda.
+
+> 💡 Para treinar, há uma nota fictícia na pasta do programa: `loja/exemplos/nfe-exemplo.xml`.
+
+## 6e. Relatórios
+
+No menu do topo, **"Relatórios"** (para o lojista e para quem tem a permissão de ver relatórios).
+
+![Relatórios](imagens/lojista/05f-relatorios.png)
+
+| Relatório | O que mostra |
+|---|---|
+| **Estoque** | A posição de agora: cada produto com estoque, mínimo, custo, preço e valor; total de unidades e valor do estoque a custo e a preço de venda |
+| **Entradas** | O que entrou no período, item a item: nota ou manual, fornecedor, quantidade, custo e quem lançou |
+| **Saídas (vendas)** | O que foi vendido no período, por produto, do mais vendido para o menos; número de vendas, total vendido e valor médio por venda |
+| **Perdas e ajustes** | Perdas lançadas e diferenças de contagem no período, com motivo e quem lançou |
+
+- Entradas, Saídas e Perdas usam um **período**: escolha as datas em "De" e "Até" e clique em **Aplicar**. Sem escolher, vale do dia 1 do mês até hoje.
+- **"Baixar planilha (CSV)"** baixa o relatório que está na tela, para abrir no Excel.
+- No relatório de perdas, o valor é calculado pelo custo atual de cada produto. Ajuste negativo é produto que o sistema esperava e não estava na prateleira na contagem.
+
 ## 6a. O caixa (tela do cliente) e as vendas
 
 A tela que fica aberta no computador é o **caixa de autoatendimento**:
@@ -174,9 +219,10 @@ Em **"Novo funcionário"**, informe o nome, o **usuário** que ele vai digitar p
 |---|---|
 | Cadastrar e editar produtos | Criar produto e mudar nome, código de barras, custo, mínimo, unidade, ativar e desativar |
 | Alterar preço de venda | Mudar o preço |
-| Dar entrada de mercadoria | Lançar quantidade que chegou |
+| Dar entrada de mercadoria | Lançar quantidade que chegou, à mão ou por nota fiscal |
 | Registrar perda | Baixar produto vencido, quebrado ou furtado |
 | Fazer contagem de inventário | Ajustar o estoque pelo que foi contado |
+| Ver relatórios | Abrir os relatórios e baixar as planilhas |
 
 Ver o painel e consultar produtos e estoque todo funcionário ativo pode. Usuários e Atividades são só seus.
 
@@ -243,8 +289,7 @@ Para liberar de novo, toque em **Desbloquear** ao lado do nome. O histórico do 
 
 | Recurso | Situação |
 |---|---|
-| Entrada de mercadoria por nota fiscal (arquivo XML ou PDF) | Próximo passo |
-| Relatórios por período (entradas, saídas, estoque) | Próximo passo |
+| Entrada por nota fiscal a partir do PDF (hoje só o XML) | Depois, com uma nota real para calibrar |
 | Pagamento de verdade no caixa (saldo do app e maquininha) e identificação do cliente | A fazer (o caixa já funciona com pagamento simulado) |
 | Abertura da porta pelo celular e controle de capacidade | A fazer |
 | Modo reposição (loja bloqueada para clientes enquanto um funcionário repõe) | A fazer, junto com a porta |

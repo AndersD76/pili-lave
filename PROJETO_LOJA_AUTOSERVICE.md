@@ -75,7 +75,7 @@ como produto paralelo. Ao abrir o app, o cliente escolhe entre
 ### Usuários do computador da loja
 - A tela principal do computador é sempre **a do cliente** (o caixa). Num canto fica o botão **"Acesso administrativo"**, que pede usuário e senha.
 - **Lojista**: o dono da loja, definido pelo admin. Tem acesso total. Entra com o e-mail e a senha do app; com internet, quem confere é o servidor, e sem internet vale a senha guardada no último acesso.
-- **Funcionário**: cadastrado pelo lojista no próprio computador, com as permissões que ele marcar. Hoje: cadastrar e editar produtos, alterar preço de venda, dar entrada de mercadoria, registrar perda, fazer contagem de inventário. Outras entram conforme o programa cresce.
+- **Funcionário**: cadastrado pelo lojista no próprio computador, com as permissões que ele marcar. Hoje: cadastrar e editar produtos, alterar preço de venda, dar entrada de mercadoria (manual e por nota), registrar perda, fazer contagem de inventário, ver relatórios. Outras entram conforme o programa cresce.
 - **Toda ação fica registrada** com quem fez, quando e o quê (inclusive o valor antes e depois, em preço e cadastro). Só o lojista vê o registro, e ninguém edita nem apaga.
 - A sessão dura 30 minutos, porque a máquina fica na frente dos clientes.
 - Tirar uma permissão ou desativar um funcionário vale na hora, mesmo que ele esteja logado.
@@ -129,7 +129,7 @@ O item 1 depende de o computador da loja ter Windows Pro e TPM, o que deve entra
 | # | Etapa | Situação |
 |---|---|---|
 | 1 | **Nuvem e app**: termo de uso, data de nascimento, código do cliente, foto do rosto, tela de escolha, cadastro de lojas no admin, dono de loja, bloqueio e suporte | Construída no ambiente local; falta testar no celular |
-| 2 | **Gestão local**: produtos, estoque, entrada de mercadoria, alerta de compra | Em andamento: primeiro uso, usuários com permissões, registro de atividades, painel, produtos e estoque (entrada manual, perda, contagem) prontos; faltam entrada por nota fiscal e relatórios |
+| 2 | **Gestão local**: produtos, estoque, entrada de mercadoria, alerta de compra | Construída, exceto a leitura de nota em PDF: primeiro uso, usuários com permissões, registro de atividades, painel, produtos e estoque, entrada por nota fiscal em XML e relatórios por período com planilha. O PDF fica para quando houver uma nota real para calibrar; o aviso de estoque mínimo no celular depende da sincronização |
 | 3 | **Totem**: carrinho por código de barras, carteira e maquininha, fila offline e sincronização | Em andamento (priorizado em 12/10, antes da nota fiscal): carrinho por código de barras, fechamento da venda e baixa de estoque prontos, com **pagamento simulado**; faltam carteira, maquininha, identificação do cliente e sincronização |
 | 4 | **Entrada**: porta por BLE, credencial offline, capacidade, mensagem de lotação (firmware da trava: Giovani) | A fazer |
 | 5 | **Câmeras**: zonas de prateleira, rastreamento, divergência com imagens para o dono | A fazer |

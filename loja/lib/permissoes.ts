@@ -7,6 +7,7 @@ export const PERMISSOES = [
   { chave: "ENTRADA", rotulo: "Dar entrada de mercadoria" },
   { chave: "PERDA", rotulo: "Registrar perda" },
   { chave: "INVENTARIO", rotulo: "Fazer contagem de inventário" },
+  { chave: "RELATORIOS", rotulo: "Ver relatórios" },
 ] as const;
 
 export type Permissao = (typeof PERMISSOES)[number]["chave"];

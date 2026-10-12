@@ -205,6 +205,16 @@ model EntradaItem {
   @@index([entradaId])
 }
 
+/// Nota fiscal já enviada (XML) e ainda NÃO conferida: fica aqui entre o
+/// envio do arquivo e a confirmação dos itens. Confirmar vira uma Entrada e
+/// apaga esta linha; descartar só apaga.
+model NotaPendente {
+  id        String   @id @default(cuid())
+  xml       String
+  usuarioId String
+  criadaEm  DateTime @default(now())
+}
+
 /// Memória de "o código X deste fornecedor é o produto Y" — o PDF da nota
 /// (DANFE) quase nunca traz o código de barras, só o código interno do
 /// fornecedor. Na segunda nota a conferência já vem preenchida.

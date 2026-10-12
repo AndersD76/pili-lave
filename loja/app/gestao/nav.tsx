@@ -1,11 +1,14 @@
 import Link from "next/link";
 import type { Loja } from "@/lib/config";
-import type { UsuarioGestao } from "@/lib/permissoes";
+import { pode, type Permissao, type UsuarioGestao } from "@/lib/permissoes";
 import { sair } from "../entrar/actions";
 
-const LINKS = [
-  { href: "/gestao", label: "Painel", soLojista: false },
-  { href: "/gestao/produtos", label: "Produtos e estoque", soLojista: false },
+/** `perm`: só aparece pra quem tem essa permissão. `soLojista`: só pro lojista. */
+const LINKS: { href: string; label: string; soLojista?: boolean; perm?: Permissao }[] = [
+  { href: "/gestao", label: "Painel" },
+  { href: "/gestao/produtos", label: "Produtos e estoque" },
+  { href: "/gestao/entradas", label: "Entradas", perm: "ENTRADA" },
+  { href: "/gestao/relatorios", label: "Relatórios", perm: "RELATORIOS" },
   { href: "/gestao/vendas", label: "Vendas", soLojista: true },
   { href: "/gestao/usuarios", label: "Usuários", soLojista: true },
   { href: "/gestao/atividades", label: "Atividades", soLojista: true },
@@ -17,7 +20,7 @@ export function Nav({ loja, usuario, atual }: { loja: Loja; usuario: UsuarioGest
   return (
     <nav className="admin-nav" style={{ flexWrap: "wrap" }}>
       <span className="logo">PILI LOJA<span>.</span></span>
-      {LINKS.filter((l) => !l.soLojista || usuario.papel === "LOJISTA").map((l) => (
+      {LINKS.filter((l) => (!l.soLojista || usuario.papel === "LOJISTA") && (!l.perm || pode(usuario, l.perm))).map((l) => (
         <Link key={l.href} href={l.href} className={l.href === atual ? "on" : ""}>{l.label}</Link>
       ))}
       <span className="sub" style={{ marginLeft: "auto", textAlign: "right" }}>

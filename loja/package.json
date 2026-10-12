@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "fast-xml-parser": "^5.11.2",
     "jose": "^6.2.8",
     "next": "16.3.1",
     "react": "19.2.8",
