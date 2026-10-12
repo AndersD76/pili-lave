@@ -4,7 +4,6 @@ import { randomBytes } from "crypto";
 import { redirect } from "next/navigation";
 import { gravarConfig, lerConfig, lojaConfigurada, NUVEM_URL, SENHA_FABRICA } from "@/lib/config";
 import { cadastrarLojaNaNuvem, ErroNuvem } from "@/lib/nuvem";
-import { abrirSessao, hashSenha, validarSenha } from "@/lib/sessao";
 
 /** Volta pra tela mantendo a cidade buscada, com a mensagem de erro. */
 function voltar(cidade: string, erro: string, substituir = false): never {
@@ -17,6 +16,7 @@ function voltar(cidade: string, erro: string, substituir = false): never {
  * Cadastro da loja no primeiro uso — mesma lógica da máquina de lavagem:
  * este computador gera a própria identidade e o técnico escolhe um endereço
  * da lista (loja ou unidade de lavagem já cadastrada) ou digita um novo.
+ * Quem faz isso é o técnico da instalação — não precisa de usuário.
  */
 export async function cadastrarLoja(formData: FormData) {
   if (await lojaConfigurada()) redirect("/");
@@ -25,13 +25,9 @@ export async function cadastrarLoja(formData: FormData) {
   const escolha = String(formData.get("escolha") ?? "");
   const rua = String(formData.get("rua") ?? "").trim();
   const nome = String(formData.get("nome") ?? "").trim();
-  const senha = String(formData.get("senha") ?? "");
 
   if (!escolha) voltar(cidade, "Escolha um endereço da lista ou marque \"Endereço novo\".");
   if (escolha === "novo" && !rua) voltar(cidade, "Digite a rua e o número do endereço novo.");
-  const erroSenha = validarSenha(senha);
-  if (erroSenha) voltar(cidade, erroSenha);
-  if (senha !== String(formData.get("senha2") ?? "")) voltar(cidade, "As duas senhas não são iguais.");
 
   // Identidade deste computador: gerada uma vez e guardada ANTES de chamar a
   // nuvem — se a chamada falhar e o técnico tentar de novo, é a mesma.
@@ -57,8 +53,9 @@ export async function cadastrarLoja(formData: FormData) {
 
   await gravarConfig({
     lojaId: loja.id, lojaNome: loja.nome, lojaCidade: loja.cidade, lojaRua: loja.rua,
-    lojaCapacidade: String(loja.capacidade), senhaHash: hashSenha(senha),
+    lojaCapacidade: String(loja.capacidade),
   });
-  await abrirSessao();
+  // Não cria senha aqui: quem entra na gestão é o lojista (definido pelo
+  // admin na nuvem) e os funcionários que ele cadastrar.
   redirect("/");
 }

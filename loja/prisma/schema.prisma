@@ -19,11 +19,54 @@ datasource db {
 }
 
 /// Configuração da própria loja, em pares chave/valor: identidade do
-/// computador (deviceKey), loja vinculada na nuvem, senha de gestão…
+/// computador (deviceKey), loja vinculada na nuvem, segredo da sessão…
 /// Ver lib/config.ts pra lista de chaves.
 model Config {
   chave String @id
   valor String
+}
+
+/// Quem opera a gestão neste computador. LOJISTA = o dono da loja (definido
+/// pelo admin na nuvem; entra com o e-mail e a senha do app, conferidos na
+/// nuvem — a senha fica copiada aqui só pra entrar sem internet). FUNCIONARIO
+/// = cadastrado pelo lojista aqui, com as permissões que ele marcar.
+model Usuario {
+  id          String   @id @default(cuid())
+  nome        String
+  /// Funcionário: nome de usuário escolhido pelo lojista. Lojista: o e-mail.
+  login       String   @unique
+  senhaHash   String
+  /// LOJISTA | FUNCIONARIO
+  papel       String
+  /// Lista de permissões em JSON (ver lib/permissoes.ts). Lojista ignora:
+  /// tem acesso total.
+  permissoes  String   @default("[]")
+  ativo       Boolean  @default(true)
+  /// Id do usuário na nuvem — só o lojista tem.
+  nuvemUserId String?  @unique
+  criadoEm    DateTime @default(now())
+
+  atividades Atividade[]
+}
+
+/// Registro de TUDO que alguém fez na gestão (quem, quando, o quê). Só
+/// cresce: nenhuma tela edita ou apaga.
+model Atividade {
+  id          String   @id @default(cuid())
+  usuarioId   String
+  /// Nome na hora da ação — continua legível mesmo se o usuário for renomeado.
+  usuarioNome String
+  /// ENTROU | PRODUTO_CRIADO | PRODUTO_ALTERADO | PRECO_ALTERADO | ENTRADA |
+  /// PERDA | INVENTARIO | USUARIO_CRIADO | USUARIO_ALTERADO
+  acao        String
+  detalhe     String
+  produtoId   String?
+  criadoEm    DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@index([criadoEm])
+  @@index([usuarioId, criadoEm])
 }
 
 model Produto {
@@ -63,6 +106,9 @@ model Movimento {
   /// Saldo do produto logo depois deste movimento.
   saldoApos  Int
   nota       String?
+  /// Quem lançou (Usuario.id). null = venda no totem, ou movimento anterior
+  /// ao cadastro de usuários.
+  usuarioId  String?
   /// Entrada.id (entrada de nota) ou, no futuro, o id da venda no totem.
   refId      String?
   criadoEm   DateTime @default(now())
@@ -97,6 +143,8 @@ model Entrada {
   dataEmissao  DateTime?
   fornecedorId String?
   totalCents   Int      @default(0)
+  /// Quem deu a entrada (Usuario.id).
+  usuarioId    String?
   criadaEm     DateTime @default(now())
 
   fornecedor Fornecedor?   @relation(fields: [fornecedorId], references: [id])

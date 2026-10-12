@@ -72,6 +72,14 @@ como produto paralelo. Ao abrir o app, o cliente escolhe entre
 - Trocar o computador de uma loja que já tem um vinculado pede confirmação (equivale ao "trocou o display" da lavagem).
 - O cadastro manual no admin continua existindo como alternativa.
 
+### Usuários do computador da loja
+- A tela principal do computador é sempre **a do cliente** (o caixa). Num canto fica o botão **"Acesso administrativo"**, que pede usuário e senha.
+- **Lojista**: o dono da loja, definido pelo admin. Tem acesso total. Entra com o e-mail e a senha do app; com internet, quem confere é o servidor, e sem internet vale a senha guardada no último acesso.
+- **Funcionário**: cadastrado pelo lojista no próprio computador, com as permissões que ele marcar. Hoje: cadastrar e editar produtos, alterar preço de venda, dar entrada de mercadoria, registrar perda, fazer contagem de inventário. Outras entram conforme o programa cresce.
+- **Toda ação fica registrada** com quem fez, quando e o quê (inclusive o valor antes e depois, em preço e cadastro). Só o lojista vê o registro, e ninguém edita nem apaga.
+- A sessão dura 30 minutos, porque a máquina fica na frente dos clientes.
+- Tirar uma permissão ou desativar um funcionário vale na hora, mesmo que ele esteja logado.
+
 ### Gestão
 - **Cada loja tem gestão própria e independente no computador local**: itens cadastrados, estoque, entrada de mercadoria, estoque mínimo, alerta de compra.
 - A nuvem guarda usuário, carteira e as vendas sincronizadas. O app mostra **indicadores** para o dono (faturamento, itens mais vendidos, faixa etária de consumo e outros a definir).
@@ -115,7 +123,7 @@ O item 1 depende de o computador da loja ter Windows Pro e TPM, o que deve entra
 | # | Etapa | Situação |
 |---|---|---|
 | 1 | **Nuvem e app**: termo de uso, data de nascimento, código do cliente, foto do rosto, tela de escolha, cadastro de lojas no admin, dono de loja, bloqueio e suporte | Construída no ambiente local; falta testar no celular |
-| 2 | **Gestão local**: produtos, estoque, entrada de mercadoria, alerta de compra | Em andamento: primeiro uso, senha de gestão, painel, produtos e estoque prontos; faltam entrada por nota fiscal e relatórios |
+| 2 | **Gestão local**: produtos, estoque, entrada de mercadoria, alerta de compra | Em andamento: primeiro uso, usuários com permissões, registro de atividades, painel, produtos e estoque (entrada manual, perda, contagem) prontos; faltam entrada por nota fiscal e relatórios |
 | 3 | **Totem**: carrinho por código de barras, carteira e maquininha, fila offline e sincronização | A fazer |
 | 4 | **Entrada**: porta por BLE, credencial offline, capacidade, mensagem de lotação (firmware da trava: Giovani) | A fazer |
 | 5 | **Câmeras**: zonas de prateleira, rastreamento, divergência com imagens para o dono | A fazer |
@@ -159,8 +167,8 @@ Parte do prompt original de controle de estoque (feito no Claude web), ajustada 
 | Prompt original | Como fica | Por quê |
 |---|---|---|
 | Python + Flask + Bootstrap | Next.js + Prisma, com o mesmo visual do painel admin | Mesmos moldes do resto do sistema; o totem (etapa 3) reaproveita tudo. Python fica só com as câmeras. |
-| Abre direto no painel | **Primeiro uso**: escolhe o endereço da loja (existente ou novo) e cria a senha de gestão | Cadastro da loja com a mesma lógica da máquina de lavagem. |
-| Sem senha | Gestão protegida por senha | O computador fica num container sem funcionário; o totem roda na mesma máquina. |
+| Abre direto no painel | **Primeiro uso**: escolhe o endereço da loja (existente ou novo). Depois, a tela principal é a do cliente | Cadastro da loja com a mesma lógica da máquina de lavagem. |
+| Sem senha | Gestão com usuário e senha por pessoa (lojista e funcionários com permissões) e registro de tudo o que cada um faz | O computador fica num container; o totem roda na mesma máquina, e é preciso saber quem fez cada lançamento. |
 | Tabela `saidas` | Tabela única de **movimentações** (entrada, venda, perda, ajuste), com o saldo depois de cada uma | É o extrato do estoque, no mesmo padrão do extrato da carteira; permite auditar e sincronizar. |
 | Leitura de **PDF** da NF-e | **XML da NF-e como forma principal**; PDF como alternativa, sempre com conferência | O PDF (DANFE) normalmente não traz o código de barras dos produtos, só o código interno do fornecedor. O XML traz. |
 | Casar item da nota pelo EAN | Pelo EAN quando existir; senão, o sistema **lembra** qual produto corresponde a cada código daquele fornecedor | Na segunda nota do mesmo fornecedor a conferência já vem preenchida. |

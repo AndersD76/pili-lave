@@ -56,18 +56,26 @@ Na primeira vez que o programa da loja abre, ele mostra a tela **"Cadastro da lo
    - **Loja já cadastrada, com computador vinculado** — só escolha se estiver **trocando o computador** da loja. O sistema pede uma confirmação.
 3. Se o endereço não estiver na lista, marque **"Endereço novo"** e digite rua e número.
 4. Opcional: dê um **nome** para a loja. Sem ele, fica o endereço.
-5. Crie a **senha de gestão** (mínimo 6 caracteres) e repita.
-6. Clique em **"Cadastrar esta loja"**.
+5. Clique em **"Cadastrar esta loja"**.
 
-Depois disso essa tela não aparece mais, e o computador abre direto no painel.
+Depois disso essa tela não aparece mais, e o computador passa a abrir na **tela do cliente**.
 
 > ⚠️ Esse passo precisa de **internet**, porque a loja é registrada no servidor.
 
 > ⚠️ A loja nova nasce **fechada e sem dono**. Ela só aparece para os clientes depois que o administrador define o dono e marca a loja como aberta.
 
-### A senha de gestão
+### Entrando na gestão
 
-Protege o estoque e os cadastros. O computador fica num lugar sem funcionário, e o caixa dos clientes roda nele: quem não tem a senha só usa o caixa. A sessão dura 12 horas; depois o programa pede a senha de novo. Para sair antes, use o botão **Sair** no topo.
+A tela que fica aberta no computador é a do cliente. Para entrar na gestão, clique em **"Acesso administrativo"**, no canto inferior direito, e informe usuário e senha.
+
+![Acesso administrativo](imagens/lojista/02b-acesso-administrativo.png)
+
+- **Você (lojista)** entra com o **e-mail e a senha do app**. O administrador precisa ter definido você como dono desta loja; antes disso ninguém entra.
+- **Funcionários** entram com o usuário e a senha que você cadastrar (seção 6b).
+
+Na primeira vez o computador precisa de **internet** para conferir quem é o dono. Depois disso você consegue entrar mesmo sem internet, com a mesma senha.
+
+A sessão dura **30 minutos**, porque a máquina fica na frente dos clientes. Ao terminar, clique em **Sair** no topo: o programa volta para a tela do cliente.
 
 ---
 
@@ -134,6 +142,42 @@ Abaixo ficam os últimos 50 movimentos do produto: quando, o tipo (entrada, vend
 
 ---
 
+## 6b. Funcionários e permissões
+
+No menu do topo, **"Usuários"** (só o lojista vê).
+
+![Cadastro de funcionários](imagens/lojista/05b-usuarios.png)
+
+Em **"Novo funcionário"**, informe o nome, o **usuário** que ele vai digitar para entrar (letras sem acento, números, ponto ou traço), uma senha e marque o que ele pode fazer:
+
+| Permissão | O que libera |
+|---|---|
+| Cadastrar e editar produtos | Criar produto e mudar nome, código de barras, custo, mínimo, unidade, ativar e desativar |
+| Alterar preço de venda | Mudar o preço |
+| Dar entrada de mercadoria | Lançar quantidade que chegou |
+| Registrar perda | Baixar produto vencido, quebrado ou furtado |
+| Fazer contagem de inventário | Ajustar o estoque pelo que foi contado |
+
+Ver o painel e consultar produtos e estoque todo funcionário ativo pode. Usuários e Atividades são só seus.
+
+Em cada funcionário já cadastrado você pode mudar o nome, as permissões, trocar a senha ou desmarcar **"Usuário ativo"** para tirar o acesso. A mudança vale na hora, mesmo que ele esteja com a gestão aberta.
+
+> 💡 O funcionário só vê na tela o que pode fazer. Quem tem só "Dar entrada", por exemplo, não vê os cartões de perda e de contagem.
+
+## 6c. Atividades: quem fez o quê
+
+No menu do topo, **"Atividades"** (só o lojista vê).
+
+![Registro de atividades](imagens/lojista/05c-atividades.png)
+
+Tudo o que é feito na gestão fica registrado: **quando**, **quem**, **o quê** e o **detalhe**. Por exemplo: "Maria · Alterou preço · Halls: R$ 3,50 → R$ 4,00". Entram aqui as entradas, perdas, contagens, cadastros e alterações de produto, mudanças de preço, cadastro e alteração de funcionários, e cada vez que alguém entra na gestão.
+
+- Use o filtro para ver só as atividades de uma pessoa.
+- O registro não pode ser editado nem apagado por ninguém.
+- No extrato de cada produto, a coluna **"Quem"** mostra quem fez cada lançamento.
+
+---
+
 ## 7. App: área "Minha loja"
 
 No celular, entre em **Loja conveniência**. Para quem é dono aprovado, aparece o botão **"Minha loja (área do dono)"**.
@@ -194,7 +238,9 @@ Para liberar de novo, toque em **Desbloquear** ao lado do nome. O histórico do 
 
 ```
 Pedir "Dono de loja" no app -> administrador aprova e vincula a loja
-Computador da loja, 1a vez -> buscar cidade -> escolher endereço -> criar senha de gestão
-Dia a dia no computador -> Painel (o que comprar) -> Produtos e estoque -> perda / contagem
+Computador da loja, 1a vez -> buscar cidade -> escolher endereço
+Entrar na gestão -> "Acesso administrativo" -> e-mail e senha do app (funcionário: usuário e senha)
+Dia a dia no computador -> Painel (o que comprar) -> Produtos e estoque -> entrada / perda / contagem
+Equipe -> Usuários (cadastrar funcionário e marcar permissões) -> Atividades (quem fez o quê)
 Dia a dia no app -> Loja conveniência -> Minha loja -> responder mensagens / bloquear cliente
 ```

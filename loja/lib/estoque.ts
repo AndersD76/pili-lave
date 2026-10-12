@@ -1,4 +1,7 @@
 import type { Prisma } from "@prisma/client";
+import { registrarAtividade } from "./atividade";
+import { reais } from "./dinheiro";
+import type { UsuarioGestao } from "./permissoes";
 import { prisma } from "./prisma";
 
 /** Tipos de movimento do estoque (campo Movimento.tipo). */
@@ -20,7 +23,11 @@ export const ROTULO_MOVIMENTO: Record<TipoMovimento, string> = {
  */
 export async function movimentar(
   tx: Prisma.TransactionClient,
-  args: { produtoId: string; tipo: TipoMovimento; quantidade: number; nota?: string | null; refId?: string | null }
+  args: {
+    produtoId: string; tipo: TipoMovimento; quantidade: number; nota?: string | null; refId?: string | null;
+    /** Quem lançou — null só pra venda no totem (não há usuário da gestão). */
+    usuarioId: string | null;
+  }
 ): Promise<number> {
   const produto = await tx.produto.update({
     where: { id: args.produtoId },
@@ -30,6 +37,7 @@ export async function movimentar(
     data: {
       produtoId: args.produtoId, tipo: args.tipo, quantidade: args.quantidade,
       saldoApos: produto.estoqueAtual, nota: args.nota || null, refId: args.refId ?? null,
+      usuarioId: args.usuarioId,
     },
   });
   return produto.estoqueAtual;
@@ -38,7 +46,7 @@ export async function movimentar(
 /** Baixa por venda — será chamada pelo totem (etapa 3). */
 export function baixarVenda(produtoId: string, quantidade: number, vendaId?: string) {
   return prisma.$transaction((tx) =>
-    movimentar(tx, { produtoId, tipo: "VENDA", quantidade: -Math.abs(quantidade), refId: vendaId })
+    movimentar(tx, { produtoId, tipo: "VENDA", quantidade: -Math.abs(quantidade), refId: vendaId, usuarioId: null })
   );
 }
 
@@ -48,35 +56,58 @@ export function baixarVenda(produtoId: string, quantidade: number, vendaId?: str
  * que vierem de nota, pra aparecer junto no histórico de entradas. Se o
  * custo unitário for informado, vira o custo atual do produto.
  */
-export function entradaManual(produtoId: string, quantidade: number, custoUnitCents: number | null, nota: string) {
+export function entradaManual(
+  usuario: UsuarioGestao, produtoId: string, quantidade: number, custoUnitCents: number | null, nota: string
+) {
   return prisma.$transaction(async (tx) => {
     const produto = await tx.produto.findUniqueOrThrow({ where: { id: produtoId } });
     const custo = custoUnitCents ?? produto.custoCents;
     const entrada = await tx.entrada.create({
       data: {
-        origem: "MANUAL", totalCents: custo * quantidade,
+        origem: "MANUAL", totalCents: custo * quantidade, usuarioId: usuario.id,
         itens: { create: [{ produtoId, descricao: produto.nome, quantidade, custoUnitCents: custo }] },
       },
     });
     if (custoUnitCents !== null) await tx.produto.update({ where: { id: produtoId }, data: { custoCents: custoUnitCents } });
-    return movimentar(tx, { produtoId, tipo: "ENTRADA", quantidade, nota: nota || "Entrada manual", refId: entrada.id });
+    const saldo = await movimentar(tx, {
+      produtoId, tipo: "ENTRADA", quantidade, nota: nota || "Entrada manual", refId: entrada.id, usuarioId: usuario.id,
+    });
+    await registrarAtividade(
+      tx, usuario, "ENTRADA",
+      `${produto.nome}: +${quantidade} (saldo ${saldo})${custoUnitCents !== null ? `, custo ${reais(custoUnitCents)}` : ""}${nota ? ` — ${nota}` : ""}`,
+      produtoId
+    );
+    return saldo;
   });
 }
 
 /** Perda (vencido, quebrado, furtado): baixa a quantidade informada. */
-export function registrarPerda(produtoId: string, quantidade: number, nota: string) {
-  return prisma.$transaction((tx) =>
-    movimentar(tx, { produtoId, tipo: "PERDA", quantidade: -Math.abs(quantidade), nota })
-  );
+export function registrarPerda(usuario: UsuarioGestao, produtoId: string, quantidade: number, nota: string) {
+  return prisma.$transaction(async (tx) => {
+    const saldo = await movimentar(tx, {
+      produtoId, tipo: "PERDA", quantidade: -Math.abs(quantidade), nota, usuarioId: usuario.id,
+    });
+    const produto = await tx.produto.findUniqueOrThrow({ where: { id: produtoId }, select: { nome: true } });
+    await registrarAtividade(tx, usuario, "PERDA", `${produto.nome}: -${Math.abs(quantidade)} (saldo ${saldo}) — ${nota}`, produtoId);
+    return saldo;
+  });
 }
 
 /** Ajuste de inventário: informa quanto foi CONTADO na prateleira; o
  *  movimento é a diferença pro saldo do sistema. Sem diferença, não grava. */
-export function ajustarInventario(produtoId: string, contado: number, nota: string) {
+export function ajustarInventario(usuario: UsuarioGestao, produtoId: string, contado: number, nota: string) {
   return prisma.$transaction(async (tx) => {
-    const atual = (await tx.produto.findUniqueOrThrow({ where: { id: produtoId } })).estoqueAtual;
+    const produto = await tx.produto.findUniqueOrThrow({ where: { id: produtoId } });
+    const atual = produto.estoqueAtual;
+    // a contagem é registrada mesmo quando bate: saber que alguém conferiu
+    // também é informação
+    await registrarAtividade(
+      tx, usuario, "INVENTARIO",
+      `${produto.nome}: contado ${contado}, sistema ${atual}${contado === atual ? " (sem diferença)" : ` (diferença ${contado - atual > 0 ? "+" : ""}${contado - atual})`}`,
+      produtoId
+    );
     if (contado === atual) return atual;
-    return movimentar(tx, { produtoId, tipo: "AJUSTE", quantidade: contado - atual, nota });
+    return movimentar(tx, { produtoId, tipo: "AJUSTE", quantidade: contado - atual, nota, usuarioId: usuario.id });
   });
 }
 

@@ -1,6 +1,7 @@
-/* Chamadas deste computador pro servidor na nuvem (server/). Por enquanto
- * só o cadastro da loja no primeiro uso — as rotas são /api/loja/unidades e
- * /api/loja/provisionar, protegidas pela senha de fábrica (PROVISION_SECRET). */
+/* Chamadas deste computador pro servidor na nuvem (server/): o cadastro da
+ * loja no primeiro uso (/api/loja/unidades e /api/loja/provisionar,
+ * protegidas pela senha de fábrica) e a conferência do login do lojista
+ * (/api/loja/dono-login, identificada pelo deviceKey deste computador). */
 
 export type EnderecoNuvem = {
   lojaId: string | null; stationId: string | null; cidade: string; rua: string; nome: string;
@@ -52,4 +53,32 @@ export async function cadastrarLojaNaNuvem(
 ): Promise<LojaNuvem> {
   const json = await chamar(nuvemUrl, "/api/loja/provisionar", senhaFabrica, corpo);
   return json.loja as LojaNuvem;
+}
+
+export type LoginDono =
+  | { situacao: "OK"; dono: { id: string; nome: string; email: string } }
+  | { situacao: "CREDENCIAIS" } // e-mail ou senha errados
+  | { situacao: "NAO_E_DONO" } // conta existe, mas não é a dona desta loja
+  | { situacao: "SEM_CONEXAO" }; // nuvem fora do alcance — quem chama decide se entra pelo cache
+
+/** Pergunta à nuvem se esse e-mail e senha são do DONO da loja deste
+ *  computador (quem é o dono é definido pelo admin, em /admin/lojas). */
+export async function loginDono(nuvemUrl: string, deviceKey: string, email: string, senha: string): Promise<LoginDono> {
+  let res: Response;
+  try {
+    res = await fetch(nuvemUrl.replace(/\/$/, "") + "/api/loja/dono-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-device-key": deviceKey },
+      body: JSON.stringify({ email, password: senha }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    return { situacao: "SEM_CONEXAO" };
+  }
+  if (res.status >= 500) return { situacao: "SEM_CONEXAO" };
+  const json = await res.json().catch(() => null);
+  if (res.ok && json?.dono) return { situacao: "OK", dono: json.dono };
+  if (res.status === 403) return { situacao: "NAO_E_DONO" };
+  return { situacao: "CREDENCIAIS" };
 }

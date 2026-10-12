@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { reais } from "@/lib/dinheiro";
+import { pode } from "@/lib/permissoes";
 import { exigirGestao } from "@/lib/sessao";
 import { Nav } from "../nav";
 import { carregarExemplos, criarProduto } from "./actions";
@@ -15,7 +16,7 @@ export default async function Produtos({
 }: {
   searchParams: Promise<{ q?: string; erro?: string; inativos?: string }>;
 }) {
-  const loja = await exigirGestao();
+  const { loja, usuario } = await exigirGestao();
   const { q: qParam, erro, inativos } = await searchParams;
   const q = qParam?.trim() ?? "";
   const soNumeros = q.replace(/\D/g, "");
@@ -35,7 +36,7 @@ export default async function Produtos({
 
   return (
     <main className="admin-wrap">
-      <Nav loja={loja} atual="/produtos" />
+      <Nav loja={loja} usuario={usuario} atual="/gestao/produtos" />
 
       <form method="get" className="linha-form">
         <label className="rotulo" style={{ flex: 1 }}>
@@ -62,7 +63,7 @@ export default async function Produtos({
             <tbody>
               {produtos.map((p) => (
                 <tr key={p.id} style={p.ativo ? undefined : { opacity: 0.5 }}>
-                  <td><Link href={`/produtos/${p.id}`}>{p.nome}</Link>{p.ativo ? "" : " (inativo)"}</td>
+                  <td><Link href={`/gestao/produtos/${p.id}`}>{p.nome}</Link>{p.ativo ? "" : " (inativo)"}</td>
                   <td>{p.ean ?? "—"}</td>
                   <td>
                     <span className={`chip ${p.estoqueAtual <= 0 ? "err" : p.estoqueAtual <= p.estoqueMinimo ? "at" : "ok"}`}>
@@ -79,18 +80,24 @@ export default async function Produtos({
         </div>
       )}
 
-      <h2 className="section-title">Novo produto</h2>
-      <form action={criarProduto} className="card" style={{ display: "grid", gap: 12 }}>
-        <CamposProduto />
-        <label className="rotulo" style={{ width: 130 }}>
-          Estoque inicial
-          <input className="field" name="estoqueInicial" defaultValue={0} inputMode="numeric" />
-        </label>
-        {erro && <p className="err-msg">{erro}</p>}
-        <button className="btn" type="submit" style={{ justifySelf: "start" }}>Cadastrar produto</button>
-      </form>
+      {erro && <p className="err-msg" style={{ marginTop: 16 }}>{erro}</p>}
+      {pode(usuario, "PRODUTOS") && (
+        <>
+          <h2 className="section-title">Novo produto</h2>
+          <form action={criarProduto} className="card" style={{ display: "grid", gap: 12 }}>
+            <CamposProduto />
+            {pode(usuario, "ENTRADA") && (
+              <label className="rotulo" style={{ width: 130 }}>
+                Estoque inicial
+                <input className="field" name="estoqueInicial" defaultValue={0} inputMode="numeric" />
+              </label>
+            )}
+            <button className="btn" type="submit" style={{ justifySelf: "start" }}>Cadastrar produto</button>
+          </form>
+        </>
+      )}
 
-      {total === 0 && (
+      {total === 0 && usuario.papel === "LOJISTA" && (
         <form action={carregarExemplos} style={{ marginTop: 16 }}>
           <button className="btn ghost" type="submit">Carregar 5 produtos de exemplo (só para teste)</button>
         </form>

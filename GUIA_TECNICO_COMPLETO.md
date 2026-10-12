@@ -395,11 +395,14 @@ Produto paralelo à lavagem, no mesmo app. O conceito, as decisões e a ordem de
 
 **Programa do computador da loja — `loja/`** (etapa 2, em andamento): app Next.js separado do `server/`, com banco **SQLite local** (`loja/dados/loja.db`, fora do Git), em `http://localhost:3100`. Cada loja tem o seu, independente.
 
-- `lib/config.ts`: tabela `Config` (chave/valor) com a identidade do computador (`deviceKey`, gerada aqui), a loja vinculada e a senha de gestão. `NUVEM_URL` e `SENHA_FABRICA` vêm do `loja/.env`.
-- `/primeiro-uso`: chama `/api/loja/unidades` e `/api/loja/provisionar` da nuvem; depois de cadastrada, a tela não abre mais.
-- `lib/sessao.ts`: senha única de gestão (scrypt) + cookie JWT de 12h; `exigirGestao()` protege toda página e ação.
-- `lib/estoque.ts`: `movimentar()` é o **único** caminho pra mudar saldo — grava `Movimento` (ENTRADA/VENDA/PERDA/AJUSTE, com `saldoApos`) e atualiza o cache `Produto.estoqueAtual` na mesma transação. `baixarVenda()` já existe pro totem usar.
-- Telas: painel (para comprar, sem preço, valor em estoque), produtos e estoque (busca, cadastro), produto (edição, perda, contagem de inventário, extrato).
+- `lib/config.ts`: tabela `Config` (chave/valor) com a identidade do computador (`deviceKey`, gerada aqui) e a loja vinculada. `NUVEM_URL` e `SENHA_FABRICA` vêm do `loja/.env`.
+- `/primeiro-uso`: chama `/api/loja/unidades` e `/api/loja/provisionar` da nuvem; não cria senha. Depois de cadastrada, a tela não abre mais.
+- **`/` é a tela do cliente** (hoje só recepção; o caixa entra na etapa 3), com o botão "Acesso administrativo" → `/entrar`. A gestão inteira fica em **`/gestao/*`**.
+- **Usuários** (tabela `Usuario`, `lib/sessao.ts`, `lib/permissoes.ts`): `LOJISTA` (acesso total) e `FUNCIONARIO` (permissões marcadas pelo lojista: `PRODUTOS`, `PRECO`, `ENTRADA`, `PERDA`, `INVENTARIO`, guardadas em JSON). Cookie JWT de 30 min com o id do usuário; o usuário é relido do banco a cada requisição, então desativar ou tirar permissão vale na hora. Guardas: `exigirGestao()`, `exigirPermissao(p)`, `exigirLojista()` — toda ação que muda dados chama uma delas, e as telas escondem o que a pessoa não pode (o servidor confere de novo).
+- **Login do lojista**: `/entrar` manda e-mail e senha pra nuvem em **`POST /api/loja/dono-login`** (server/), identificando-se pelo `x-device-key`; a nuvem responde se a conta é a dona daquela loja (`Loja.donoId`). Deu certo: cria/atualiza o `Usuario` LOJISTA local com a senha copiada (hash) e desativa lojistas anteriores. Nuvem fora do alcance: vale a cópia local. Login sem "@" é sempre funcionário, conferido só localmente.
+- **Registro de atividades** (tabela `Atividade`, `lib/atividade.ts`): quem, quando, ação e detalhe (com antes → depois em preço e cadastro). Gravado na mesma transação da mudança. `Movimento.usuarioId` e `Entrada.usuarioId` guardam quem lançou. Telas `/gestao/usuarios` e `/gestao/atividades` são só do lojista.
+- `lib/estoque.ts`: `movimentar()` é o **único** caminho pra mudar saldo — grava `Movimento` (ENTRADA/VENDA/PERDA/AJUSTE, com `saldoApos` e `usuarioId`) e atualiza o cache `Produto.estoqueAtual` na mesma transação. `entradaManual()`, `registrarPerda()` e `ajustarInventario()` recebem o usuário; `baixarVenda()` já existe pro totem usar (sem usuário).
+- Telas da gestão: painel (para comprar, sem preço, valor em estoque), produtos e estoque (busca, cadastro), produto (edição, entrada manual, perda, contagem de inventário, extrato com quem lançou), usuários, atividades.
 - Tabelas de entrada de nota (`Entrada`, `EntradaItem`, `Fornecedor`, `CodigoFornecedor`) já estão no banco; as telas ainda não.
 
 Ainda não existe: entrada por nota fiscal e relatórios (resto da etapa 2), e tudo das etapas seguintes (totem, sincronização, entrada por BLE, câmeras). O bloqueio ainda não impede nada fisicamente — passa a valer quando a entrada por BLE consultar `LojaBloqueio`.

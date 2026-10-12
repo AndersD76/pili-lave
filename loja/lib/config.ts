@@ -8,7 +8,6 @@ export type ChaveConfig =
   | "lojaCidade"
   | "lojaRua"
   | "lojaCapacidade"
-  | "senhaHash" // senha de gestão ("salt:hash", scrypt)
   | "segredoSessao"; // assina o cookie de sessão da gestão
 
 export async function lerConfig(chave: ChaveConfig): Promise<string | null> {

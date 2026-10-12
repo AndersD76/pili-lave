@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 /**
  * Primeira ligada do computador da loja. Passo 1: buscar a cidade. Passo 2:
  * escolher um endereço que já existe (outra loja, ou uma unidade de lavagem
- * no mesmo lugar) ou digitar um novo, e criar a senha de gestão. Depois de
+ * no mesmo lugar) ou digitar um novo. Depois de
  * cadastrada, esta tela nunca mais aparece sozinha.
  */
 export default async function PrimeiroUso({
@@ -84,20 +84,10 @@ export default async function PrimeiroUso({
             <input className="field" name="nome" maxLength={60} />
           </label>
 
-          <b style={{ marginTop: 6 }}>Senha de gestão</b>
           <p className="sub">
-            Protege o estoque e os cadastros neste computador. Quem não tem a senha só usa o caixa.
+            Depois do cadastro, o administrador define quem é o dono desta loja. É o dono que entra na gestão
+            deste computador (com o e-mail e a senha do app) e cadastra os funcionários.
           </p>
-          <div className="linha-form">
-            <label className="rotulo" style={{ flex: 1 }}>
-              Senha (mínimo 6 caracteres)
-              <input className="field" type="password" name="senha" required minLength={6} />
-            </label>
-            <label className="rotulo" style={{ flex: 1 }}>
-              Repita a senha
-              <input className="field" type="password" name="senha2" required minLength={6} />
-            </label>
-          </div>
 
           {substituir && (
             <label style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer" }}>
