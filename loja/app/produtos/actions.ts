@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { centavosDoCampo, inteiroDoCampo } from "@/lib/dinheiro";
-import { ajustarInventario, movimentar, registrarPerda } from "@/lib/estoque";
+import { ajustarInventario, entradaManual, movimentar, registrarPerda } from "@/lib/estoque";
 import { exigirGestao } from "@/lib/sessao";
 
 /** Campos do cadastro de produto (criar e editar usam os mesmos). Devolve
@@ -68,7 +68,7 @@ export async function salvarProduto(formData: FormData) {
   redirect(`/produtos/${id}?ok=1`);
 }
 
-/** Perda (baixa a quantidade) ou ajuste de inventário (informa o contado). */
+/** Entrada manual (soma), perda (baixa) ou ajuste de inventário (informa o contado). */
 export async function movimentarEstoque(formData: FormData) {
   await exigirGestao();
   const id = String(formData.get("id"));
@@ -78,7 +78,13 @@ export async function movimentarEstoque(formData: FormData) {
   const erro = (msg: string): never => redirect(`/produtos/${id}?erro=${encodeURIComponent(msg)}`);
 
   if (quantidade === null) erro("Informe a quantidade (número inteiro).");
-  if (tipo === "PERDA") {
+  if (tipo === "ENTRADA") {
+    if (quantidade === 0) erro("A entrada precisa ser de pelo menos 1.");
+    const custoTexto = String(formData.get("custoUnit") ?? "").trim();
+    const custo = centavosDoCampo(custoTexto);
+    if (custoTexto && custo === null) erro("Custo unitário inválido.");
+    await entradaManual(id, quantidade!, custo, nota);
+  } else if (tipo === "PERDA") {
     if (quantidade === 0) erro("A perda precisa ser de pelo menos 1.");
     if (!nota) erro("Informe o motivo da perda (vencido, quebrado, furto…).");
     await registrarPerda(id, quantidade!, nota);

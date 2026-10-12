@@ -118,10 +118,11 @@ Clique no nome do produto. Na tela dele você muda qualquer campo do cadastro e 
 
 ---
 
-## 6. Perda e contagem de inventário
+## 6. Entrada, perda e contagem de inventário
 
-Na tela de cada produto há dois lançamentos:
+Na tela de cada produto, em **"Quantidade em estoque"**, há três lançamentos:
 
+- **Dar entrada** — chegou mercadoria. Informe quantas unidades chegaram e o sistema soma ao estoque. Se informar o custo unitário, ele passa a ser o custo do produto.
 - **Registrar perda** — produto vencido, quebrado ou furtado. Informe a quantidade perdida e o **motivo** (obrigatório). O estoque baixa nessa quantidade.
 - **Contagem de inventário** — você conta quantos há na prateleira e informa esse número. O sistema lança sozinho a diferença, para mais ou para menos. Se a contagem bater com o sistema, nada é lançado.
 

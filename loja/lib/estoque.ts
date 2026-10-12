@@ -42,6 +42,27 @@ export function baixarVenda(produtoId: string, quantidade: number, vendaId?: str
   );
 }
 
+/**
+ * Entrada de mercadoria lançada à mão (sem nota fiscal): soma a quantidade
+ * ao estoque. Fica registrada como uma Entrada de origem MANUAL, igual às
+ * que vierem de nota, pra aparecer junto no histórico de entradas. Se o
+ * custo unitário for informado, vira o custo atual do produto.
+ */
+export function entradaManual(produtoId: string, quantidade: number, custoUnitCents: number | null, nota: string) {
+  return prisma.$transaction(async (tx) => {
+    const produto = await tx.produto.findUniqueOrThrow({ where: { id: produtoId } });
+    const custo = custoUnitCents ?? produto.custoCents;
+    const entrada = await tx.entrada.create({
+      data: {
+        origem: "MANUAL", totalCents: custo * quantidade,
+        itens: { create: [{ produtoId, descricao: produto.nome, quantidade, custoUnitCents: custo }] },
+      },
+    });
+    if (custoUnitCents !== null) await tx.produto.update({ where: { id: produtoId }, data: { custoCents: custoUnitCents } });
+    return movimentar(tx, { produtoId, tipo: "ENTRADA", quantidade, nota: nota || "Entrada manual", refId: entrada.id });
+  });
+}
+
 /** Perda (vencido, quebrado, furtado): baixa a quantidade informada. */
 export function registrarPerda(produtoId: string, quantidade: number, nota: string) {
   return prisma.$transaction((tx) =>

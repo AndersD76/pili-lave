@@ -13,7 +13,7 @@ function dataHora(d: Date): string {
   return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-/** Um produto: cadastro, lançamento de perda/contagem e o extrato do estoque. */
+/** Um produto: cadastro, entrada manual, perda, contagem e o extrato do estoque. */
 export default async function ProdutoDetalhe({
   params, searchParams,
 }: {
@@ -54,8 +54,28 @@ export default async function ProdutoDetalhe({
         <button className="btn" type="submit" style={{ justifySelf: "start" }}>Salvar</button>
       </form>
 
-      <h2 className="section-title">Perda ou contagem</h2>
+      <h2 className="section-title">Quantidade em estoque</h2>
       <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+        <form action={movimentarEstoque} className="card" style={{ display: "grid", gap: 10 }}>
+          <input type="hidden" name="id" value={produto.id} />
+          <input type="hidden" name="tipo" value="ENTRADA" />
+          <b>Dar entrada</b>
+          <p className="sub">Chegou mercadoria: soma a quantidade ao estoque.</p>
+          <label className="rotulo">
+            Quantidade que chegou
+            <input className="field" name="quantidade" inputMode="numeric" required />
+          </label>
+          <label className="rotulo">
+            Custo unitário (R$) — opcional, atualiza o custo do produto
+            <input className="field" name="custoUnit" inputMode="decimal" />
+          </label>
+          <label className="rotulo">
+            Observação (opcional)
+            <input className="field" name="nota" maxLength={120} placeholder="Ex.: compra no atacado" />
+          </label>
+          <button className="btn" type="submit" style={{ justifySelf: "start" }}>Dar entrada</button>
+        </form>
+
         <form action={movimentarEstoque} className="card" style={{ display: "grid", gap: 10 }}>
           <input type="hidden" name="id" value={produto.id} />
           <input type="hidden" name="tipo" value="PERDA" />
