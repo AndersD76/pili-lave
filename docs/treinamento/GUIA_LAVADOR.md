@@ -55,7 +55,8 @@ No topo, três botões:
   - 🔴 **EM FALHA** ou **OFFLINE** — precisa da sua atenção (ver seção 5).
 - **Total no período** — soma bruta (dinheiro + app) de tudo que a máquina faturou no período escolhido.
 - **Tabela por tipo de lavagem**, com duas colunas — **Presencial** (pago em dinheiro, direto na máquina) e **App** (pago pela carteira do cliente). O valor mostrado em cada coluna **já é a sua parte** — não o total bruto daquela lavagem. No rodapé da tabela, a soma de cada coluna.
-- **Sua participação**: o valor final que você tem a receber (ou já tem em mãos, no caso do presencial) somando as duas colunas.
+- **Aspirador** (se a máquina tiver): uma linha extra abaixo da tabela, tipo "Aspirador · 3x — R$ 9,00", só aparece quando teve uso no período. O percentual que você recebe do aspirador é **configurado separado** do das lavagens pelo admin — pode ser diferente do seu percentual normal.
+- **Sua participação**: o valor final que você tem a receber (ou já tem em mãos, no caso do presencial) somando lavagens + aspirador.
 
 Puxe a tela pra baixo (arrastar) pra atualizar os números na hora.
 
@@ -114,7 +115,7 @@ Você não precisa esperar o cadastro inicial pra virar Vendedor ou receber Alug
 
 ```
 Abrir app -> aba "Minha Máquina" -> escolher período (Hoje / período / não acertado)
-          -> ver status + Presencial x App por tipo + Sua participação
+          -> ver status + Presencial x App por tipo + Aspirador (se houver) + Sua participação
 Também é vendedor/aluguel? -> aba "Comissões" (sem aviso de falha, só o valor a receber)
 Quer pedir uma capacidade nova? -> Perfil -> "Também é lavador, vendedor ou aluguel?" -> Pedir
 Notificação de erro chegou? -> ir até a máquina -> ler a mensagem no display -> resolver

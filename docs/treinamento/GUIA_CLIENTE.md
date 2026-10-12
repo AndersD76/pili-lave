@@ -120,11 +120,28 @@ Vai aparecer um aviso confirmando que, ao liberar assim, o valor será cobrado n
 
 ## 9. Acompanhando a lavagem
 
-Enquanto o carro está sendo lavado, a tela mostra o progresso e, se disponível, a câmera ao vivo da máquina.
+Enquanto o carro está sendo lavado, a tela mostra o progresso e, **se a máquina tiver câmera disponível naquele momento**, a imagem ao vivo dela (atualiza sozinha a cada poucos segundos). A câmera só é liberada enquanto você tem uma lavagem em andamento — fora disso o espaço fica vazio ("Disponível quando sua lavagem estiver em andamento").
 
 ![Progresso da lavagem](imagens/cliente/14-progresso.png)
 
 Ao final, aparece **"Pode sair!"** — a lavagem foi concluída e o valor debitado definitivamente.
+
+---
+
+## 9b. Aspirador de pó (quando a unidade tiver)
+
+Algumas máquinas também têm aspirador de pó próprio, cobrado à parte da lavagem. Tem dois jeitos de usar:
+
+**Junto com uma lavagem**: depois de pagar a lavagem, se a máquina tiver aspirador, aparece uma pergunta: *"Quer liberar o aspirador por X min por R$ Y?"*. Se topar, vai direto pra tela do aspirador (abaixo).
+
+**Sozinho, sem lavar o carro**: na tela da unidade (depois de escolher a unidade, antes de reservar lavagem), aparece um botão separado, tipo **"10 min de aspirador de pó"** — é só tocar nele.
+
+Na tela do aspirador:
+1. Toque em **"Comprar"** — o valor é descontado do seu saldo na hora.
+2. Quando estiver pronto pra usar (pode ser na hora ou um pouco depois), toque em **"Começar agora"** — é aí que o tempo começa a contar, não no momento da compra.
+3. Um cronômetro regressivo mostra quanto tempo falta. Quando zera, aparece "Tempo esgotado" e a tela volta sozinha pro início.
+
+> 💡 O aspirador liga de verdade na máquina só depois que você aperta "Começar agora" — comprar não liga nada sozinho.
 
 ---
 
@@ -166,5 +183,6 @@ Além de cliente, você também pode ter uma capacidade extra no sistema — **L
 Instalar -> Criar conta -> Onboarding -> (Adicionar crédito é opcional)
 Cadastrar veículo -> Escolher unidade -> Reservar lavagem (aí sim precisa de saldo)
 Chegar na máquina (câmera reconhece, ou "Cheguei" manual) -> luz verde -> lavar -> pronto
+Quer só aspirador? -> tela da unidade -> botão "X min de aspirador de pó" -> Comprar -> Começar agora
 Quer ser Lavador/Vendedor/Aluguel? -> Perfil -> "Também é lavador, vendedor ou aluguel?" -> Pedir
 ```

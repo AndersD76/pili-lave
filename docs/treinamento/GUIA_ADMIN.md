@@ -126,10 +126,12 @@ Quando uma unidade tem **mais de uma máquina**, aparecem sub-abas (Máquina 1, 
 - **Preços da unidade**: os 4 tipos com um campo pra preencher o valor em R$ — cada unidade começa vazia, você define quanto ela cobra.
 - **Status da máquina selecionada**: Livre / Lavando / OFFLINE (sem contato há mais de 1 min) / Manutenção, e a licença (🟢 em dia · 🟡 aviso 40+ dias · 🔴 bloqueada 50+ dias).
 - **Valor acumulado desde o último fechamento** — soma tudo (presencial + app) desde a última vez que você clicou em "Marcar pago hoje".
-- **Participação na máquina** — aqui você cadastra quem ganha o quê naquela máquina, em até 4 tipos: **Lavador**, **Comissão 1**, **Comissão 2** e **Aluguel**. Pra cada tipo, escolha a pessoa numa caixinha (só aparece quem já tem a capacidade correspondente aprovada) e informe o **percentual** dela. Clique em Salvar.
-  - **Regra dos 100%**: a soma dos percentuais de todos os participantes cadastrados naquela máquina nunca pode passar de 100%. O que sobrar até 100% fica automaticamente com você (admin) — não precisa cadastrar nada pra isso, o sistema calcula sozinho.
+- **Aspirador de pó** — checkbox "Esta máquina tem aspirador" + preço (R$) + duração (minutos). Só aparece como opção pro cliente no app nas máquinas onde isso estiver marcado (ver seção 6b).
+- **Participação na máquina — Lavagens** — aqui você cadastra quem ganha o quê **nas lavagens** daquela máquina, em até 4 tipos: **Lavador**, **Comissão 1**, **Comissão 2** e **Aluguel**. Pra cada tipo, escolha a pessoa numa caixinha (só aparece quem já tem a capacidade correspondente aprovada) e informe o **percentual** dela. Clique em Salvar.
+  - **Regra dos 100%**: a soma dos percentuais de todos os participantes cadastrados naquela máquina **nesse escopo** nunca pode passar de 100%. O que sobrar até 100% fica automaticamente com você (admin) — não precisa cadastrar nada pra isso, o sistema calcula sozinho.
   - Se você tentar salvar um percentual que estoura os 100% (somando com quem já está cadastrado), a tela mostra um aviso de erro e não deixa salvar — ajuste o número e tente de novo.
   - Só quem tem o papel de **Lavador** vê a máquina no app como "Minha Máquina" e recebe notificação automática se ela der erro. Comissão 1, Comissão 2 e Aluguel veem a máquina numa aba separada chamada "Comissões" no app deles, e **não recebem** aviso de falha — só o relatório financeiro.
+- **Participação na máquina — Aspirador de pó** — tabela **separada** da de lavagens, com os mesmos 4 tipos e a mesma regra dos 100%, mas **totalmente independente**. Por exemplo: dá pra deixar o aspirador 100% com o lavador e sem nenhuma comissão, mesmo que as lavagens dessa máquina sejam divididas com Comissão 1/2 — um percentual não afeta o outro.
 - **Histórico de lavagens** — as últimas concluídas naquela máquina, com cliente/programa/valor.
 
 ![Painel de uma máquina](imagens/admin/07-painel-maquina.png)
@@ -140,17 +142,32 @@ Quando uma unidade tem **mais de uma máquina**, aparecem sub-abas (Máquina 1, 
 
 ---
 
+## 6b. Aspirador de pó — ativando numa máquina
+
+A máquina de aspirar pó fica ligada a um relé separado (DO8) e é controlada pelo mesmo app do cliente. Pra ativar:
+
+1. Vá em **Máquinas** → escolha a unidade/máquina → seção **"Aspirador de pó"**.
+2. Marque **"Esta máquina tem aspirador"**.
+3. Preencha o **preço** (R$) e a **duração** (minutos) daquele ciclo.
+4. Salve.
+
+A partir daí, o botão do aspirador aparece pro cliente na tela daquela unidade — mostrando os minutos configurados (ex.: "10 min de aspirador de pó"). Se desmarcar a caixinha, a opção some do app na hora.
+
+> 💡 Cada máquina tem seu próprio preço/duração — não existe um valor "padrão" pra todas.
+
+---
+
 ## 7. Divisão entre participantes
 
-Quando uma máquina tem pelo menos um participante cadastrado (Lavador, Comissão 1, Comissão 2 ou Aluguel), aparece uma seção extra no painel dela: **"Divisão entre participantes"**.
+Quando uma máquina tem pelo menos um participante cadastrado (Lavador, Comissão 1, Comissão 2 ou Aluguel) em qualquer um dos dois escopos, aparece uma seção extra no painel dela pra cada escopo: **"Divisão entre participantes"** (lavagens) e **"Divisão entre participantes — Aspirador"**.
 
 ![Tabela de divisão entre participantes](imagens/admin/09-divisao-lavador.png)
 
-A ideia: **presencial** (dinheiro pago na hora, direto na máquina) fica automaticamente na mão do lavador; **app** (pago pela carteira do cliente) cai automaticamente pra conta do admin. Comissão 1, Comissão 2 e Aluguel nunca ficam com o dinheiro em mãos em nenhum dos dois casos — são sempre credores. Como cada um tem seu percentual, alguém sempre fica devendo a diferença pro outro — a tabela mostra, **linha por linha, por participante**, quanto veio do presencial, quanto veio do app, e o **saldo líquido**:
+A ideia é a mesma nos dois casos: **presencial** (dinheiro pago na hora, direto na máquina — só existe pras lavagens, o aspirador nunca é pago em espécie) fica automaticamente na mão do lavador; **app/carteira** cai automaticamente pra conta do admin. Comissão 1, Comissão 2 e Aluguel nunca ficam com o dinheiro em mãos em nenhum dos dois casos — são sempre credores. Como cada um tem seu percentual (lembrando: o percentual do aspirador é **separado** do das lavagens, seção 6), alguém sempre fica devendo a diferença pro outro — a tabela mostra, **linha por linha, por participante**, quanto veio de cada origem, e o **saldo líquido**:
 
 - Se a pessoa tem a receber, aparece **"a receber: R$ X"**.
 - Se a pessoa está com dinheiro que precisa repassar (normalmente o lavador, que embolsou o presencial), aparece **"a repassar: R$ X"**.
-- O admin também aparece como uma linha calculada automaticamente (o que sobra dos 100%).
+- O admin também aparece como uma linha calculada automaticamente (o que sobra dos 100% daquele escopo).
 
 Isso poupa você de fazer conta na mão — é só olhar esse número na hora de acertar com cada participante.
 
@@ -169,5 +186,5 @@ Login -> Visão geral (números do negócio)
        -> Lavagens (histórico app, investigar reclamação)
        -> Usuários (Cadastros a aprovar, filtro por tipo, promover direto)
        -> Preços (nome dos 4 tipos)
-       -> Máquinas (aba por unidade -> preço, status, participação, divisão, histórico)
+       -> Máquinas (aba por unidade -> preço, status, aspirador, participação (lavagem + aspirador), divisão, histórico)
 ```

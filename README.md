@@ -1,71 +1,79 @@
-# PILI LAVE
+# PILI LAVE (PILI CLEAN)
 
-Plataforma do lava-rápido PILI: app mobile (cliente + lavador), servidor com
-painel admin, e firmware do totem físico.
+Lava-rápido automático sem operador fixo: o cliente reserva/paga pelo app, a
+câmera reconhece a placa sozinha, a máquina libera e executa o ciclo de
+lavagem (e, em algumas unidades, o aspirador de pó) automaticamente.
 
 ```
 pili-lave/
-├── mobile/    App Android/iOS (Expo/React Native, roda no Expo Go)
-├── server/    API + painel admin (Next.js 16 + Prisma 6 + Postgres/Neon)
-├── firmware/  Totem físico (Waveshare ESP32-S3-Touch-LCD-7, LVGL + Asaas + ESP-NOW)
-└── design/    Direção de marca (BRAND.md — "verniz molhado", dark-first)
+├── mobile/        App mobile (Expo/React Native) — ainda não publicado em loja
+├── server/        Backend + painel admin + PWA (Next.js 16 + Prisma 6 + Postgres/Neon)
+├── lava_car_485/  Firmware do display (ESP32-S3, LVGL) + Waveshares (RS-485)
+├── firmware_camera/ Firmware da câmera (ESP32-CAM) — gateway de internet da máquina
+└── design/        Direção de marca (BRAND.md — "verniz molhado", dark-first)
 ```
 
-## Como funciona (MVP)
+> **O PWA (`server/app/(pwa)/app/`, acessado no navegador) é hoje a forma real
+> de uso em produção** — o app mobile (pasta `mobile/`) nunca foi publicado
+> numa loja, só roda via Expo Go em desenvolvimento. Veja o `GUIA_TECNICO_COMPLETO.md`
+> para o detalhe completo disso e de tudo mais.
 
-1. Cliente entra no app com o **celular + código SMS** (OTP).
-2. Cadastra o veículo pela **placa** (formato antigo/Mercosul; consulta de
-   dados via API plugável).
-3. **Adiciona saldo** (carteira pré-paga) via **PIX Asaas** — QR na tela,
-   crédito automático por webhook.
-4. Compra a lavagem **por tipo (1–4)** com o saldo → recebe um **voucher QR**.
-5. O **lavador** (papel promovido no painel admin) abre "Modo lavador" e
-   **escaneia o QR com a câmera** → o servidor valida, marca como resgatada e
-   a lavagem está liberada. Sem timer, sem leitura de placa na cancela.
-6. O painel `/admin` mostra **contagens**: lavagens/dia, receita, saldo em
-   carteiras (passivo), vendas por tipo, usuários — e promove lavadores.
+## Como funciona
+
+1. Cliente cadastra (e-mail + senha) e adiciona veículo pela **placa**.
+2. Escolhe a **unidade** (cada uma tem seu próprio preço) e compra a lavagem
+   com o saldo da carteira (recarga via PIX/Asaas).
+3. Ao chegar, a **câmera** (ESP32-CAM) lê a placa automaticamente e libera a
+   máquina (luz verde); sem câmera disponível, dá pra liberar manualmente
+   pelo botão "Cheguei".
+4. O **display** (ESP32-S3 touchscreen) executa o ciclo físico de lavagem via
+   RS-485 (Waveshares de I/O + inversor de frequência do motor).
+5. Em unidades com aspirador de pó habilitado, o cliente também pode comprar
+   esse serviço à parte (junto com a lavagem ou avulso).
+6. O **painel `/admin`** mostra vendas, usuários, preços por unidade, cadastro
+   de lavadores/comissionados/aluguel (com percentual próprio por máquina,
+   separado para lavagens e para aspirador) e status de cada máquina.
+
+## Documentação
+
+- **[GUIA_TECNICO_COMPLETO.md](GUIA_TECNICO_COMPLETO.md)** — referência técnica completa (arquitetura, firmware, backend, banco de dados). Comece por aqui para entender o sistema inteiro.
+- **[docs/treinamento/](docs/treinamento/)** — guias de uso para cada público: **[GUIA_ADMIN.md](docs/treinamento/GUIA_ADMIN.md)**, **[GUIA_LAVADOR.md](docs/treinamento/GUIA_LAVADOR.md)**, **[GUIA_CLIENTE.md](docs/treinamento/GUIA_CLIENTE.md)**.
 
 ## Rodar local
 
 ```bash
-# servidor (porta 3000)
+# servidor + PWA (porta 3000)
 cd server
 cp .env.example .env   # preencha Neon, Asaas, senha do admin
 npm install
-npx prisma db push && npm run db:seed
-npm run dev
+npx prisma migrate dev
+npm run dev             # http://localhost:3000/app (PWA) e /admin
 
-# app (Expo Go no celular, mesma rede WiFi)
+# app mobile (Expo Go no celular, mesma rede WiFi)
 cd mobile
 npm install
-npx expo start         # escaneie o QR com o Expo Go
+npx expo start          # escaneie o QR com o Expo Go
 ```
 
-Em dev, `SMS_PROVIDER=console` imprime o código OTP no terminal do servidor.
-O app descobre a API automaticamente pelo IP do Metro; para apontar para
-produção use `EXPO_PUBLIC_API_URL`.
+O app mobile descobre a API automaticamente pelo IP do Metro; para apontar
+para produção, use `EXPO_PUBLIC_API_URL`.
 
 ## Deploy
 
-- **Servidor**: Railway (serviço com *root directory* = `server/`;
-  `railway.json` incluso). Variáveis: as mesmas do `.env.example`.
-- **Banco**: Neon. `DATABASE_URL` = string *pooled* (`…-pooler…`),
-  `DIRECT_URL` = a mesma sem `-pooler` (migrations).
-- **Webhook Asaas**: aponte para `https://SEU_APP/api/asaas/webhook` com o
-  token `ASAAS_WEBHOOK_TOKEN` (eventos `PAYMENT_RECEIVED`/`PAYMENT_CONFIRMED`).
-- **App**: desenvolvimento via **Expo Go**; builds de loja depois via EAS.
+- **Servidor**: Railway (*root directory* = `server/`). Variáveis: as mesmas do `.env.example`.
+- **Banco**: Neon. `DATABASE_URL` = string *pooled*, `DIRECT_URL` = a mesma sem `-pooler` (migrations).
+- **Migrações não rodam sozinhas no deploy** — aplicar manualmente (`npx prisma migrate deploy`, trocando o `.env` temporariamente para produção).
+- **Webhook Asaas**: `https://SEU_APP/api/asaas/webhook`, protegido por `ASAAS_WEBHOOK_TOKEN`.
+- **Firmware**: display e Waveshares via cabo USB (Arduino CLI); a câmera tem **OTA pelo Wi-Fi** — depois da primeira gravação por cabo, atualizações seguintes só precisam subir o `.bin` novo em `server/public/firmware/` (ver seção de OTA no guia técnico).
 
 ## Integrações plugáveis (env)
 
 | Recurso | Env | Opções |
 |---|---|---|
-| SMS OTP | `SMS_PROVIDER` | `console` (dev) · `brasilsms` (R$5 teste) |
-| Placa | `PLACA_PROVIDER` | `none` (só formato) · `apibrasil` (7/dia grátis) · `placaapi` (10 teste) |
+| Placa (fallback) | `PLACA_PROVIDER` | `none` · `apibrasil` · `placaapi` — hoje o reconhecimento principal é por IA (Anthropic) |
 | Pagamento | `ASAAS_BASE_URL` | sandbox · produção |
+| Push notifications | `VAPID_*` | chaves VAPID (Web Push) |
 
-## Pendências
+## Pendências conhecidas
 
-- [ ] Chave Asaas (`ASAAS_API_KEY`) — sandbox primeiro
-- [ ] Provedor de SMS de produção
-- [ ] Ícone do app (DALL-E, prompt no histórico) → assets do Expo
-- [ ] Integração totem ↔ servidor (fase 2: MQTT ou voucher no totem)
+Ver seção 11 do `GUIA_TECNICO_COMPLETO.md` para a lista completa e atualizada.
