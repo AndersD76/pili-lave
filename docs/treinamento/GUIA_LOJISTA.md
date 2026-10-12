@@ -227,6 +227,8 @@ Para liberar de novo, toque em **Desbloquear** ao lado do nome. O histórico do 
 | Relatórios por período (entradas, saídas, estoque) | Próximo passo |
 | Caixa de autoatendimento (totem) e baixa automática por venda | A fazer |
 | Abertura da porta pelo celular e controle de capacidade | A fazer |
+| Modo reposição (loja bloqueada para clientes enquanto um funcionário repõe) | A fazer, junto com a porta |
+| Abrir a porta à distância pelo app (só o lojista) | A fazer, junto com a porta |
 | Câmeras e aviso de divergência com imagens | A fazer |
 | Reconhecimento facial no caixa | A fazer |
 | Indicadores no app (faturamento, mais vendidos, faixa etária) e aviso de estoque mínimo no celular | A fazer |

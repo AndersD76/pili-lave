@@ -80,6 +80,12 @@ como produto paralelo. Ao abrir o app, o cliente escolhe entre
 - A sessão dura 30 minutos, porque a máquina fica na frente dos clientes.
 - Tirar uma permissão ou desativar um funcionário vale na hora, mesmo que ele esteja logado.
 
+### Reposição de estoque e abertura remota (a construir com a porta e as câmeras)
+- **Modo reposição**: o funcionário entra pelo app como qualquer pessoa, faz o acesso administrativo no computador e inicia a reposição. É uma permissão própria ("Fazer reposição"), marcada pelo lojista.
+- **Durante a reposição a loja fica bloqueada para clientes.** Quem tentar entrar vê no app: "Em reposição de estoque. Por favor aguarde um pouco". Como a mensagem de lotação, ela vem do computador local por BLE.
+- Tudo o que mudar nas prateleiras nesse período é atribuído a quem está repondo e não gera aviso de divergência. Início e fim ficam no registro de atividades.
+- **Abertura remota da porta**: só o lojista, pelo app (entregador sem cadastro, cliente que precisa voltar). Cada abertura fica registrada no nome dele.
+
 ### Gestão
 - **Cada loja tem gestão própria e independente no computador local**: itens cadastrados, estoque, entrada de mercadoria, estoque mínimo, alerta de compra.
 - A nuvem guarda usuário, carteira e as vendas sincronizadas. O app mostra **indicadores** para o dono (faturamento, itens mais vendidos, faixa etária de consumo e outros a definir).
