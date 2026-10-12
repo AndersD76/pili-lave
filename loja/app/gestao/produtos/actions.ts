@@ -154,15 +154,19 @@ export async function salvarProduto(formData: FormData) {
 }
 
 /**
- * Define o percentual de venda de vários produtos de uma vez (lista "Sem
- * percentual" e tabela "Sem preço de venda" do painel). Cada campo
- * `pct_<id>` é um percentual sobre o custo; em branco, fica como está. O
+ * Define o percentual de venda de vários produtos de uma vez (a lista de
+ * produtos, em qualquer aba, e a tabela "Sem preço de venda" do painel).
+ * Cada campo `pct_<id>` é um percentual sobre o custo; a lista já manda o
+ * percentual atual de cada um, então só grava o que mudou. Em branco, fica
+ * como está (não dá pra apagar um percentual por aqui). O
  * preço de cada um é recalculado na hora. Se um estiver inválido, nenhum é
  * salvo.
  */
 export async function definirPercentuais(formData: FormData) {
   const { usuario } = await exigirPermissao("PRECO");
-  const voltar = String(formData.get("voltar") ?? "") === "painel" ? "/gestao" : `${BASE}?f=sempct`;
+  // volta pra tela de onde o formulário veio: painel, ou a aba da lista
+  const origem = String(formData.get("voltar") ?? "");
+  const voltar = origem === "painel" ? "/gestao" : origem === "sempct" || origem === "manual" ? `${BASE}?f=${origem}` : BASE;
   const com = (qs: string) => `${voltar}${voltar.includes("?") ? "&" : "?"}${qs}`;
   const erro = (msg: string): never => redirect(com(`erro=${encodeURIComponent(msg)}`));
 

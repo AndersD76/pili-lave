@@ -48,7 +48,8 @@ export default async function Produtos({
     prisma.produto.count({ where: semPct }),
     prisma.produto.count({ where: manual }),
   ]);
-  const editaPct = filtro === "sempct" && podePreco && produtos.length > 0;
+  // quem pode alterar preço digita o percentual direto na lista, em qualquer aba
+  const editaPct = podePreco && produtos.length > 0;
 
   const abas: { k: Filtro; rotulo: string; n?: number }[] = [
     { k: "todos", rotulo: "Todos" },
@@ -77,13 +78,18 @@ export default async function Produtos({
               <td>{p.estoqueMinimo}</td>
               <td>{reais(p.custoCents)}</td>
               <td>
-                {editaPct ? (
-                  <input
-                    className="field" name={`pct_${p.id}`} inputMode="decimal" placeholder="ex.: 40"
-                    style={{ width: 100, height: 36, fontSize: 14, padding: "0 10px" }}
-                  />
-                ) : p.precoManual ? (
+                {p.precoManual ? (
                   <span className="chip off">manual</span>
+                ) : editaPct ? (
+                  <input
+                    className="field" name={`pct_${p.id}`} inputMode="decimal" placeholder="sem %"
+                    defaultValue={p.margemPct === null ? "" : String(p.margemPct).replace(".", ",")}
+                    aria-label={`Percentual de venda de ${p.nome}`}
+                    style={{
+                      width: 90, height: 36, fontSize: 14, padding: "0 10px",
+                      ...(p.margemPct === null ? { borderColor: "var(--atencao)" } : {}),
+                    }}
+                  />
                 ) : p.margemPct === null ? (
                   <span className="chip at">sem %</span>
                 ) : (
@@ -131,9 +137,7 @@ export default async function Produtos({
       {filtro === "sempct" && (
         <p className="sub" style={{ marginTop: 12 }}>
           Produtos sem percentual de venda: o preço deles não acompanha o custo.
-          {podePreco
-            ? " Preencha o percentual de cada um (40 = custo mais 40%) e clique em Salvar percentuais. O preço é recalculado na hora."
-            : " Só quem pode alterar preço define o percentual."}
+          {podePreco ? " Preencha o percentual de cada um e clique em Salvar percentuais." : " Só quem pode alterar preço define o percentual."}
         </p>
       )}
       {filtro === "manual" && (
@@ -158,8 +162,15 @@ export default async function Produtos({
         </p>
       ) : editaPct ? (
         <form action={definirPercentuais}>
+          <input type="hidden" name="voltar" value={filtro} />
           {tabela}
-          <button className="btn" type="submit" style={{ marginTop: 12 }}>Salvar percentuais</button>
+          <div style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
+            <button className="btn" type="submit">Salvar percentuais</button>
+            <span className="sub">
+              Digite o percentual na coluna % de venda (40 = custo mais 40%) e salve: o preço de cada produto é
+              recalculado na hora.
+            </span>
+          </div>
         </form>
       ) : (
         tabela
