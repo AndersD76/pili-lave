@@ -20,7 +20,7 @@ export default function Login() {
         body: { email, password }, auth: false,
       });
       setToken(r.token);
-      router.replace("/app");
+      router.replace("/app/escolha");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível entrar");
     } finally {

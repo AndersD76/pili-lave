@@ -25,6 +25,7 @@ export async function AdminNav() {
         )}
       </Link>
       <Link href="/admin/maquinas">Máquinas</Link>
+      <Link href="/admin/lojas">Lojas</Link>
       <Link href="/admin/precos">Preços</Link>
       <Link href="/admin/repasses">Repasses</Link>
     </nav>

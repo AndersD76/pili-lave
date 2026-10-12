@@ -1,6 +1,6 @@
 # PILI CLEAN — Guia Técnico Completo
 
-> Documento de referência de tudo que existe no sistema até 2026-09-19: firmware (display, Waveshares, câmera), backend, app mobile, PWA, painel admin e banco de dados. Escrito a partir da leitura completa do código-fonte — quando algo é uma limitação conhecida ou pendência, está marcado explicitamente.
+> Documento de referência de tudo que existe no sistema até 2026-10-11 (atualizado pela última vez; escrito originalmente em 2026-09-19): firmware (display, Waveshares, câmera), backend, app mobile, PWA, painel admin e banco de dados. Escrito a partir da leitura completa do código-fonte — quando algo é uma limitação conhecida ou pendência, está marcado explicitamente.
 
 ---
 
@@ -13,6 +13,7 @@ PILI CLEAN é um sistema de lavagem automática de carros **sem operador fixo no
 - 2 **Waveshares** ESP32-S3-POE-ETH-8DI-8DO — expansores de I/O (8 entradas + 8 saídas cada), ligados via RS-485.
 - 1 **inversor de frequência** Delta MS300 — controla o motor (giro do braço / deslocamento do carrinho), também em RS-485.
 - 1 **câmera** ESP32-CAM (AI-Thinker) — tira fotos da placa e é o **único ponto de conexão com a internet** da máquina.
+- (opcional, por máquina) 1 **aspirador de pó**, ligado via relé (DO8 da Waveshare 2), controlado pelo app (ver seção 6.6c).
 
 **Softwares:**
 - **App mobile** (Expo/React Native) — cliente final: cadastro, compra de lavagem, acompanhamento.
@@ -80,6 +81,10 @@ Qualquer erro leva a `AUTO_ERRO` (para tudo, acende vermelho piscando).
 
 Processos implementados (cada um com sub-máquina própria, não-bloqueante): Pré-lavagem/Enxágue, Alta Pressão (giro triplo), Espuma A (com giro), Espuma B, Cor Mágica, Cera de Água, Secagem. O giro do braço tem lógica elaborada de rampa de desaceleração, debounce de sensores e "fine-homing" (busca fina por pulsos quando o giro para perto do home mas não exato).
 
+**Rampa de desaceleração do carrinho (Y14)**: tanto no avanço (ao perder o X10) quanto no retorno final (ao achar o X12), o carrinho desacelera suavemente em vez de parar seco — padronizado em **350ms** (`CARR_RAMPA_MS`, era 500ms) em `processos.h`, igual ao HOME (`HOME_X12_RAMPA_MS` em `modbus_waveshares.h`, que tem sua própria máquina de estados separada). Toda sub-máquina de retorno (Pré-Lavagem, Alta Pressão, e os processos simples via `_proc_simples` — Espuma A/B, Cor Mágica, Cera, Secagem) usa a mesma função compartilhada `carr_rev_x12_tick()`; só o jog manual (botão de segurar "carrinho" na tela manual) para instantaneamente, de propósito.
+
+Pausas finais ajustadas por pedido do operador: Espuma A e Cor Mágica = 60s (eram 15s e 45s).
+
 Sensores (nomes herdados do CLP original):
 - X0/X7 (Waveshare 1): indutivo de deslocamento / giro braço posição intermediária.
 - X10–X17 (Waveshare 2): carro sob a mesa, giro intermediário, fins de curso, **X14 (carro entrando)**, **X15 (carro na posição de lavagem)**, HOME do braço.
@@ -101,7 +106,9 @@ ESP-NOW só com a câmera agora (não fala mais com as Waveshares). Roteia as me
 Alarme de "câmera sem contato" continua em 60s (só informativo, mostra na tela).
 
 ### 3.5 `backend_client.h` + `licenca.h`
-Como o display não tem internet, ele manda seu estado (`FREE`/`WASHING`) pra câmera a cada 10s (`MSG_HB_STATE`), e ela relay o POST `/api/machine/heartbeat` de verdade, devolvendo a resposta (`MSG_HB_RESP`) com: estado da lâmpada, dados de licença, e comando de início (`start`) quando há uma reserva paga esperando.
+Como o display não tem internet, ele manda seu estado (`FREE`/`WASHING`) pra câmera a cada 5s (`HB_INTERVAL_MS`, reduzido de 10s pra isso — era o mesmo intervalo da câmera, agora o display avisa com o dobro de frequência), e ela relay o POST `/api/machine/heartbeat` de verdade, devolvendo a resposta (`MSG_HB_RESP`) com: estado da lâmpada, dados de licença, comando de início (`start`) quando há uma reserva paga esperando, e comando do **aspirador** (`vacuum_seg` — segundos restantes, -1 = inativo).
+
+**Aspirador (DO8)**: `_backend_processar_vacuum()`, chamada a cada ciclo de heartbeat, liga/desliga o relé do aspirador (`SET_ASPIRADOR`, `maquina_estados.h`) só conforme o campo `vacuum_seg` da resposta — nunca olha `g_estado_auto`, então não interfere numa lavagem em andamento. O backend é a fonte da verdade do tempo restante (ver 6.6c); o firmware só reflete ligado/desligado.
 
 **Duas travas de licença independentes:**
 - Pagamento: aviso aos 40 dias sem pagar, bloqueio aos 50 dias (ou `blocked=true` do backend).
@@ -121,7 +128,7 @@ O display **não conecta no Wi-Fi** — só guarda as credenciais (SSID/senha/UR
 - `tela_config.h` / `tela_velocidades.h` / `tela_modelos.h`: parâmetros do sistema, velocidades por etapa, sequência de processos por modelo.
 - `tela_senha.h`: teclado numérico genérico — 3 modos: `PAG` (senha de pagamento/acerto, padrão 3462), `CFG` (senha de config, padrão 1111), `TEC` (acesso técnico, padrão **2828** — ver 3.9).
 - `tela_senhas_cfg.h`: alterar as senhas acima.
-- `tela_wifi.h`: configuração Wi-Fi — a câmera é quem escaneia redes (o display nunca mexe no próprio rádio pra isso). Acessível direto da tela inicial de cadastro (botão "Configurar Wi-Fi", 09-19) pra locais onde a rede padrão do firmware não existe.
+- `tela_wifi.h`: configuração Wi-Fi — a câmera é quem escaneia redes (o display nunca mexe no próprio rádio pra isso). Acessível direto da tela inicial de cadastro (botão "Configurar Wi-Fi", 09-19) pra locais onde a rede padrão do firmware não existe. Tem também um campo de **SSID digitado manualmente** (alternativa ao dropdown do scan), útil se o scan falhar ou se o touch não alcançar o dropdown naquela área da tela.
 
 ### 3.9 `tela_boot.h` — Cadastro da máquina (testado em bancada 09-19)
 
@@ -166,15 +173,39 @@ Roda num ESP32-CAM (AI-Thinker, sensor OV2640). Arquivo único `src/main.cpp` + 
 
 Funções principais:
 - **Modo CONFIG vs CONECTADA**: sem credenciais salvas (NVS vazia), fica no canal 1 pedindo config (`MSG_WIFI_REQ`) até o display responder. Com credenciais, conecta e vira mestre de canal.
-- **Heartbeat** a cada 10s: `POST /api/machine/heartbeat` com o estado que o display mandou; relay da resposta (lâmpada/licença/start) de volta pro display.
-- **LPR**: máquina de estados não-bloqueante — no máximo 1 tentativa HTTP por passagem do `loop()`, timeout de 15s (`PILI_LPR_HTTP_TIMEOUT`), até 3 tentativas antes de descartar o frame.
+- **Heartbeat** a cada 10s: `POST /api/machine/heartbeat` com o estado que o display mandou; relay da resposta (lâmpada/licença/start/aspirador) de volta pro display.
+- **LPR**: máquina de estados não-bloqueante — no máximo 1 tentativa HTTP por passagem do `loop()`, timeout de 15s (`PILI_LPR_HTTP_TIMEOUT`), até 3 tentativas antes de descartar o frame. JPEG com qualidade reduzida (`PILI_JPEG_QUALITY`, 12→20, ~120KB→~90KB) — achado real (10-06): payload menor facilita achar um bloco de heap contíguo grande o bastante pra TLS numa memória fragmentada, reduzindo bastante falha de envio ("Failed to send chunk").
 - **Relay de eventos** (car-entered/wash-complete/fault): recebe do display por ESP-NOW, faz o POST, e só confirma (`MSG_EVT_ACK`) quando o backend responde 200 — garante que o débito nunca se perde. `wash-complete` com `source="remote"` (lavagem presencial, sem reserva) vira um registro de `LavagemPresencial` na nuvem (ver 6.6) em vez de ser descartado como "órfão".
 - **Watchdog de ESP-NOW**: se ficar 60s sem NENHUM envio bem-sucedido (não só falha de resposta — falha ao enviar mesmo), reinicia o chip sozinho.
+- **Watchdog geral de 30s (novo, 10-06)**: além do watchdog específico de sensor (abaixo), o sistema inteiro tem um `esp_task_wdt` de 30s — se o `loop()` não conseguir "alimentar" o watchdog por esse tempo (travado em qualquer ponto), reinicia sozinho. Achado real: o Arduino-ESP32 3.x já sobe com um watchdog padrão de fábrica ativo (timeout curto) — `esp_task_wdt_init()` falha silenciosamente com "already initialized" nesse caso, e é preciso usar `esp_task_wdt_reconfigure()` pra realmente trocar o timeout. Desligado explicitamente só durante o upload do OTA e do envio de foto LPR (operações que podem legitimamente passar de 30s numa rede lenta, sem estarem travadas de verdade) e religado logo depois.
+- **Recuperação do sensor de imagem**: se `esp_camera_fb_get()` falhar 3 vezes seguidas (~24s), reinicia só o módulo da câmera (`esp_camera_deinit` + `hardResetSensor` + `cameraInit`) — achado real: erros de I2C/SCCB no boot deixavam o sensor OV2640 preso sem gerar nenhum log depois disso (heartbeat continuava OK, mas nenhuma foto nova por minutos).
+- **Pausa do anúncio ESP-NOW durante o envio da foto**: o anúncio de canal (1x/s) disputava o mesmo rádio com o upload HTTPS da foto (maior que o heartbeat), causando falha de escrita na maioria das tentativas — agora pausa durante o `http.POST()` da foto e retoma logo depois.
 - **Timeout de handshake TLS (adicionado 09-19)**: `tls.setHandshakeTimeout()` em **todas** as chamadas HTTPS. Achado real em teste de bancada: com Wi-Fi fraco/instável, o handshake TLS podia ficar pendurado indefinidamente e travava o chip inteiro (só um reset físico recuperava) — o `HTTPClient.setTimeout()` sozinho não cobria essa fase.
 - **Provisionamento** (`MSG_PROV_REQ`): faz o POST de cadastro e guarda a identidade (cidade/rua/número/deviceKey) na própria NVS.
 - **Identidade** (`MSG_IDENT_REQ`, troca de display): responde com o que já tem salvo, sem tocar na nuvem.
 - **Busca de unidades** (`MSG_UNI_REQ`, 09-19): faz `GET /api/machine/unidades?cidade=X` e devolve a lista paginada por ESP-NOW.
 - **Recebe identidade** (`MSG_IDPUSH_REQ`, troca de câmera, 09-19): aplica localmente o que o display mandou (`aplicarIdPush()`), sem chamada nenhuma pra nuvem.
+- **Comando serial de emergência** (`atenderComandoSerial()`, novo 10-06): aceita `WIFI:<ssid>:<senha>` via USB — grava direto na NVS sem precisar da tela do display, útil quando o touch não alcança o botão Salvar.
+
+### 5.1 OTA (atualização por Wi-Fi) — novo 10-06
+
+A câmera consegue se atualizar sozinha pela internet, **sem precisar de cabo USB** depois da primeira gravação:
+
+- A cada 10 minutos (`PILI_OTA_CHECK_MS`, só quando conectada), confere `GET <api>/firmware/camera-version.json` (arquivo estático servido pelo Next.js, em `server/public/firmware/`).
+- Se a versão publicada for maior que a gravada no firmware (`PILI_FW_VERSION`, em `pili_cam_config.h`), baixa `GET <api>/firmware/camera.bin` e grava via `Update.h` (biblioteca padrão do ESP32 pra OTA).
+- **Só reinicia se a gravação fechar certinho** (`Update.end()` + `Update.isFinished()`) — senão continua rodando o firmware atual. Nunca troca pra uma imagem incompleta/corrompida sozinho.
+- **Esquema de partições**: precisou trocar pra `min_spiffs.csv` (`board_build.partitions` no `platformio.ini`) — o esquema padrão da placa (`huge_app`) tem uma única partição de app de 3MB e **nenhuma sobra pra OTA** (`Update.begin()` falharia sempre). `min_spiffs` dá 2 partições de ~1.9MB cada (`ota_0`/`ota_1`), de sobra pro firmware atual (~1.2MB).
+
+**Como publicar uma atualização nova** (depois da gravação inicial por USB):
+1. Suba `PILI_FW_VERSION` no `pili_cam_config.h`.
+2. Compile (`pio run`).
+3. Copie `.pio/build/esp32cam/firmware.bin` por cima de `server/public/firmware/camera.bin`.
+4. Suba o número em `server/public/firmware/camera-version.json`.
+5. Commit + push (o Railway serve os arquivos estáticos automaticamente).
+
+A câmera se atualiza sozinha no próximo ciclo de 10 minutos.
+
+> ⚠️ O **display** não tem esse mecanismo — ele não tem Wi-Fi (ver seção 2), então não há como baixar um `.bin` direto. OTA do display exigiria relay via ESP-NOW (a câmera baixa o firmware do display e repassa em pacotes pequenos, ~250 bytes cada) — não implementado ainda (ver pendências, seção 11).
 
 ---
 
@@ -189,12 +220,13 @@ Três sistemas de auth **separados e independentes**:
 ### 6.2 Modelo de dados (Prisma) — visão geral
 - **User**: cliente, lavador, parceiro ou admin (`role`: `CLIENT`/`LAVADOR`/`PARCEIRO`/`ADMIN`). Todo cadastro novo já nasce `CLIENT` (não existe opção "sou cliente" pra marcar). `walletCents` é um cache — a fonte da verdade é `WalletTx`.
 - **SolicitacaoParceiro** (nova, 09-19): pedido de uma capacidade extra (`tipo`: `LAVADOR`/`COMISSAO1`/`COMISSAO2`/`ALUGUEL`) feito por um usuário, com `status` (`PENDENTE`/`APROVADA`/`REJEITADA`). Um mesmo usuário pode ter várias linhas pendentes ao mesmo tempo (tipos diferentes), aprovadas/rejeitadas **independentemente** uma da outra. Pode ser criada no cadastro (marcando várias capacidades de uma vez) ou depois, a qualquer momento, pelo Perfil.
-- **MachineParticipante** (nova, 09-19): quem participa financeiramente de uma máquina — `machineId` + `userId` + `tipo` (enum `TipoParticipacao`: `LAVADOR`/`COMISSAO1`/`COMISSAO2`/`ALUGUEL`) + `percentual`. Substitui o antigo split fixo 55/45. Ver 6.6.
+- **MachineParticipante** (nova, 09-19): quem participa financeiramente de uma máquina — `machineId` + `userId` + `tipo` (enum `TipoParticipacao`: `LAVADOR`/`COMISSAO1`/`COMISSAO2`/`ALUGUEL`) + **`escopo`** (enum `ParticipacaoEscopo`: `LAVAGEM`/`ASPIRADOR`, novo 10-06) + `percentual`. Substitui o antigo split fixo 55/45. Lavagem e aspirador têm percentuais **independentes** por escopo (`@@unique([machineId, tipo, escopo])`). Ver 6.6 e 6.6c.
 - **Vehicle**: placa normalizada, programa padrão.
 - **Program**: os 4 tipos de lavagem — hoje só o **nome** é editável de forma centralizada (aba `/admin/precos`); o `precoCents` do Program é o valor de fábrica, praticamente não usado desde que o preço passou a ser por unidade (ver `StationPrograma`).
 - **StationPrograma** (nova, 09-19): preço de um tipo de lavagem **numa unidade específica** — cada unidade cobra o valor que quiser, preenchido do zero (não herda de nenhum "padrão" central). `lib/precos.ts` (`precoEfetivo()`) resolve o preço certo na hora de cobrar.
 - **WashStation**: a **unidade** (endereço — cidade + rua).
-- **Machine**: a máquina física, pertence a uma `WashStation`, tem `numero` (posição na unidade), `deviceKey`, status ao vivo, sensores X14/X15, contadores de lavagem, controle de licença (`lastPaymentDate` — também serve de ponto de "fechamento" pra todo mundo que participa dela), e a lista de `MachineParticipante` vinculados (Lavador, Comissão 1, Comissão 2, Aluguel — ver 6.6). O campo antigo `operadorId` foi substituído pelo participante do tipo `LAVADOR`.
+- **Machine**: a máquina física, pertence a uma `WashStation`, tem `numero` (posição na unidade), `deviceKey`, status ao vivo, sensores X14/X15, contadores de lavagem, controle de licença (`lastPaymentDate` — também serve de ponto de "fechamento" pra todo mundo que participa dela), `vacuumEnabled`/`vacuumPriceCents`/`vacuumDurationMin` (aspirador, novo 10-06, ver 6.6c), e a lista de `MachineParticipante` vinculados (Lavador, Comissão 1, Comissão 2, Aluguel — ver 6.6). O campo antigo `operadorId` foi substituído pelo participante do tipo `LAVADOR`.
+- **VacuumUse** (nova, 10-06): um uso do aspirador — `userId`, `machineId`, `amountCents`, `durationSec`, `status` (`PAID` → `ACTIVE` → `COMPLETED`), `startedAt`, `completedAt`. Compra debita o crédito na hora (`PAID`); o cliente decide quando começar a contar o tempo (`ACTIVE`, botão "Começar agora"). Não depende de `Order`/`Reservation` — pode ser comprado solto, sem lavar o carro.
 - **Order**: a compra (voucher). Status `PAID` → `REDEEMED` (lavagem concluída) ou `CANCELED` (estorno).
 - **Reservation**: o motor real da fila — `HELD` (pago, esperando 1h) → `ACTIVE` (placa reconhecida, máquina livre, verde aceso) → `ENTERED` (X14 confirmou) → `COMPLETED` (**único ponto de débito de verdade**) / `EXPIRED` / `CANCELED` / `FAILED`.
 - **LavagemPresencial** (nova, 09-19): uma linha por lavagem paga em dinheiro nos botões físicos X1-X6 — valor em R$ e data/hora exatos (o firmware só contava localmente, sem valor nem timestamp).
@@ -218,7 +250,11 @@ Três sistemas de auth **separados e independentes**:
 ### 6.4 Reconhecimento de placa (LPR)
 `POST /api/lpr/frame` recebe o JPEG cru da câmera. Filtro de cena primeiro (compara tamanho do arquivo pra não gastar orçamento de IA em cena parada). A leitura em si é feita pela **API de visão da Anthropic** (`lib/vision-claude.ts`). Fallback: Plate Recognizer (se configurado) → Tesseract (bancada).
 
+**Limpeza periódica das fotos** (`iniciarLimpezaPeriodica`, `server/lib/frames.ts`, novo 10-06): a cada 20s, zera só os **bytes JPEG** (não a linha) das capturas com mais de 2 minutos — a câmera manda 1 frame a cada ~8s o tempo todo, então sem isso a tabela `Capture` (que guarda o JPEG inteiro na própria linha) cresceria sem parar. O registro em si (placa, status, horário, nota) continua existindo pra sempre — é histórico. `/capturas` mostra "imagem expirada" pras que já foram limpas.
+
 Leitura de alta confiança (≥0.97) libera sozinha; leitura fraca compara contra quem já pagou e está na fila — se bater com exatamente um veículo, cria uma "sugestão" (`Arrival.SUGGESTED`) que o motorista confirma no app ("é o seu carro?").
+
+**Câmera ao vivo** (`/api/lpr/ao-vivo`, agora ligada na tela — era só backend até 10-06): sem `?img`, devolve metadados da captura mais recente (id/hora); com `?img=<id>`, devolve o JPEG daquela captura. Só libera pra quem **tem lavagem em andamento** (reserva viva) — câmera do pátio não é liberada pra qualquer um ver parado. As telas da unidade (mobile e PWA) fazem poll a cada 4s nos metadados e só baixam a imagem de novo quando o id muda; fora de uma lavagem ativa, mostram "Disponível quando sua lavagem estiver em andamento" em vez de ficar tentando.
 
 ### 6.5 Sistema multi-máquina
 Uma unidade (`WashStation`) pode ter **várias máquinas** (`Machine.numero`). A compra não escolhe qual máquina — entra numa **fila única**: quando promove a reserva, pega **qualquer máquina livre daquela unidade** (`machineForStation()`). O cliente só escolhe manualmente quando libera sem câmera e há mais de uma máquina (ver 6.3).
@@ -242,11 +278,11 @@ O antigo split fixo 55%/45% lavador/admin foi substituído por um modelo de **N 
 - `COMISSAO1`, `COMISSAO2` e `ALUGUEL` **nunca** ficam com dinheiro na mão em nenhum dos dois casos — são sempre credores dos dois lados (presencial e app).
 
 Toda a lógica de cálculo está em `server/lib/comissao.ts`:
-- `participacoesDaMaquina(machineId)` — lista os participantes cadastrados na máquina.
-- `percentualDoUsuarioNaMaquina(machineId, userId)` — percentual de uma pessoa específica.
-- `percentualAdmin(machineId)` — calcula o que sobra pro admin (100% menos a soma dos cadastrados).
+- `participacoesDaMaquina(machineId, escopo?)` — lista os participantes cadastrados na máquina, filtrados por escopo (`"LAVAGEM"` por padrão; ver 6.6c pro aspirador).
+- `percentualDoUsuarioNaMaquina(machineId, userId, escopo?)` — percentual de uma pessoa específica, também por escopo.
+- `percentualAdmin(machineId)` — calcula o que sobra pro admin (100% menos a soma dos cadastrados), **por escopo** (o teto de 100% de lavagens e de aspirador são independentes).
 - `participacaoDe(...)` / `divisaoCompleta(...)` — quebra o valor faturado (presencial/app, por tipo de lavagem) entre todos os participantes + admin.
-- `relatorioMaquinaPara(machineId, userId, periodo)` — monta o relatório de uma pessoa específica numa máquina (usado tanto pelo painel do lavador quanto pelo do parceiro).
+- `relatorioMaquinaPara(machineId, percentual, inicio, fim, percentualAspirador?)` — monta o relatório de uma pessoa específica numa máquina, incluindo a linha de aspirador com o percentual **separado** (ver 6.6c). Faz fechamento preguiçoso de usos de aspirador vencidos (`finalizarAspiradoresVencidos`) pra não depender só do heartbeat do display ter confirmado.
 
 `GET /api/lavador/painel` (só vê as máquinas onde é o participante `LAVADOR`) e o novo `GET /api/parceiro/painel` (`server/app/api/parceiro/painel/route.ts`, só vê as máquinas onde é `COMISSAO1`/`COMISSAO2`/`ALUGUEL`) aceitam os mesmos parâmetros:
 - `?de=AAAA-MM-DD&ate=AAAA-MM-DD`: período customizado (calendário no app).
@@ -269,6 +305,23 @@ Qualquer cliente pode pedir uma ou mais capacidades extras (Lavador, Comissão 1
 - **Correção 09-19** (`server/app/admin/usuarios/actions.ts`): o atalho de promover **direto** pra Lavador só mudava o `role` do usuário, sem criar a `SolicitacaoParceiro` correspondente como `APROVADA` — a pessoa virava Lavador de verdade (ganhava a aba), mas o próprio Perfil dela continuava mostrando "Pedir" em vez de "Aprovado" na seção "Também é lavador, vendedor ou aluguel?". Isso já funcionava certo pro caso "Parceiro"; agora o caso "Lavador" também faz `upsert` de `SolicitacaoParceiro` (tipo `LAVADOR`, status `APROVADA`) na mesma transação que atualiza o `role` — os dois atalhos ficam consistentes.
 - Filtro por tipo de cadastro em `/admin/usuarios`: abas no topo (Todos/Cliente/Lavador/Comissão 1/Comissão 2/Aluguel/Admin) com contagem, via `?filtro=` na URL.
 - No mobile, a visibilidade das abas "Minha Máquina" e "Comissões" é baseada em **capacidade aprovada** (solicitação com `status: APROVADA`), não mais só no campo `role` — uma pessoa aprovada como Lavador e também como Aluguel vê as duas abas ao mesmo tempo.
+
+### 6.6c Aspirador de pó (novo, 10-06)
+
+Serviço opcional por máquina, independente da lavagem — pago pela carteira (nunca em espécie), com percentuais de comissão **próprios**, separados dos das lavagens (ver `escopo` em 6.2).
+
+**Configuração** (`/admin/maquinas`, seção "Aspirador de pó" de cada máquina): checkbox de habilitado + preço (R$) + duração (minutos). Desabilitado por padrão em toda máquina nova.
+
+**Fluxo de compra**:
+1. `POST /api/vacuum/buy` — debita o crédito na hora (mesma guarda atômica de saldo do `/api/orders`), cria `VacuumUse` em `PAID`. Pode ser chamado solto (tela da unidade, botão "X min de aspirador de pó") ou como add-on oferecido depois de pagar uma lavagem.
+2. `POST /api/vacuum/start` — o cliente aperta "Começar agora" quando estiver pronto pra usar; só então o uso vira `ACTIVE` com `startedAt = now()`. Comprar não liga nada sozinho.
+3. A cada heartbeat (`POST /api/machine/heartbeat`), se há um `VacuumUse` `ACTIVE` na máquina, o backend calcula `segundosRestantes` (= `durationSec` − tempo desde `startedAt`) e devolve no campo `vacuum` da resposta. Quando chega a 0, marca `COMPLETED` e para de mandar o comando.
+4. O display liga/desliga o relé (DO8) só com base nesse campo — ver 3.5. **Isolado do `g_estado_auto`**: nunca interfere numa lavagem em andamento, mesmo que aconteçam ao mesmo tempo.
+5. **Fechamento preguiçoso** (`finalizarAspiradoresVencidos`, `server/lib/vacuum.ts`): como o passo 3 depende do heartbeat físico da máquina pra fechar o uso, e isso pode não acontecer (câmera off, teste sem hardware), os relatórios (painel do lavador/parceiro) também fecham usos vencidos por conta própria ao serem consultados — garante que o faturamento não fica "preso" em `ACTIVE` pra sempre.
+
+**App**: tela dedicada (`aspirador.tsx` no mobile, `/app/aspirador` na PWA) cobre comprar → "Começar agora" → contagem regressiva local (só visual — o tempo real é controlado pelo backend/display). Acessível de duas formas: standalone (botão na tela da unidade) ou como add-on oferecido num `Alert`/`confirm` depois de pagar uma lavagem na mesma unidade (decisão de produto: só lavagem oferece add-on de aspirador, o inverso não).
+
+**Faturamento**: aparece como linha extra no painel do lavador/parceiro ("Aspirador · Nx — R$ X") e como tabela de "Divisão entre participantes — Aspirador" no admin (ver 7 do guia de admin) — sempre do lado "app" (nunca presencial, já que é sempre pago por carteira).
 
 ### 6.7 Preço por unidade (`StationPrograma`, `lib/precos.ts`)
 
@@ -293,6 +346,9 @@ Cada unidade cobra o que quiser pelos 4 tipos de lavagem — não existe mais um
 /api/parceiro/painel    painel do parceiro (comissão 1/2, aluguel) — mesmos parâmetros, sem alerta de falha
 /api/parceiro/solicitar pede uma capacidade nova (lavador/comissão1/comissão2/aluguel)
 /api/lpr/frame          recebe foto da câmera, aciona o LPR
+/api/lpr/ao-vivo        câmera ao vivo (metadados + imagem), só com lavagem em andamento
+/api/vacuum/buy         compra do aspirador (debita credito, cria VacuumUse em PAID)
+/api/vacuum/start       "começar agora" — vira ACTIVE, começa a contar o tempo
 /api/machine/           heartbeat, car-entered, wash-complete (app + presencial), fault,
                         provisionar, unidades (busca por cidade)
 /api/admin/machine/payment   marcar pagamento em dia (legado, ver /admin/maquinas)
@@ -308,13 +364,43 @@ Três coisas precisam estar vivas pra uma lavagem acontecer: o **display** (exec
 ### 6.10 Notificações push (`lib/push.ts`)
 Web Push com chaves VAPID. `avisarCliente()` manda pra todos os aparelhos inscritos de um usuário (limpa inscrições mortas automaticamente); `avisarAdmins()` manda pra todos os admins. Nunca derruba o fluxo principal se falhar — push é extra.
 
+### 6.11 Loja de conveniência — etapa 1 (novo 10-11, **só no banco local**, branch `loja-conveniencia`)
+
+Produto paralelo à lavagem, no mesmo app. O conceito, as decisões e a ordem de construção estão em `PROJETO_LOJA_AUTOSERVICE.md`. O que já existe no código:
+
+- **Schema** (migration `20261011150000_loja_cadastro_cliente`, **ainda não aplicada em produção**): `User.codigoCliente` (numérico, sequencial, único — é o que a loja registra na entrada), `User.nascimento`, `User.termosVersao` / `User.termosAceitosEm`, e a tabela **`FotoRosto`** (JPEG do rosto + `consentimentoEm`; fica fora de `User` porque `requireUser()` carrega o `User` inteiro a cada chamada).
+- **Termo de uso** (`lib/termos.ts`): `TERMOS_VERSAO` + os tópicos do texto. Trocar a versão obriga todo mundo a aceitar de novo. **O texto atual é um rascunho**, pendente de revisão jurídica. `GET /api/termos` devolve o texto (usado pelo app nativo); `POST /api/termos` registra o aceite e exige data de nascimento (quem se cadastrou antes informa ali).
+- **Foto do rosto**: `POST /api/me/foto` (`jpegBase64` + `consentimento: true`) — exige termo aceito, confere que é JPEG, limite de 1 MB, uma foto por pessoa (mandar de novo substitui).
+- **`/api/me`, login e cadastro** devolvem também `codigoCliente`, `nascimento`, `termosAceitos` (da versão vigente) e `temFoto`. O cadastro aceita `nascimento` ("AAAA-MM-DD").
+- **Telas** (PWA em `server/app/(pwa)/app/`, nativo em `mobile/src/app/`): `escolha` (porta de entrada: "Loja conveniência" ou "Lavagem expressa" — login, abertura do app e `start_url` da PWA caem aqui), `termos` (bloqueia o uso até aceitar), `loja` (home da loja; exige foto) e a tela de foto (`loja/foto` na PWA, `loja-foto` no nativo). A home da lavagem continua em `/app` (PWA) e `/(tabs)` (nativo), com um link de volta pra escolha. O onboarding da lavagem passou a aparecer na primeira vez que o cliente escolhe a lavagem.
+
+**Lojas, dono, bloqueio e suporte** (migration `20261012100000_loja_dono_bloqueio`, também **só no banco local**):
+
+- **`Loja`**: cadastro da loja (nome, endereço, `capacidade` — padrão 3, `active`, `donoId`). Estoque e catálogo **não** ficam aqui: vivem no computador local de cada loja.
+- **Dono de loja**: novo valor `DONO_LOJA` em `TipoParticipacao`, usado **só** em `SolicitacaoParceiro` (pedido no cadastro ou no perfil, aprovado em `/admin/usuarios`) — nunca como `MachineParticipante`. Aprovar **não muda o `role`** (continua `CLIENT`; virar `PARCEIRO` abriria a aba Comissões à toa). As abas "Comissões" (PWA e nativo) ignoram `DONO_LOJA`. O vínculo com a loja é `Loja.donoId`, definido em **`/admin/lojas`** (o select só oferece quem tem `DONO_LOJA` aprovado).
+- **`LojaBloqueio`**: cliente impedido de entrar numa loja, com `motivo` (visível só pro dono). Vale enquanto `removidoEm` for null — desbloquear não apaga a linha.
+- **`LojaMensagem`**: mensagem do cliente pro suporte da loja + `resposta` do dono. Limite de 3 mensagens sem resposta por cliente por loja.
+- **Rotas do cliente**: `GET /api/lojas` (lojas abertas + `bloqueado` + as próprias mensagens) e `POST /api/lojas/[id]/suporte` (avisa o dono por push; loja sem dono avisa os admins).
+- **Rotas do dono** (todas conferem `Loja.donoId`, via `lib/loja.ts`): `GET /api/dono/lojas`, `POST /api/dono/lojas/[id]/bloqueios` (por `codigoCliente` + motivo), `DELETE /api/dono/bloqueios/[id]`, `POST /api/dono/mensagens/[id]` (resposta; avisa o cliente).
+- **Telas**: home da loja lista as lojas com aviso de bloqueio e formulário de suporte; **"Minha loja"** (`/app/minha-loja` na PWA, `minha-loja` no nativo) é a área do dono.
+
+**Auto-cadastro da loja** (migration `20261012150000_loja_provisionamento`, **só no banco local**) — mesma lógica do cadastro de máquina (6.5):
+
+- `Loja.deviceKey` (identidade do computador central da loja, gerada por ele; null = loja criada à mão no admin) e `Loja.stationId` (unidade de lavagem no mesmo endereço, opcional).
+- `GET /api/loja/unidades?cidade=X`: endereços já cadastrados naquela cidade — lojas existentes (`temComputador` diz se já há um computador vinculado) mais as unidades de lavagem que ainda não têm loja.
+- `POST /api/loja/provisionar`: recebe `deviceKey` + `lojaId` **ou** `stationId` **ou** `cidade`+`rua`. Endereço digitado é comparado com `lib/endereco.ts` (ignora acento, maiúscula e prefixo de logradouro) contra lojas e unidades de lavagem antes de criar. Loja nova nasce `active=false` e sem dono (o admin abre em `/admin/lojas`). Loja que já tem outro computador responde 409 com `precisaSubstituir` e só troca com `substituir: true`; um computador já cadastrado em outra loja é recusado.
+- As duas rotas são protegidas pelo mesmo `PROVISION_SECRET` das máquinas (header `x-provision-secret`).
+- Quem chama essas rotas é a tela de primeiro uso do programa local da loja, que ainda não existe (etapa 2).
+
+Ainda não existe: tudo das etapas seguintes (gestão local, totem, entrada por BLE, câmeras). O bloqueio ainda não impede nada fisicamente — passa a valer quando a entrada por BLE consultar `LojaBloqueio`.
+
 ---
 
 ## 7. App Mobile — `mobile/` (Expo/React Native + Expo Router)
 
 Estrutura de abas (`src/app/(tabs)/`):
 - **Início** (`index.tsx`): saldo, reserva ativa (com contagem regressiva, botão "Cheguei" manual, cancelar), veículos, sugestão de placa fraca pra confirmar. Botão "Reservar lavagem" abre a lista de **Unidades** (não vai mais direto pro formulário — ver abaixo).
-- **Unidades**: lista/mapa das unidades (`/api/stations`), com status agregado (aberto/ocupado/manutenção). Tocar numa unidade abre o detalhe (`unidade/[id].tsx`) com as máquinas dela; o botão "Reservar lavagem" de lá já leva o `stationId` pra frente.
+- **Unidades**: lista/mapa das unidades (`/api/stations`), com status agregado (aberto/ocupado/manutenção), sem mencionar aspirador — essa opção só aparece depois de entrar na unidade. Tocar numa unidade abre o detalhe (`unidade/[id].tsx`) com as máquinas dela, a câmera ao vivo (poll de 4s em `/api/lpr/ao-vivo`, ver 6.4), o botão "Reservar lavagem" (já leva o `stationId` pra frente) e, se a unidade tiver máquina habilitada, o botão **"X min de aspirador de pó"** (`aspirador.tsx`, novo 10-06 — ver 6.6c).
 - **Carteira**: saldo e extrato, recarga.
 - **Planos**: os tipos de lavagem.
 - **Minha Máquina** (`minha-maquina.tsx`, aparece pra quem tem a capacidade **Lavador aprovada** em `SolicitacaoParceiro` — não é mais baseado só em `role`): painel da(s) máquina(s) que o usuário opera — filtro Hoje / período customizado (calendário nativo, `@react-native-community/datetimepicker`) / "Não acertado ainda", tabela por tipo (presencial/app, já com a parte do lavador), soma no rodapé de cada coluna, e o card "Sua participação" com o valor final.
@@ -349,6 +435,9 @@ Desde que ficou claro que o PWA é a única forma real de uso (ver nota no item 
 - **`/app/comissoes`** (novo, 09-19): painel do parceiro (Comissão 1/2, Aluguel), equivalente a `mobile/.../minhas-comissoes.tsx`. Mesma estrutura de filtro de período, usa `/api/parceiro/painel` — sem nenhum destaque de falha/status técnico, já que o parceiro só acompanha o relatório financeiro.
 - **`/app/planos`** (novo, 09-19): réplica exata da tela "em breve" do nativo (`mobile/src/app/(tabs)/planos.tsx`) — clube de assinatura com lavagens mensais inclusas, anunciado mas **sem lógica nenhuma implementada** ainda, é só uma tela informativa.
 - **`/app/unidades`**: já existia (lista de unidades pra escolher antes de reservar), só não estava na barra de navegação — ganhou `<Nav />` e agora aparece como aba.
+- **`/app/unidade/[id]`** (novo, 10-06): tela de detalhe da unidade — não existia na PWA antes, só no mobile; a lista de unidades ia direto pra `lavagem/page.tsx`. Agora segue o mesmo padrão do mobile: máquinas, câmera ao vivo, botão "Reservar lavagem" e, se houver, "X min de aspirador de pó".
+- **`/app/aspirador`** (novo, 10-06): equivalente a `mobile/src/app/aspirador.tsx` — comprar → "Começar agora" → contagem regressiva (ver 6.6c).
+- **`lavagem/page.tsx`**: depois de pagar, se a unidade tiver máquina com aspirador, oferece o add-on via `window.confirm()`.
 
 ---
 
@@ -358,7 +447,7 @@ Desde que ficou claro que o PWA é a única forma real de uso (ver nota no item 
 - **Lavagens** (`/admin/lavagens`): últimas 200, com status/voucher/quem resgatou.
 - **Usuários** (`/admin/usuarios`): lista completa, com a seção **"Cadastros a aprovar"** no topo (solicitações pendentes de `SolicitacaoParceiro`, Aprovar/Rejeitar uma a uma) e um badge de contagem no menu. Abas de filtro por tipo de cadastro (Todos/Cliente/Lavador/Comissão 1/Comissão 2/Aluguel/Admin, via `?filtro=`). Promove/rebaixa direto pelo dropdown (Cliente/Lavador/Parceiro — escolhendo o tipo específico quando é Parceiro).
 - **Preços** (`/admin/precos`, nova 09-19): só edita o **nome** dos 4 tipos de lavagem — o preço em R$ fica dentro de cada unidade (ver abaixo e 6.7).
-- **Máquinas** (`/admin/maquinas`, redesenhado 09-19): cards de estatística no topo (total, offline, em manutenção, licença bloqueada) + **abas por unidade** — unidade com mais de uma máquina abre sub-abas (Máquina 1, 2, 3...) ao clicar. Uma aba **"Resumo geral / TOTAIS"** separada soma tudo (todas as máquinas) por tipo de lavagem. Dentro de cada unidade: preço dos 4 tipos (editável ali mesmo), status/licença/sensores da máquina selecionada, valor acumulado desde o último fechamento, histórico de lavagens, a seção **"Participação na máquina"** (cadastro/edição dos 4 tipos de participante com percentual, regra dos 100%) e a seção **"Divisão entre participantes"** com a tabela completa por participante (incluindo o admin calculado), por origem, mais o saldo líquido de cada um.
+- **Máquinas** (`/admin/maquinas`, redesenhado 09-19): cards de estatística no topo (total, offline, em manutenção, licença bloqueada) + **abas por unidade** — unidade com mais de uma máquina abre sub-abas (Máquina 1, 2, 3...) ao clicar. Uma aba **"Resumo geral / TOTAIS"** separada soma tudo (todas as máquinas) por tipo de lavagem. Dentro de cada unidade: preço dos 4 tipos (editável ali mesmo), status/licença/sensores da máquina selecionada, valor acumulado desde o último fechamento, a seção **"Aspirador de pó"** (habilitar + preço + duração, novo 10-06, ver 6.6c), histórico de lavagens, **duas** tabelas de participação — **"Participação na máquina — Lavagens"** e **"— Aspirador de pó"** (cadastro/edição dos 4 tipos de participante com percentual, regra dos 100% **por escopo**, independente entre os dois) — e **duas** tabelas de "Divisão entre participantes" (uma por escopo) com a tabela completa por participante (incluindo o admin calculado), por origem, mais o saldo líquido de cada um.
 
 ---
 
@@ -388,8 +477,12 @@ Firmware da câmera tem seu próprio `PILI_PROVISION_SECRET` (deve bater com o `
 - **`diagnosticar()`** (saúde da operação) ainda assume a "máquina padrão" — não totalmente adaptado pra várias máquinas simultâneas.
 - **Sem "esqueci minha senha"** por decisão do usuário (não querem depender de provedor de e-mail ainda).
 - **Sem provedor de e-mail configurado** — se no futuro precisar (recibos, etc.), precisa escolher um serviço.
-- **OTA (atualização de firmware remota)** não existe — toda atualização exige cabo USB no local.
-- **Diagnóstico remoto fino** (sensores individuais, sub-estado do processo) não chega na nuvem hoje — só aparece na tela física ou no `Serial`.
+- **Nota fiscal (NFS-e)**: ainda não implementada. Lavagem de carro é serviço (ISS municipal, não NF-e de mercadoria) — exige CNPJ + inscrição municipal + enquadramento tributário definidos com contador antes de qualquer integração técnica. Caminho mais comum pra automatizar: provedor intermediário (Focus NFe, eNotas, NFe.io) que já resolve a integração com cada prefeitura por trás de uma API única.
+- **OTA (atualização de firmware remota)**: existe só pra **câmera** desde 10-06 (ver 5.1) — baixa `.bin` e versão de arquivos estáticos no Railway, a cada 10min. O **display não tem** (sem Wi-Fi próprio); ainda exige cabo USB. Dá pra fazer via relay ESP-NOW (câmera baixa o firmware do display e repassa em pacotes pequenos), mas não foi implementado — é mais trabalho de protocolo (chunking, confirmação por pacote) que o da câmera.
+- **Watchdog só por software na câmera**: achado real (10-06) — mesmo com o watchdog de 30s e a recuperação específica do sensor de imagem, a câmera já travou de um jeito que nenhum dos dois detectou (só um power-cycle manual resolveu; ~20s+ sem nenhum contato ESP-NOW nesse episódio). Sugere um travamento abaixo do nível que software alcança (ex: driver de rádio Wi-Fi). Um watchdog por **hardware** (circuito externo que corta/religa a alimentação se a câmera não "latir" periodicamente) resolveria isso de verdade, mas não existe ainda.
+- **Fragmentação de heap na câmera**: com o tempo de uso (câmera + Wi-Fi + ESP-NOW rodando juntos), o maior bloco livre contíguo de memória oscila e pode cair o suficiente pra atrapalhar a alocação do TLS, causando falha intermitente de envio de foto ("Failed to send chunk"). Mitigado parcialmente reduzindo o tamanho do JPEG (ver 5), mas não eliminado — ainda ocorre ocasionalmente.
+- **Diagnóstico remoto fino** (sensores individuais, sub-estado do processo) não chega na nuvem hoje — só aparece na tela física ou no `Serial`. Sem jeito de ler o log serial remotamente (só com cabo USB físico conectado).
+- **Espuma manual**: ainda não existe uma opção de espuma manual na tela/fluxo manual do display — hoje só existe via os processos automáticos (Espuma A/B, Cor Mágica).
 - **PROVISION_SECRET e ADMIN_PASSWORD**: confirme que estão configurados em produção (Railway) antes de considerar o sistema fechado para acesso externo — o padrão do projeto é "sem a variável, fica aberto (fase de teste)".
 - **Migrações não rodam sozinhas no deploy do Railway** — precisa aplicar manualmente (`npx prisma migrate deploy` com o `.env` apontando pra produção, revertendo logo em seguida) toda vez que o schema muda.
 - **Substituição de câmera testada só parcialmente em bancada** — o fluxo ESP-NOW (`MSG_IDPUSH_*`) foi validado, mas ainda não numa instalação real trocando a peça física de verdade.
@@ -402,7 +495,9 @@ Firmware da câmera tem seu próprio `PILI_PROVISION_SECRET` (deve bater com o `
 |---|---|
 | Preço de um tipo de lavagem numa unidade | `/admin/maquinas` (aba da unidade) — não é mais global |
 | Nome dos 4 tipos de lavagem | `/admin/precos` |
-| Percentual de cada participante numa máquina | `/admin/maquinas` (seção "Participação na máquina") |
+| Percentual de cada participante numa máquina (lavagem ou aspirador) | `/admin/maquinas` (seção "Participação na máquina — Lavagens" / "— Aspirador") |
+| Habilitar/preço/duração do aspirador numa máquina | `/admin/maquinas` (seção "Aspirador de pó") |
+| Publicar firmware novo da câmera (OTA) | subir `PILI_FW_VERSION`, copiar `.bin` pra `server/public/firmware/camera.bin`, subir `camera-version.json` |
 | Lógica de cálculo de comissão/divisão | `server/lib/comissao.ts` |
 | Aprovar/rejeitar pedido de papel (lavador/comissão/aluguel) | `/admin/usuarios` (seção "Cadastros a aprovar"), `server/app/api/parceiro/solicitar/route.ts` |
 | Como a fila/reserva funciona | `server/lib/reservations.ts` |
@@ -418,4 +513,4 @@ Firmware da câmera tem seu próprio `PILI_PROVISION_SECRET` (deve bater com o `
 
 ---
 
-*Documento gerado por revisão completa do código-fonte em 2026-09-18, atualizado em 2026-09-19. Atualize conforme o sistema evoluir — este arquivo não se atualiza sozinho.*
+*Documento gerado por revisão completa do código-fonte em 2026-09-18, atualizado em 2026-09-19 e 2026-10-11 (aspirador de pó, OTA da câmera, câmera ao vivo, comissão por escopo, watchdog/recuperação da câmera, ajustes de rampa). Atualize conforme o sistema evoluir — este arquivo não se atualiza sozinho.*

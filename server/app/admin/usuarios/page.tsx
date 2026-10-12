@@ -15,9 +15,10 @@ const LABEL_TIPO: Record<string, string> = {
   COMISSAO1: "Comissão 1",
   COMISSAO2: "Comissão 2",
   ALUGUEL: "Aluguel",
+  DONO_LOJA: "Dono de loja",
 };
 
-type FiltroTipo = "TODOS" | "CLIENT" | "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL" | "ADMIN";
+type FiltroTipo = "TODOS" | "CLIENT" | "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL" | "DONO_LOJA" | "ADMIN";
 
 const FILTROS: { k: FiltroTipo; label: string }[] = [
   { k: "TODOS", label: "Todos" },
@@ -26,6 +27,7 @@ const FILTROS: { k: FiltroTipo; label: string }[] = [
   { k: "COMISSAO1", label: "Comissão 1" },
   { k: "COMISSAO2", label: "Comissão 2" },
   { k: "ALUGUEL", label: "Aluguel" },
+  { k: "DONO_LOJA", label: "Dono de loja" },
   { k: "ADMIN", label: "Admin" },
 ];
 
@@ -72,7 +74,7 @@ export default async function AdminUsuarios({
         <>
           <h2 className="section-title">Cadastros a aprovar ({pendentes.length})</h2>
           <p style={{ color: "var(--aco-d)", fontSize: 13, marginBottom: 14 }}>
-            Pedidos pra virar Lavador, Comissão 1/2 ou Aluguel — a pessoa continua Cliente normal até você aprovar, e
+            Pedidos pra virar Lavador, Comissão 1/2, Aluguel ou Dono de loja — a pessoa continua Cliente normal até você aprovar, e
             pode ter mais de um pedido ao mesmo tempo (ex: Lavador de uma máquina e Aluguel de outra). Só depois de
             aprovada ela aparece pra vincular numa máquina.
           </p>
@@ -156,7 +158,7 @@ export default async function AdminUsuarios({
                 <td>{u.createdAt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
                 <td>
                   {u.role !== "ADMIN" && (() => {
-                    const aprovadaParceiro = u.solicitacoes.find((s) => s.status === "APROVADA" && s.tipo !== "LAVADOR");
+                    const aprovadaParceiro = u.solicitacoes.find((s) => s.status === "APROVADA" && s.tipo !== "LAVADOR" && s.tipo !== "DONO_LOJA");
                     const valorAtual = u.role === "PARCEIRO" && aprovadaParceiro ? `PARCEIRO:${aprovadaParceiro.tipo}` : u.role;
                     return (
                       <form action={definirPapel} style={{ display: "flex", gap: 6 }}>

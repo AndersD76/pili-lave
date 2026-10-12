@@ -1,7 +1,9 @@
 import { router } from "expo-router";
+import * as SecureStore from "expo-secure-store";
 import { useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { api, type Me, type TipoParceiro } from "@/lib/api";
+import { mascaraNascimento, nascimentoParaApi, ONBOARDING_PENDENTE } from "@/lib/nascimento";
 import { useSession } from "@/lib/session";
 import { Btn, ErrText, Input, Screen, Sub } from "@/ui";
 import { C, F } from "@/theme";
@@ -11,6 +13,7 @@ const OPCOES_TIPO: { k: TipoParceiro; label: string }[] = [
   { k: "COMISSAO1", label: "Sou vendedor 1" },
   { k: "COMISSAO2", label: "Sou vendedor 2" },
   { k: "ALUGUEL", label: "Recebo aluguel" },
+  { k: "DONO_LOJA", label: "Sou dono de loja" },
 ];
 
 /**
@@ -29,6 +32,7 @@ export default function Cadastro() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [nascimento, setNascimento] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [tiposSolicitados, setTiposSolicitados] = useState<TipoParceiro[]>([]);
@@ -36,7 +40,7 @@ export default function Cadastro() {
   const [error, setError] = useState("");
 
   const podeEnviar = name.trim().length >= 2 && phone.replace(/\D/g, "").length >= 10
-    && /\S+@\S+\.\S+/.test(email) && password.length > 0 && confirmPassword.length > 0;
+    && /\S+@\S+\.\S+/.test(email) && !!nascimentoParaApi(nascimento) && password.length > 0 && confirmPassword.length > 0;
 
   function alternarTipo(tipo: TipoParceiro) {
     setTiposSolicitados((atual) => (atual.includes(tipo) ? atual.filter((t) => t !== tipo) : [...atual, tipo]));
@@ -49,6 +53,7 @@ export default function Cadastro() {
       const r = await api<{ token: string; user: Me }>("/api/auth/register", {
         body: {
           name: name.trim(), phone, email: email.trim().toLowerCase(), password, confirmPassword,
+          nascimento: nascimentoParaApi(nascimento),
           tiposSolicitados,
         },
         auth: false,
@@ -63,7 +68,10 @@ export default function Cadastro() {
           `Seu pedido pra virar ${labels} foi enviado pro admin. Enquanto isso você já usa o app normalmente como cliente.`
         );
       }
-      router.replace("/onboarding");
+      // o onboarding (da lavagem) aparece na primeira vez que escolher a lavagem
+      await SecureStore.setItemAsync(ONBOARDING_PENDENTE, "1");
+      // primeiro acesso: termo de uso → escolha (loja ou lavagem)
+      router.replace("/termos");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível criar sua conta");
     } finally {
@@ -87,6 +95,10 @@ export default function Cadastro() {
           />
           <Input
             placeholder="seu@email.com" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail}
+          />
+          <Input
+            placeholder="Data de nascimento (DD/MM/AAAA)" keyboardType="number-pad" maxLength={10}
+            value={nascimento} onChangeText={(v) => setNascimento(mascaraNascimento(v))}
           />
           <Input
             placeholder="Senha (mín. 8 caracteres, letras e números)" secureTextEntry value={password} onChangeText={setPassword}

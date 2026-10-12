@@ -173,6 +173,12 @@ export default function Home() {
             PILI LAVE<Text style={{ color: C.pili }}>.</Text>
           </Text>
           {me?.name ? <Sub>Olá, {me.name.split(" ")[0]}</Sub> : null}
+          <Text
+            style={{ fontFamily: F.body, fontSize: 14, color: C.jato, marginTop: 6 }}
+            onPress={() => router.replace("/escolha")}
+          >
+            ← Lavagem expressa · trocar para Loja conveniência
+          </Text>
         </View>
 
         {suggestion && (

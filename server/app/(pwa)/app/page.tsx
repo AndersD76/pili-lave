@@ -69,7 +69,13 @@ export default function Home() {
   }
 
   const load = useCallback(() => {
-    api<Me>("/api/me").then(setMe).catch(() => router.replace("/app/login"));
+    api<Me>("/api/me")
+      .then((m) => {
+        // termo de uso é obrigatório pra usar o app (ver /app/termos)
+        if (!m.termosAceitos) { router.replace("/app/termos"); return; }
+        setMe(m);
+      })
+      .catch(() => router.replace("/app/login"));
     api<Vehicle[]>("/api/vehicles").then(setVehicles).catch(() => {});
     // última lavagem: atalho para repetir sem escolher tudo de novo
     api<Order[]>("/api/orders").then((os) => setUltima(os[0] ?? null)).catch(() => {});
@@ -95,6 +101,7 @@ export default function Home() {
   return (
     <>
       <Logo />
+      <Link className="sub" href="/app/escolha">← Lavagem expressa · trocar para Loja conveniência</Link>
 
       {arrival?.status === "WAITING_DRIVER" && (
         <Link href={`/app/chegada/${arrival.id}`} style={{ textDecoration: "none" }}>

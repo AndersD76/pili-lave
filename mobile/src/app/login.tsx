@@ -21,7 +21,7 @@ export default function Login() {
         body: { email: email.trim().toLowerCase(), password }, auth: false,
       });
       await signIn(r.token, r.user);
-      router.replace("/(tabs)");
+      router.replace("/escolha");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível entrar");
     } finally {

@@ -36,6 +36,11 @@ export default function RootLayout() {
         <Stack.Screen name="cadastro" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+        <Stack.Screen name="escolha" options={{ headerShown: false }} />
+        <Stack.Screen name="termos" options={{ headerShown: false }} />
+        <Stack.Screen name="loja" options={{ headerShown: false }} />
+        <Stack.Screen name="loja-foto" options={{ headerShown: false }} />
+        <Stack.Screen name="minha-loja" options={{ title: "Minha loja" }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="veiculo-novo" options={{ title: "Novo veículo", presentation: "modal" }} />
         <Stack.Screen name="nova-lavagem" options={{ title: "Reservar lavagem" }} />

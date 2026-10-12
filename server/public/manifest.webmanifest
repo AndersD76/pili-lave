@@ -3,7 +3,7 @@
   "short_name": "PILI CLEAN",
   "description": "Lavagem sem fila: a câmera reconhece sua placa e a máquina libera sozinha.",
   "id": "/app",
-  "start_url": "/app",
+  "start_url": "/app/escolha",
   "scope": "/app",
   "display": "standalone",
   "orientation": "portrait",

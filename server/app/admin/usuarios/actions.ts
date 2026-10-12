@@ -72,8 +72,10 @@ export async function aprovarSolicitacao(formData: FormData) {
   if (!solicitacao || solicitacao.status !== "PENDENTE") return;
 
   const { user } = solicitacao;
+  // Dono de loja não mexe no role: é só a capacidade aprovada (o app mostra
+  // "Minha loja" por ela) — virar PARCEIRO abriria a aba Comissões à toa.
   const novoRole =
-    user.role === "ADMIN" || user.role === "LAVADOR"
+    user.role === "ADMIN" || user.role === "LAVADOR" || solicitacao.tipo === "DONO_LOJA"
       ? user.role
       : solicitacao.tipo === "LAVADOR"
       ? "LAVADOR"

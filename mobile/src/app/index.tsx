@@ -54,5 +54,5 @@ export default function Index() {
     );
   }
 
-  return me ? <Redirect href="/(tabs)" /> : <Redirect href="/cadastro" />;
+  return me ? <Redirect href="/escolha" /> : <Redirect href="/cadastro" />;
 }

@@ -12,7 +12,8 @@ export default function TabsLayout() {
   const temMinhaMaquina = me?.role === "LAVADOR" || me?.role === "ADMIN"
     || (me?.solicitacoes ?? []).some((s) => s.tipo === "LAVADOR" && s.status === "APROVADA");
   const temComissoes = (me?.solicitacoes ?? []).some(
-    (s) => s.tipo !== "LAVADOR" && s.status === "APROVADA"
+    // dono de loja não é comissão de máquina — o caminho dele é /minha-loja
+    (s) => s.tipo !== "LAVADOR" && s.tipo !== "DONO_LOJA" && s.status === "APROVADA"
   );
 
   return (

@@ -37,6 +37,10 @@ enum TipoParticipacao {
   COMISSAO1
   COMISSAO2
   ALUGUEL
+  /// Dono de loja de conveniência — só existe como SolicitacaoParceiro
+  /// (pedido + aprovação do admin, igual ao Lavador); NUNCA é participante
+  /// de máquina. A loja em si é vinculada em Loja.donoId.
+  DONO_LOJA
 }
 
 /// Um participante numa máquina, com seu percentual — a soma de TODOS os
@@ -146,6 +150,14 @@ model User {
   pixTipo         PixTipo?
   asaasCustomerId String?
   walletCents     Int      @default(0) // cache; fonte da verdade = WalletTx
+  /// Código único do cliente (numérico, sequencial) — é o que a loja de
+  /// conveniência registra na entrada, inclusive sem internet.
+  codigoCliente   Int      @unique @default(autoincrement())
+  nascimento      DateTime? @db.Date
+  /// Versão do termo de uso aceita (ver lib/termos.ts) — versão nova
+  /// publicada obriga a aceitar de novo ao abrir o app.
+  termosVersao    String?
+  termosAceitosEm DateTime?
   createdAt       DateTime @default(now())
 
   vehicles     Vehicle[]
@@ -171,6 +183,93 @@ model User {
   /// tempos. Cada um é aprovado/rejeitado independente pelo admin — nada
   /// disso bloqueia o uso do app como cliente normal enquanto está pendente.
   solicitacoes SolicitacaoParceiro[]
+  fotoRosto    FotoRosto?
+  lojas          Loja[]         @relation("LojaDono")
+  lojaBloqueios  LojaBloqueio[]
+  lojaMensagens  LojaMensagem[]
+}
+
+/// Loja de conveniência autoservice (container). O estoque e o catálogo
+/// vivem no computador local de cada loja — aqui fica só o cadastro, quem
+/// é o dono e o que depende da nuvem (bloqueio de cliente, suporte).
+model Loja {
+  id         String   @id @default(cuid())
+  name       String
+  address    String   @default("")
+  city       String   @default("")
+  state      String   @default("RS")
+  lat        Float?
+  lng        Float?
+  active     Boolean  @default(true)
+  /// Quantas pessoas cabem ao mesmo tempo (a porta não abre acima disso).
+  capacidade Int      @default(3)
+  /// Usuário com DONO_LOJA aprovado, escolhido pelo admin em /admin/lojas.
+  donoId     String?
+  /// Identidade do computador central da loja, gerada por ele mesmo no
+  /// primeiro uso (ver /api/loja/provisionar) — null = loja cadastrada à mão
+  /// no admin, ainda sem computador vinculado.
+  deviceKey  String?  @unique
+  /// Unidade de lavagem no MESMO endereço, quando houver (loja instalada
+  /// junto de um lava-rápido). Só informativo: a loja funciona sem isso.
+  stationId  String?
+  createdAt  DateTime @default(now())
+
+  dono      User?          @relation("LojaDono", fields: [donoId], references: [id])
+  station   WashStation?   @relation(fields: [stationId], references: [id])
+  bloqueios LojaBloqueio[]
+  mensagens LojaMensagem[]
+
+  @@index([donoId])
+  @@index([stationId])
+}
+
+/// Cliente impedido de entrar NESTA loja (problema de conduta), decidido
+/// pelo dono. Vale enquanto removidoEm for null — desbloquear não apaga a
+/// linha, pra ficar o histórico.
+model LojaBloqueio {
+  id         String    @id @default(cuid())
+  lojaId     String
+  userId     String
+  motivo     String
+  criadoEm   DateTime  @default(now())
+  removidoEm DateTime?
+
+  loja Loja @relation(fields: [lojaId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([lojaId, userId])
+}
+
+/// Mensagem do cliente pro suporte de uma loja (ex.: pedir revisão de um
+/// bloqueio) — chega no app do dono, que responde em até 24h.
+model LojaMensagem {
+  id           String    @id @default(cuid())
+  lojaId       String
+  userId       String
+  texto        String
+  criadaEm     DateTime  @default(now())
+  resposta     String?
+  respondidaEm DateTime?
+
+  loja Loja @relation(fields: [lojaId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([lojaId, criadaEm])
+  @@index([userId])
+}
+
+/// Foto do rosto do cliente, exigida só pra usar a loja de conveniência
+/// (reconhecimento no totem). Fica fora de User de propósito: requireUser
+/// carrega o User inteiro a cada chamada, e o JPEG não pode ir junto.
+/// É dado biométrico (LGPD) — consentimentoEm guarda o aceite específico.
+model FotoRosto {
+  userId          String   @id
+  jpeg            Bytes
+  bytes           Int
+  consentimentoEm DateTime
+  criadaEm        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 enum StatusSolicitacao {
@@ -348,6 +447,7 @@ model WashStation {
   reservations Reservation[]
   arrivals     Arrival[]
   precos       StationPrograma[]
+  lojas        Loja[]
 }
 
 /// Preço de um tipo de lavagem (Program) NESTA unidade especificamente —

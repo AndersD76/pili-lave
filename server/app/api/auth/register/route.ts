@@ -5,8 +5,9 @@ import { signToken } from "@/lib/auth";
 import { normalizePhone } from "@/lib/phone";
 import { hashPassword, validatePassword } from "@/lib/password";
 import { meComSolicitacoes } from "@/lib/meShape";
+import { parseNascimento } from "@/lib/nascimento";
 
-const TIPO = z.enum(["LAVADOR", "COMISSAO1", "COMISSAO2", "ALUGUEL"]);
+const TIPO = z.enum(["LAVADOR", "COMISSAO1", "COMISSAO2", "ALUGUEL", "DONO_LOJA"]);
 
 const Body = z
   .object({
@@ -19,7 +20,11 @@ const Body = z
     // pode pedir mais de um ao mesmo tempo. Cada um fica pendente de
     // aprovação do admin, independente dos outros; continua CLIENT normal
     // até lá.
-    tiposSolicitados: z.array(TIPO).max(4).optional(),
+    tiposSolicitados: z.array(TIPO).max(5).optional(),
+    // "AAAA-MM-DD". Opcional AQUI pra não quebrar versões antigas do app —
+    // quem entra sem ela informa na tela do termo de uso (/api/termos
+    // recusa o aceite sem data de nascimento).
+    nascimento: z.string().optional(),
   })
   .refine((b) => b.password === b.confirmPassword, {
     message: "As senhas não são iguais",
@@ -41,6 +46,10 @@ export async function POST(req: NextRequest) {
   const phone = normalizePhone(parsed.data.phone);
   if (!phone) return NextResponse.json({ error: "Telefone inválido" }, { status: 400 });
 
+  const nascimento = parsed.data.nascimento ? parseNascimento(parsed.data.nascimento) : null;
+  if (parsed.data.nascimento && !nascimento)
+    return NextResponse.json({ error: "Data de nascimento inválida" }, { status: 400 });
+
   const senhaErro = validatePassword(password);
   if (senhaErro) return NextResponse.json({ error: senhaErro }, { status: 400 });
 
@@ -54,7 +63,7 @@ export async function POST(req: NextRequest) {
   const tipos = [...new Set(tiposSolicitados ?? [])];
   const user = await prisma.user.create({
     data: {
-      name, phone, email, passwordHash: hashPassword(password),
+      name, phone, email, passwordHash: hashPassword(password), nascimento,
       solicitacoes: tipos.length > 0 ? { create: tipos.map((tipo) => ({ tipo })) } : undefined,
     },
   });

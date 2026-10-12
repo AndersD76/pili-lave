@@ -88,8 +88,9 @@ export default function Perfil() {
 
   const LABEL_TIPO: Record<string, string> = {
     LAVADOR: "Lavador", COMISSAO1: "Vendedor 1", COMISSAO2: "Vendedor 2", ALUGUEL: "Aluguel",
+    DONO_LOJA: "Dono de loja",
   };
-  const TIPOS: TipoParceiro[] = ["LAVADOR", "COMISSAO1", "COMISSAO2", "ALUGUEL"];
+  const TIPOS: TipoParceiro[] = ["LAVADOR", "COMISSAO1", "COMISSAO2", "ALUGUEL", "DONO_LOJA"];
   const solicitacoes = me?.solicitacoes ?? [];
   const pendentes = solicitacoes.filter((s) => s.status === "PENDENTE");
 

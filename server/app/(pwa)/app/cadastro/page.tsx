@@ -10,6 +10,7 @@ const OPCOES_TIPO: { k: TipoParceiro; label: string }[] = [
   { k: "COMISSAO1", label: "Sou vendedor 1" },
   { k: "COMISSAO2", label: "Sou vendedor 2" },
   { k: "ALUGUEL", label: "Recebo aluguel" },
+  { k: "DONO_LOJA", label: "Sou dono de loja de conveniência" },
 ];
 
 export default function Cadastro() {
@@ -17,6 +18,7 @@ export default function Cadastro() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [nascimento, setNascimento] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [tiposSolicitados, setTiposSolicitados] = useState<TipoParceiro[]>([]);
@@ -33,18 +35,20 @@ export default function Cadastro() {
     setError(""); setLoading(true);
     try {
       const r = await api<{ token: string; user: Me }>("/api/auth/register", {
-        body: { name, phone, email, password, confirmPassword, tiposSolicitados },
+        body: { name, phone, email, nascimento, password, confirmPassword, tiposSolicitados },
         auth: false,
       });
       setToken(r.token);
+      // o onboarding (da lavagem) aparece na primeira vez que escolher a lavagem
+      localStorage.setItem("pililave_onboarding_pendente", "1");
       if (tiposSolicitados.length > 0) {
         const labels = tiposSolicitados.map((t) => OPCOES_TIPO.find((o) => o.k === t)?.label).join(", ");
         setAviso(`Pedido enviado (${labels}). Você já pode usar o app como cliente enquanto o admin aprova.`);
-        setTimeout(() => router.replace("/app/onboarding"), 2500);
+        setTimeout(() => router.replace("/app/termos"), 2500);
         return;
       }
-      // primeiro acesso: onboarding antes de cair na home
-      router.replace("/app/onboarding");
+      // primeiro acesso: termo de uso → escolha (loja ou lavagem)
+      router.replace("/app/termos");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível criar sua conta");
     } finally {
@@ -70,6 +74,13 @@ export default function Cadastro() {
         className="field" type="email" inputMode="email" placeholder="seu@email.com" autoComplete="email"
         value={email} onChange={(e) => setEmail(e.target.value)}
       />
+      <label>
+        <span className="sub">Data de nascimento</span>
+        <input
+          className="field" type="date" autoComplete="bday"
+          value={nascimento} onChange={(e) => setNascimento(e.target.value)}
+        />
+      </label>
       <input
         className="field" type="password" placeholder="Senha (mín. 8 caracteres, letras e números)" autoComplete="new-password"
         value={password} onChange={(e) => setPassword(e.target.value)}
@@ -98,7 +109,7 @@ export default function Cadastro() {
       </div>
       {aviso && <p className="sub">{aviso}</p>}
       {error && <p className="err">{error}</p>}
-      <button className="btn" disabled={loading || !name || !phone || !email || !password || !confirmPassword}>
+      <button className="btn" disabled={loading || !name || !phone || !email || !nascimento || !password || !confirmPassword}>
         {loading ? "Criando conta…" : "Criar conta"}
       </button>
       <Link className="sub" href="/app/login" style={{ textAlign: "center" }}>Já tenho uma conta</Link>

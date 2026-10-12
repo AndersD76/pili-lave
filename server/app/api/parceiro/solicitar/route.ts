@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 
-const Body = z.object({ tipo: z.enum(["LAVADOR", "COMISSAO1", "COMISSAO2", "ALUGUEL"]) });
+const Body = z.object({ tipo: z.enum(["LAVADOR", "COMISSAO1", "COMISSAO2", "ALUGUEL", "DONO_LOJA"]) });
 
 /**
  * Pedido pra virar Lavador/Comissão1/Comissão2/Aluguel feito DEPOIS do

@@ -26,7 +26,8 @@ export type ParticipacaoRow = { tipo: "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "A
  *  isso sempre filtra por escopo (nunca mistura os dois). */
 export async function participacoesDaMaquina(machineId: string, escopo: Escopo = "LAVAGEM"): Promise<ParticipacaoRow[]> {
   const rows = await prisma.machineParticipante.findMany({ where: { machineId, escopo } });
-  return rows.map((r) => ({ tipo: r.tipo, userId: r.userId, percentual: r.percentual }));
+  // DONO_LOJA existe no enum mas nunca é gravado como participante de máquina
+  return rows.map((r) => ({ tipo: r.tipo as ParticipacaoRow["tipo"], userId: r.userId, percentual: r.percentual }));
 }
 
 /** Percentual do usuário numa máquina específica, num escopo (0 se não tiver vínculo). */

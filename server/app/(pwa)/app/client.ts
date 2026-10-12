@@ -47,7 +47,7 @@ export function fmtPlate(plate: string): string {
   return plate.length === 7 ? `${plate.slice(0, 3)} ${plate.slice(3)}` : plate;
 }
 
-export type TipoParceiro = "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL";
+export type TipoParceiro = "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL" | "DONO_LOJA";
 export type StatusSolicitacao = "PENDENTE" | "APROVADA" | "REJEITADA";
 export type Solicitacao = { tipo: TipoParceiro; status: StatusSolicitacao };
 
@@ -58,6 +58,11 @@ export type Me = {
   pixTipo?: "CPF" | "CNPJ" | "EMAIL" | "PHONE" | "EVP" | null;
   role: "CLIENT" | "LAVADOR" | "PARCEIRO" | "ADMIN"; walletCents: number;
   solicitacoes?: Solicitacao[];
+  // loja de conveniência
+  codigoCliente: number;
+  nascimento: string | null; // "AAAA-MM-DD"
+  termosAceitos: boolean; // aceitou a versão VIGENTE do termo
+  temFoto: boolean;
 };
 export type Program = { id: number; nome: string; descricao?: string | null; precoCents: number };
 export type Vehicle = { id: string; plate: string; brand: string | null; model: string | null };
@@ -79,4 +84,21 @@ export type VacuumUse = {
   id: string; machineId: string; amountCents: number; durationSec: number;
   status: "PAID" | "ACTIVE" | "COMPLETED";
   startedAt: string | null; completedAt: string | null;
+};
+
+/** Mensagem do cliente pro suporte de uma loja (e a resposta do dono). */
+export type LojaMensagem = {
+  id: string; texto: string; criadaEm: string; resposta: string | null; respondidaEm: string | null;
+};
+/** Loja de conveniência vista pelo cliente (GET /api/lojas). */
+export type Loja = {
+  id: string; name: string; address: string; city: string; state: string; capacidade: number;
+  bloqueado: boolean;
+  mensagens: LojaMensagem[];
+};
+/** Loja vista pelo dono (GET /api/dono/lojas). */
+export type LojaDoDono = {
+  id: string; name: string; address: string; city: string; state: string; active: boolean; capacidade: number;
+  bloqueios: { id: string; motivo: string; criadoEm: string; cliente: { nome: string | null; codigo: number } }[];
+  mensagens: (LojaMensagem & { cliente: { nome: string | null; codigo: number; bloqueado: boolean } })[];
 };

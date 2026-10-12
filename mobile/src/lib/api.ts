@@ -54,7 +54,7 @@ export async function api<T = unknown>(
   return json as T;
 }
 
-export type TipoParceiro = "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL";
+export type TipoParceiro = "LAVADOR" | "COMISSAO1" | "COMISSAO2" | "ALUGUEL" | "DONO_LOJA";
 export type StatusSolicitacao = "PENDENTE" | "APROVADA" | "REJEITADA";
 export type Solicitacao = { tipo: TipoParceiro; status: StatusSolicitacao };
 
@@ -62,6 +62,11 @@ export type Me = {
   id: string; phone: string; email?: string | null; name: string | null; cpf?: string | null;
   role: "CLIENT" | "LAVADOR" | "PARCEIRO" | "ADMIN"; walletCents: number;
   solicitacoes?: Solicitacao[];
+  // loja de conveniência
+  codigoCliente: number;
+  nascimento: string | null; // "AAAA-MM-DD"
+  termosAceitos: boolean; // aceitou a versão VIGENTE do termo
+  temFoto: boolean;
 };
 export type Program = { id: number; nome: string; descricao?: string | null; precoCents: number };
 export type Vehicle = { id: string; plate: string; brand: string | null; model: string | null; defaultProgramId: number | null };
@@ -150,4 +155,21 @@ export type MaquinaParceiro = {
   suaParticipacaoCents: number;
   porTipo: TipoLavagemLavador[];
   aspirador: { usos: number; valorCents: number };
+};
+
+/** Mensagem do cliente pro suporte de uma loja (e a resposta do dono). */
+export type LojaMensagem = {
+  id: string; texto: string; criadaEm: string; resposta: string | null; respondidaEm: string | null;
+};
+/** Loja de conveniência vista pelo cliente (GET /api/lojas). */
+export type Loja = {
+  id: string; name: string; address: string; city: string; state: string; capacidade: number;
+  bloqueado: boolean;
+  mensagens: LojaMensagem[];
+};
+/** Loja vista pelo dono (GET /api/dono/lojas). */
+export type LojaDoDono = {
+  id: string; name: string; address: string; city: string; state: string; active: boolean; capacidade: number;
+  bloqueios: { id: string; motivo: string; criadoEm: string; cliente: { nome: string | null; codigo: number } }[];
+  mensagens: (LojaMensagem & { cliente: { nome: string | null; codigo: number; bloqueado: boolean } })[];
 };
