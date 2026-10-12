@@ -7,6 +7,8 @@ type ProdutoForm = {
 
 /** Campos do cadastro de produto — os mesmos pra criar e pra editar. */
 export function CamposProduto({ produto }: { produto?: ProdutoForm }) {
+  // preço só pode ficar vazio em produto que JÁ está sem preço (criado por nota)
+  const precoObrigatorio = !produto || produto.precoCents !== null;
   return (
     <>
       <div className="linha-form">
@@ -22,7 +24,7 @@ export function CamposProduto({ produto }: { produto?: ProdutoForm }) {
       <div className="linha-form">
         <label className="rotulo" style={{ width: 130 }}>
           Preço de venda (R$)
-          <input className="field" name="preco" defaultValue={reaisCampo(produto?.precoCents ?? null)} inputMode="decimal" placeholder="sem preço" />
+          <input className="field" name="preco" defaultValue={reaisCampo(produto?.precoCents ?? null)} inputMode="decimal" placeholder={precoObrigatorio ? "0,00" : "sem preço"} required={precoObrigatorio} />
         </label>
         <label className="rotulo" style={{ width: 130 }}>
           Custo (R$)

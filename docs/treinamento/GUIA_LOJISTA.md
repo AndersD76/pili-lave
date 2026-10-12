@@ -104,7 +104,7 @@ No fim da página, em **"Novo produto"**:
 |---|---|
 | Nome | Como o produto aparece no caixa e nos relatórios |
 | Código de barras | O número lido pelo leitor (8 a 14 dígitos). Dois produtos não podem ter o mesmo |
-| Preço de venda | Quanto o cliente paga. **Sem preço, o produto não é vendido** |
+| Preço de venda | Quanto o cliente paga. Obrigatório no cadastro feito à mão. Só fica "sem preço" o produto criado por uma nota de entrada, até você definir o valor |
 | Custo | Quanto você pagou na última compra |
 | Estoque mínimo | Abaixo ou igual a isso, o produto entra na lista "Para comprar". Padrão: 5 |
 | Unidade | Normalmente UN |

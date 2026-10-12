@@ -36,6 +36,10 @@ export async function criarProduto(formData: FormData) {
   await exigirGestao();
   const dados = await dadosDoProduto(formData);
   if (typeof dados === "string") redirect(`/produtos?erro=${encodeURIComponent(dados)}`);
+  // Cadastro feito à mão exige preço: "sem preço" só existe pra produto
+  // criado por nota de entrada (que traz o custo, não o preço de venda).
+  if (dados.precoCents === null)
+    redirect(`/produtos?erro=${encodeURIComponent("Informe o preço de venda.")}`);
 
   const estoqueInicial = inteiroDoCampo(formData.get("estoqueInicial")) ?? 0;
   const produto = await prisma.$transaction(async (tx) => {
@@ -54,6 +58,11 @@ export async function salvarProduto(formData: FormData) {
   const id = String(formData.get("id"));
   const dados = await dadosDoProduto(formData, id);
   if (typeof dados === "string") redirect(`/produtos/${id}?erro=${encodeURIComponent(dados)}`);
+  // Preço já definido não pode ser apagado (pra tirar de venda, desmarque
+  // "Produto ativo"). Quem ainda está sem preço pode ser salvo assim.
+  const atual = await prisma.produto.findUnique({ where: { id }, select: { precoCents: true } });
+  if (dados.precoCents === null && atual?.precoCents != null)
+    redirect(`/produtos/${id}?erro=${encodeURIComponent("Informe o preço de venda. Para tirar o produto de venda, desmarque \"Produto ativo\".")}`);
   await prisma.produto.update({ where: { id }, data: { ...dados, ativo: formData.get("ativo") === "on" } });
   revalidatePath("/produtos");
   redirect(`/produtos/${id}?ok=1`);
