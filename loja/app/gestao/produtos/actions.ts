@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { registrarAtividade } from "@/lib/atividade";
-import { centavosDoCampo, inteiroDoCampo, reais } from "@/lib/dinheiro";
+import { centavosDoCampo, inteiroDoCampo, precoDoCampo, reais } from "@/lib/dinheiro";
 import { ajustarInventario, entradaManual, movimentar, registrarPerda } from "@/lib/estoque";
 import { pode, rotuloPermissao, type Permissao } from "@/lib/permissoes";
 import { prisma } from "@/lib/prisma";
@@ -24,10 +24,10 @@ async function dadosDoProduto(formData: FormData, idAtual?: string) {
     if (outro && outro.id !== idAtual) return `Esse código de barras já é do produto "${outro.nome}".`;
   }
 
-  const precoTexto = String(formData.get("preco") ?? "").trim();
-  const precoCents = centavosDoCampo(precoTexto);
-  if (precoTexto && precoCents === null) return "Preço de venda inválido.";
   const custoCents = centavosDoCampo(formData.get("custo")) ?? 0;
+  // aceita valor ("5,90") ou percentual sobre o custo ("30%")
+  const precoCents = precoDoCampo(formData.get("preco"), custoCents);
+  if (precoCents === "INVALIDO") return "Preço de venda inválido. Use um valor (5,90) ou um percentual sobre o custo (30%).";
   const estoqueMinimo = inteiroDoCampo(formData.get("estoqueMinimo")) ?? 5;
 
   return {

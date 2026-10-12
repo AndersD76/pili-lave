@@ -30,9 +30,9 @@ export function CamposProduto({
         </label>
       </div>
       <div className="linha-form">
-        <label className="rotulo" style={{ width: 130 }}>
-          Preço de venda (R$)
-          <input className="field" name="preco" defaultValue={reaisCampo(produto?.precoCents ?? null)} inputMode="decimal" placeholder={precoObrigatorio ? "0,00" : "sem preço"} required={precoObrigatorio} {...(podePreco ? {} : travado)} />
+        <label className="rotulo" style={{ width: 150 }} title="Digite o preço (5,90) ou um percentual sobre o custo (30%)">
+          Preço de venda (R$ ou %)
+          <input className="field" name="preco" defaultValue={reaisCampo(produto?.precoCents ?? null)} inputMode="decimal" placeholder={precoObrigatorio ? "5,90 ou 30%" : "sem preço"} required={precoObrigatorio} {...(podePreco ? {} : travado)} />
         </label>
         <label className="rotulo" style={{ width: 130 }}>
           Custo (R$)

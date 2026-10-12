@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { registrarAtividade } from "@/lib/atividade";
-import { inteiroDoCampo, reais } from "@/lib/dinheiro";
+import { inteiroDoCampo, precoDoCampo, reais } from "@/lib/dinheiro";
 import { movimentar } from "@/lib/estoque";
+import { pode } from "@/lib/permissoes";
 import { lerNfe } from "@/lib/nfe";
 import { prisma } from "@/lib/prisma";
 import { exigirPermissao } from "@/lib/sessao";
@@ -66,14 +67,24 @@ export async function confirmarNota(formData: FormData) {
   const decisoes = nota.itens.map((item, i) => {
     const acao = String(formData.get(`acao_${i}`) ?? "ignorar");
     const quantidade = inteiroDoCampo(formData.get(`qtd_${i}`));
-    return { item, acao, quantidade };
+    return { item, acao, quantidade, precoTexto: formData.get(`preco_${i}`) };
   });
   for (const d of decisoes) {
     if (d.acao === "ignorar") continue;
     if (d.quantidade === null || d.quantidade < 1)
       erro(`Informe quantas unidades de "${d.item.descricao}" entram (ou marque "Não dar entrada").`);
   }
-  const entram = decisoes.filter((d) => d.acao !== "ignorar");
+  // Preço de venda (opcional): valor ("5,90") ou percentual sobre o custo
+  // desta nota ("30%"). Em branco não mexe no preço.
+  const precos = decisoes.map((d) => {
+    if (d.acao === "ignorar" || !d.quantidade) return null;
+    const p = precoDoCampo(d.precoTexto, Math.round(d.item.totalCents / d.quantidade));
+    if (p === "INVALIDO") erro(`Preço de venda inválido em "${d.item.descricao}". Use um valor (5,90) ou um percentual sobre o custo (30%).`);
+    return p as number | null;
+  });
+  if (precos.some((p) => p !== null) && !pode(usuario, "PRECO"))
+    erro("Você não tem permissão para alterar preço de venda. Deixe a coluna de preço em branco.");
+  const entram = decisoes.map((d, i) => ({ ...d, precoCents: precos[i] })).filter((d) => d.acao !== "ignorar");
   if (entram.length === 0) erro("Nenhum item marcado para entrar. Para desistir da nota, use Descartar.");
 
   // dois itens da nota apontando pro mesmo código de barras novo: o segundo
@@ -119,7 +130,18 @@ export async function confirmarNota(formData: FormData) {
           throw new Error("PRODUTO_SUMIU");
         }
 
-        await tx.produto.update({ where: { id: produtoId }, data: { custoCents: custoUnitCents } });
+        const antes = await tx.produto.findUniqueOrThrow({ where: { id: produtoId }, select: { nome: true, precoCents: true } });
+        const mudaPreco = d.precoCents !== null && d.precoCents !== antes.precoCents;
+        await tx.produto.update({
+          where: { id: produtoId },
+          data: { custoCents: custoUnitCents, ...(mudaPreco ? { precoCents: d.precoCents } : {}) },
+        });
+        if (mudaPreco)
+          await registrarAtividade(
+            tx, usuario, "PRECO_ALTERADO",
+            `${antes.nome}: ${antes.precoCents === null ? "sem preço" : reais(antes.precoCents)} → ${reais(d.precoCents!)} (na entrada da NF ${nota.numero}, custo ${reais(custoUnitCents)})`,
+            produtoId
+          );
         await tx.entradaItem.create({
           data: {
             entradaId: entrada.id, produtoId, codigoFornecedor: d.item.codigoFornecedor || null,
@@ -143,7 +165,7 @@ export async function confirmarNota(formData: FormData) {
       await registrarAtividade(
         tx, usuario, "NOTA_ENTRADA",
         `NF ${nota.numero} de ${nota.fornecedor.nome}: ${entram.length} ${entram.length === 1 ? "item" : "itens"}, ${unidades} unidades, ${reais(nota.totalCents)}` +
-          (criados ? `; ${criados} produto(s) novo(s), sem preço de venda` : "") +
+          (criados ? `; ${criados} produto(s) novo(s)` : "") +
           (decisoes.length > entram.length ? `; ${decisoes.length - entram.length} item(ns) da nota não entraram` : "")
       );
       await tx.notaPendente.delete({ where: { id } });

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { reais } from "@/lib/dinheiro";
+import { pode } from "@/lib/permissoes";
 import { formatarCnpj, lerNfe } from "@/lib/nfe";
 import { prisma } from "@/lib/prisma";
 import { exigirPermissao } from "@/lib/sessao";
@@ -31,7 +32,7 @@ export default async function ConferirNota({
   const { nota } = leitura;
 
   const [produtos, fornecedor] = await Promise.all([
-    prisma.produto.findMany({ where: { ativo: true }, orderBy: { nome: "asc" }, select: { id: true, nome: true, ean: true } }),
+    prisma.produto.findMany({ where: { ativo: true }, orderBy: { nome: "asc" }, select: { id: true, nome: true, ean: true, precoCents: true } }),
     nota.fornecedor.cnpj
       ? prisma.fornecedor.findUnique({ where: { cnpj: nota.fornecedor.cnpj }, include: { codigos: true } })
       : null,
@@ -50,6 +51,8 @@ export default async function ConferirNota({
     };
   });
   const novos = linhas.filter((l) => !l.sugerido).length;
+  const podePreco = pode(usuario, "PRECO");
+  const precoDe = new Map(produtos.map((p) => [p.id, p.precoCents]));
 
   return (
     <main className="admin-wrap">
@@ -74,7 +77,10 @@ export default async function ConferirNota({
         <div className="tbl-wrap">
           <table className="tbl">
             <thead>
-              <tr><th>Item da nota</th><th>Veio como</th><th>Produto na loja</th><th>Unidades</th><th>Total do item</th></tr>
+              <tr>
+                <th>Item da nota</th><th>Veio como</th><th>Produto na loja</th><th>Unidades</th><th>Total do item</th>
+                {podePreco && <th>Preço de venda</th>}
+              </tr>
             </thead>
             <tbody>
               {linhas.map(({ item, sugerido, motivo }, i) => (
@@ -109,6 +115,17 @@ export default async function ConferirNota({
                       </span>
                     )}
                   </td>
+                  {podePreco && (
+                    <td>
+                      <input
+                        className="field" name={`preco_${i}`} inputMode="decimal" placeholder="30% ou 5,90"
+                        style={{ width: 120, height: 38, fontSize: 14, padding: "0 10px" }}
+                      />
+                      <span className="sub" style={{ display: "block", fontSize: 12, marginTop: 4 }}>
+                        {sugerido && precoDe.get(sugerido) != null ? `hoje ${reais(precoDe.get(sugerido)!)}` : "sem preço hoje"}
+                      </span>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -116,6 +133,7 @@ export default async function ConferirNota({
         </div>
         <p className="sub" style={{ marginTop: 10 }}>
           O custo de cada produto passa a ser o total do item dividido pelas unidades informadas.
+          {podePreco && " Na coluna Preço de venda, digite um percentual sobre esse custo (30% = custo mais 30%) ou o preço direto (5,90). Em branco, o preço do produto não muda."}
         </p>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button className="btn" type="submit">Confirmar e dar entrada</button>
