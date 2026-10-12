@@ -19,7 +19,8 @@ function dataHora(d: Date): string {
 export default async function Entradas({ searchParams }: { searchParams: Promise<{ erro?: string; ok?: string }> }) {
   const { loja, usuario } = await exigirPermissao("ENTRADA");
   const { erro, ok } = await searchParams;
-  const [pendentes, entradas, usuarios] = await Promise.all([
+  const [semPreco, pendentes, entradas, usuarios] = await Promise.all([
+    prisma.produto.findMany({ where: { ativo: true, precoCents: null }, orderBy: { nome: "asc" }, select: { id: true, nome: true } }),
     prisma.notaPendente.findMany({ orderBy: { criadaEm: "desc" } }),
     prisma.entrada.findMany({
       orderBy: { criadaEm: "desc" }, take: 50,
@@ -34,6 +35,23 @@ export default async function Entradas({ searchParams }: { searchParams: Promise
       <Nav loja={loja} usuario={usuario} atual="/gestao/entradas" />
       {erro && <p className="err-msg" style={{ marginBottom: 14 }}>{erro}</p>}
       {ok && <p className="ok-msg" style={{ marginBottom: 14 }}>Nota lançada: o estoque foi atualizado.</p>}
+      {/* produto criado por nota nasce sem preço e não vende até ter um:
+          o caminho pra definir fica aqui, logo depois da entrada */}
+      {semPreco.length > 0 && (
+        <div className="card" style={{ marginBottom: 18, borderColor: "var(--atencao)" }}>
+          <b>{semPreco.length === 1 ? "1 produto está sem preço de venda" : `${semPreco.length} produtos estão sem preço de venda`}</b>
+          <p className="sub" style={{ margin: "4px 0 10px" }}>
+            Eles não aparecem no caixa até ter preço. Clique em cada um, preencha &quot;Preço de venda&quot; e salve.
+          </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {semPreco.map((p) => (
+              <Link key={p.id} href={`/gestao/produtos/${p.id}`} className="chip at" style={{ fontSize: 13, padding: "6px 12px" }}>
+                {p.nome}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <h2 className="section-title" style={{ marginTop: 0 }}>Entrada por nota fiscal</h2>
       <form action={enviarNota} className="card" style={{ display: "grid", gap: 12, maxWidth: 640 }}>
