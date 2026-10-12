@@ -3,15 +3,18 @@ import { prisma } from "@/lib/prisma";
 import { reais } from "@/lib/dinheiro";
 import { produtosCriticos } from "@/lib/estoque";
 import { exigirGestao } from "@/lib/sessao";
+import { pode } from "@/lib/permissoes";
 import { Nav } from "./nav";
+import { definirPrecos } from "./produtos/actions";
 
 export const dynamic = "force-dynamic";
 
 /** Painel: o que precisa de atenção agora — o que comprar (estoque no
  *  mínimo) e o que ainda não pode ser vendido (sem preço). */
-export default async function Painel({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
+export default async function Painel({ searchParams }: { searchParams: Promise<{ erro?: string; ok?: string }> }) {
   const { loja, usuario } = await exigirGestao();
-  const { erro } = await searchParams;
+  const { erro, ok } = await searchParams;
+  const podePreco = pode(usuario, "PRECO");
   const [ativos, criticos, semPreco] = await Promise.all([
     prisma.produto.findMany({ where: { ativo: true }, select: { estoqueAtual: true, custoCents: true } }),
     produtosCriticos(),
@@ -78,21 +81,37 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
           <h2 className="section-title">Sem preço de venda ({semPreco.length})</h2>
           <p className="sub" style={{ marginBottom: 10 }}>
             Produtos criados por uma nota de entrada nascem sem preço. Defina o preço para liberar a venda.
+            {podePreco && " Na coluna Preço de venda, digite um percentual sobre o custo (30% = custo mais 30%) ou o preço direto (5,90), e clique em Salvar preços. O que ficar em branco continua sem preço."}
           </p>
-          <div className="tbl-wrap">
-            <table className="tbl">
-              <thead><tr><th>Produto</th><th>Custo</th><th>Estoque</th></tr></thead>
-              <tbody>
-                {semPreco.map((p) => (
-                  <tr key={p.id}>
-                    <td><Link href={`/gestao/produtos/${p.id}`}>{p.nome}</Link></td>
-                    <td>{reais(p.custoCents)}</td>
-                    <td>{p.estoqueAtual}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {ok && <p className="ok-msg" style={{ marginBottom: 10 }}>Preços salvos.</p>}
+          {/* um formulário só pra tabela inteira: preenche vários e salva de uma vez */}
+          <form action={definirPrecos}>
+            <div className="tbl-wrap">
+              <table className="tbl">
+                <thead>
+                  <tr><th>Produto</th><th>Custo</th><th>Estoque</th>{podePreco && <th>Preço de venda</th>}</tr>
+                </thead>
+                <tbody>
+                  {semPreco.map((p) => (
+                    <tr key={p.id}>
+                      <td><Link href={`/gestao/produtos/${p.id}`}>{p.nome}</Link></td>
+                      <td>{reais(p.custoCents)}</td>
+                      <td>{p.estoqueAtual}</td>
+                      {podePreco && (
+                        <td>
+                          <input
+                            className="field" name={`preco_${p.id}`} inputMode="decimal" placeholder="30% ou 5,90"
+                            style={{ width: 140, height: 38, fontSize: 14, padding: "0 10px" }}
+                          />
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {podePreco && <button className="btn" type="submit" style={{ marginTop: 12 }}>Salvar preços</button>}
+          </form>
         </>
       )}
     </main>

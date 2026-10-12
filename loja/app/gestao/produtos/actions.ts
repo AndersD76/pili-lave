@@ -177,3 +177,37 @@ export async function carregarExemplos() {
   revalidatePath(BASE);
   redirect(BASE);
 }
+
+/**
+ * Define o preço de venda de vários produtos de uma vez (tabela "Sem preço
+ * de venda" do painel). Cada campo `preco_<id>` aceita um percentual sobre
+ * o custo do produto ("30%") ou o valor ("5,90"); o que vier em branco fica
+ * como está. Se um estiver inválido, nenhum é salvo.
+ */
+export async function definirPrecos(formData: FormData) {
+  const { usuario } = await exigirPermissao("PRECO");
+  const erro = (msg: string): never => redirect(`/gestao?erro=${encodeURIComponent(msg)}`);
+
+  const ids = [...formData.keys()].filter((k) => k.startsWith("preco_")).map((k) => k.slice(6));
+  const produtos = await prisma.produto.findMany({ where: { id: { in: ids } } });
+  const mudancas: { id: string; nome: string; antes: number | null; depois: number; custoCents: number }[] = [];
+  for (const p of produtos) {
+    const novo = precoDoCampo(formData.get(`preco_${p.id}`), p.custoCents);
+    if (novo === null) continue;
+    if (novo === "INVALIDO") erro(`Preço de venda inválido em "${p.nome}". Use um valor (5,90) ou um percentual sobre o custo (30%).`);
+    if (novo !== p.precoCents) mudancas.push({ id: p.id, nome: p.nome, antes: p.precoCents, depois: novo as number, custoCents: p.custoCents });
+  }
+  if (mudancas.length === 0) redirect("/gestao");
+
+  await prisma.$transaction(async (tx) => {
+    for (const m of mudancas) {
+      await tx.produto.update({ where: { id: m.id }, data: { precoCents: m.depois } });
+      await registrarAtividade(
+        tx, usuario, "PRECO_ALTERADO",
+        `${m.nome}: ${m.antes === null ? "sem preço" : reais(m.antes)} → ${reais(m.depois)} (custo ${reais(m.custoCents)})`, m.id
+      );
+    }
+  });
+  revalidatePath("/gestao");
+  redirect("/gestao?ok=1");
+}
