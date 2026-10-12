@@ -90,6 +90,7 @@ model Produto {
   movimentos   Movimento[]
   entradaItens EntradaItem[]
   codigos      CodigoFornecedor[]
+  vendaItens   VendaItem[]
 
   @@index([nome])
 }
@@ -120,6 +121,41 @@ model Movimento {
 
   @@index([produtoId, criadoEm])
   @@index([tipo, criadoEm])
+}
+
+/// Uma venda fechada no caixa de autoatendimento (tela do cliente).
+model Venda {
+  /// Número da venda nesta loja (1, 2, 3…) — é o que aparece na tela.
+  id         Int      @id @default(autoincrement())
+  /// Identificador único no mundo: é por ele que a venda vai ser enviada
+  /// pra nuvem sem risco de duplicar (sincronização, etapa seguinte).
+  codigo     String   @unique @default(cuid())
+  totalCents Int
+  /// SIMULADO (teste, sem cobrança) | CARTEIRA | MAQUININHA
+  forma      String
+  criadaEm   DateTime @default(now())
+  sincronizadaEm DateTime?
+
+  itens VendaItem[]
+
+  @@index([criadaEm])
+}
+
+model VendaItem {
+  id             String @id @default(cuid())
+  vendaId        Int
+  produtoId      String
+  /// Nome, código e preço COMO ESTAVAM na hora da venda — o cadastro do
+  /// produto pode mudar depois; a venda não.
+  nome           String
+  ean            String?
+  quantidade     Int
+  precoUnitCents Int
+
+  venda   Venda   @relation(fields: [vendaId], references: [id])
+  produto Produto @relation(fields: [produtoId], references: [id])
+
+  @@index([vendaId])
 }
 
 model Fornecedor {

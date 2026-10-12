@@ -130,7 +130,7 @@ O item 1 depende de o computador da loja ter Windows Pro e TPM, o que deve entra
 |---|---|---|
 | 1 | **Nuvem e app**: termo de uso, data de nascimento, código do cliente, foto do rosto, tela de escolha, cadastro de lojas no admin, dono de loja, bloqueio e suporte | Construída no ambiente local; falta testar no celular |
 | 2 | **Gestão local**: produtos, estoque, entrada de mercadoria, alerta de compra | Em andamento: primeiro uso, usuários com permissões, registro de atividades, painel, produtos e estoque (entrada manual, perda, contagem) prontos; faltam entrada por nota fiscal e relatórios |
-| 3 | **Totem**: carrinho por código de barras, carteira e maquininha, fila offline e sincronização | A fazer |
+| 3 | **Totem**: carrinho por código de barras, carteira e maquininha, fila offline e sincronização | Em andamento (priorizado em 12/10, antes da nota fiscal): carrinho por código de barras, fechamento da venda e baixa de estoque prontos, com **pagamento simulado**; faltam carteira, maquininha, identificação do cliente e sincronização |
 | 4 | **Entrada**: porta por BLE, credencial offline, capacidade, mensagem de lotação (firmware da trava: Giovani) | A fazer |
 | 5 | **Câmeras**: zonas de prateleira, rastreamento, divergência com imagens para o dono | A fazer |
 | 6 | **Reconhecimento facial no totem** e cópia local do banco de imagens | A fazer |

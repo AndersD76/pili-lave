@@ -6,6 +6,7 @@ import { sair } from "../entrar/actions";
 const LINKS = [
   { href: "/gestao", label: "Painel", soLojista: false },
   { href: "/gestao/produtos", label: "Produtos e estoque", soLojista: false },
+  { href: "/gestao/vendas", label: "Vendas", soLojista: true },
   { href: "/gestao/usuarios", label: "Usuários", soLojista: true },
   { href: "/gestao/atividades", label: "Atividades", soLojista: true },
 ];

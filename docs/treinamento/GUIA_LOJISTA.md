@@ -142,6 +142,26 @@ Abaixo ficam os últimos 50 movimentos do produto: quando, o tipo (entrada, vend
 
 ---
 
+## 6a. O caixa (tela do cliente) e as vendas
+
+A tela que fica aberta no computador é o **caixa de autoatendimento**:
+
+![Caixa de autoatendimento](imagens/lojista/05a-caixa.png)
+
+1. O cliente passa o produto no leitor de código de barras (ou digita o código e toca em **Adicionar**). O produto entra na lista com nome e preço.
+2. Passar o mesmo produto de novo soma mais um. Os botões **+** e **−** ajustam a quantidade; com 1 unidade, o botão vira **×** e remove o item.
+3. **Pagar** mostra o total; **Confirmar pagamento** fecha a venda e baixa o estoque de cada item.
+4. A tela de "Compra concluída" volta sozinha para o início depois de alguns segundos.
+
+Regras do caixa:
+- Produto **não cadastrado**, **inativo** ou **sem preço** não entra na compra; o caixa mostra um aviso.
+- Compra parada por 3 minutos é cancelada sozinha.
+- O preço cobrado é sempre o do cadastro no momento de fechar.
+
+> ⚠️ **O pagamento ainda é simulado.** Nesta fase nada é cobrado: a venda é registrada e o estoque baixa, mas a carteira do app e a maquininha ainda não estão ligadas. As vendas aparecem marcadas como "Simulado (teste)".
+
+No menu da gestão, **"Vendas"** (só o lojista vê) mostra o total vendido no dia e as últimas vendas com os itens. No extrato de cada produto, a venda aparece com "Caixa" na coluna Quem.
+
 ## 6b. Funcionários e permissões
 
 No menu do topo, **"Usuários"** (só o lojista vê).
@@ -225,7 +245,7 @@ Para liberar de novo, toque em **Desbloquear** ao lado do nome. O histórico do 
 |---|---|
 | Entrada de mercadoria por nota fiscal (arquivo XML ou PDF) | Próximo passo |
 | Relatórios por período (entradas, saídas, estoque) | Próximo passo |
-| Caixa de autoatendimento (totem) e baixa automática por venda | A fazer |
+| Pagamento de verdade no caixa (saldo do app e maquininha) e identificação do cliente | A fazer (o caixa já funciona com pagamento simulado) |
 | Abertura da porta pelo celular e controle de capacidade | A fazer |
 | Modo reposição (loja bloqueada para clientes enquanto um funcionário repõe) | A fazer, junto com a porta |
 | Abrir a porta à distância pelo app (só o lojista) | A fazer, junto com a porta |
