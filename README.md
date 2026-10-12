@@ -48,7 +48,11 @@ Produto novo, no mesmo app: loja em container, sem caixa humano. O cliente entra
 - No app, a porta de entrada passa a ser a escolha entre **Loja conveniência** e **Lavagem expressa**.
 - O `server/` guarda o cadastro das lojas, quem é o dono, bloqueio de clientes e suporte.
 - Cada loja roda o programa da pasta `loja/` no seu computador, com banco próprio (produtos, estoque).
-- **Situação**: etapa 1 (cadastro do cliente, lojas, dono, bloqueio e suporte) e o início da etapa 2 (programa da loja: primeiro uso, produtos e estoque) estão prontos **só no ambiente local**; nada disso está em produção.
+- **Situação** (12/10/2026), tudo **só no ambiente local**, nada em produção:
+  - Etapa 1, app e nuvem: construída (termo de uso, foto, lojas, dono, bloqueio e suporte). Falta testar tudo no celular.
+  - Etapa 2, gestão da loja: construída (usuários com permissões, registro de atividades, produtos e estoque, percentual de venda com reajuste automático, entrada por nota fiscal em XML, relatórios). Falta a leitura de nota em PDF.
+  - Etapa 3, caixa de autoatendimento: carrinho por código de barras e venda prontos, com **pagamento simulado**. Faltam carteira, maquininha, identificação do cliente e sincronização.
+  - Etapas 4 a 7 (porta por Bluetooth, câmeras, rosto no caixa, indicadores e nota fiscal de venda): a fazer.
 
 ## Rodar local
 

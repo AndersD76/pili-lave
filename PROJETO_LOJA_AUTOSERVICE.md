@@ -137,7 +137,7 @@ O item 1 depende de o computador da loja ter Windows Pro e TPM, o que deve entra
 | # | Etapa | Situação |
 |---|---|---|
 | 1 | **Nuvem e app**: termo de uso, data de nascimento, código do cliente, foto do rosto, tela de escolha, cadastro de lojas no admin, dono de loja, bloqueio e suporte | Construída no ambiente local; falta testar no celular |
-| 2 | **Gestão local**: produtos, estoque, entrada de mercadoria, alerta de compra | Construída, exceto a leitura de nota em PDF: primeiro uso, usuários com permissões, registro de atividades, painel, produtos e estoque, entrada por nota fiscal em XML e relatórios por período com planilha. O PDF fica para quando houver uma nota real para calibrar; o aviso de estoque mínimo no celular depende da sincronização |
+| 2 | **Gestão local**: produtos, estoque, entrada de mercadoria, alerta de compra | Construída, exceto a leitura de nota em PDF: primeiro uso, usuários com permissões, registro de atividades, painel, produtos e estoque, percentual de venda com reajuste automático, entrada por nota fiscal em XML e relatórios por período com planilha. O PDF fica para quando houver uma nota real para calibrar; o aviso de estoque mínimo no celular depende da sincronização |
 | 3 | **Totem**: carrinho por código de barras, carteira e maquininha, fila offline e sincronização | Em andamento (priorizado em 12/10, antes da nota fiscal): carrinho por código de barras, fechamento da venda e baixa de estoque prontos, com **pagamento simulado**; faltam carteira, maquininha, identificação do cliente e sincronização |
 | 4 | **Entrada**: porta por BLE, credencial offline, capacidade, mensagem de lotação (firmware da trava: Giovani) | A fazer |
 | 5 | **Câmeras**: zonas de prateleira, rastreamento, divergência com imagens para o dono | A fazer |
@@ -157,12 +157,37 @@ Feito no servidor e na PWA:
 - Banco: tabelas `Loja`, `LojaBloqueio`, `LojaMensagem` e o tipo `DONO_LOJA` nos pedidos de papel (migration `20261012100000_loja_dono_bloqueio`, só no Postgres local).
 - Admin: `/admin/lojas` (cadastrar loja, capacidade, dono, abrir/fechar); pedido de Dono de loja aparece em `/admin/usuarios` para aprovar.
 - App (PWA e nativo): lista de lojas na home da loja, com aviso de bloqueio e formulário de suporte; área **"Minha loja"** do dono, com mensagens para responder e bloqueio/desbloqueio de clientes; opção "Sou dono de loja" no cadastro e no perfil.
-- Auto-cadastro da loja: `GET /api/loja/unidades?cidade=` e `POST /api/loja/provisionar` (migration `20261012150000_loja_provisionamento`, só no Postgres local). A tela de primeiro uso que chama essas rotas será feita na etapa 2, junto com o programa do computador da loja.
+- Auto-cadastro da loja: `GET /api/loja/unidades?cidade=` e `POST /api/loja/provisionar` (migration `20261012150000_loja_provisionamento`, só no Postgres local). A tela de primeiro uso que chama essas rotas já existe no programa da loja (etapa 2).
 - Testado no servidor local de ponta a ponta: pedido e aprovação do dono, bloqueio pelo código, mensagem de suporte, resposta, desbloqueio, e as recusas (quem não é dono não bloqueia, não responde e não desbloqueia).
 
 Falta na etapa 1:
 - Testar o app nativo no celular (principalmente a tela da foto e a área do dono).
 - Aplicar as quatro migrations em produção quando for a hora (não foi feito).
+
+### Etapas 2 e 3 — o que já existe no programa da loja (pasta `loja/`, banco local)
+
+Roda em `http://localhost:3100`. Tudo abaixo foi testado de ponta a ponta por script, enviando os formulários como o navegador faria; as telas ainda precisam de conferência visual.
+
+Gestão (etapa 2):
+- **Primeiro uso**: busca a cidade e escolhe o endereço, sem criar senha.
+- **Usuários**: lojista (e-mail e senha do app, conferidos na nuvem; entra sem internet depois do primeiro acesso) e funcionários com permissões: produtos, preço, entrada, perda, inventário, relatórios.
+- **Atividades**: registro de quem fez o quê, com antes e depois.
+- **Produtos e estoque**: cadastro, busca, extrato por produto, entrada manual, perda e contagem de inventário.
+- **Preço de venda**: percentual guardado no produto, com reajuste automático quando o custo muda; preço manual como exceção; abas "Sem percentual" e "Sem reajuste automático"; percentual editável direto na lista.
+- **Entrada por nota fiscal** em XML, com conferência, reconhecimento por código de barras ou pela última nota do fornecedor, e recusa de nota repetida.
+- **Relatórios** por período (estoque, entradas, saídas, perdas e ajustes), com planilha CSV.
+
+Caixa (etapa 3):
+- **Tela do cliente**: leitura do código de barras, carrinho, fechamento da venda e baixa de estoque.
+- **Vendas**: lista e total do dia, para o lojista.
+
+Falta nessas duas etapas:
+- Leitura de nota em PDF (depende de uma nota real para calibrar).
+- Pagamento de verdade (carteira do app e maquininha) e identificação do cliente no caixa; hoje o pagamento é simulado.
+- Fila de vendas sem internet, sincronização com a nuvem e backup diário.
+- Aviso de estoque mínimo no celular do dono.
+- Estorno ou cancelamento de venda.
+- Teste com leitor de código de barras e com uma nota fiscal reais.
 
 ### Etapa 2 — especificação do programa do computador da loja
 
@@ -188,6 +213,7 @@ Parte do prompt original de controle de estoque (feito no Claude web), ajustada 
 | Casar item da nota pelo EAN | Pelo EAN quando existir; senão, o sistema **lembra** qual produto corresponde a cada código daquele fornecedor | Na segunda nota do mesmo fornecedor a conferência já vem preenchida. |
 | Produto criado pela nota já pode ser vendido | Nasce **sem preço de venda** e aparece em destaque até o preço ser definido | A nota traz o custo, não o preço de venda. |
 | Valores em reais com vírgula | Valores guardados em centavos (inteiros) | Evita erro de arredondamento; é como o resto do sistema guarda dinheiro. |
+| Preço de venda digitado em cada produto | **Percentual sobre o custo guardado no produto**, com reajuste automático; preço digitado só como exceção ("preço manual") | O preço acompanha o custo sozinho a cada nota; o lojista vê numa lista o que ficou fora da regra. |
 | 5 produtos de exemplo automáticos | Botão "carregar exemplos", só para teste | Uma loja de verdade não pode nascer com produto falso no estoque. |
 | Mesma nota pode entrar duas vezes | A chave da NF-e é única: a segunda tentativa é recusada | Evita duplicar estoque. |
 
