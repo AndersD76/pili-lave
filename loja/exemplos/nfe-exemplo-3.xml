@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- NOTA FICTÍCIA, só para testar a entrada por nota fiscal no programa da loja.
+     Fornecedor, CNPJ e chave são inventados; não é um documento fiscal.
+     Esta terceira nota traz custos DIFERENTES das anteriores, para testar o
+     reajuste automático de preço, um item em caixa, um produto novo e um item
+     sem código de barras (reconhecido pela última nota do fornecedor). -->
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
+  <NFe>
+    <infNFe Id="NFe43261012345678000199550010000012361000012367" versao="4.00">
+      <ide>
+        <cUF>43</cUF>
+        <natOp>VENDA DE MERCADORIA</natOp>
+        <mod>55</mod>
+        <serie>1</serie>
+        <nNF>1236</nNF>
+        <dhEmi>2026-10-13T08:15:00-03:00</dhEmi>
+        <tpNF>1</tpNF>
+      </ide>
+      <emit>
+        <CNPJ>12345678000199</CNPJ>
+        <xNome>DISTRIBUIDORA EXEMPLO DE BEBIDAS LTDA</xNome>
+        <xFant>Distribuidora Exemplo</xFant>
+      </emit>
+      <det nItem="1">
+        <prod>
+          <cProd>BEB-0001</cProd>
+          <cEAN>7894900011517</cEAN>
+          <xProd>REFRIG COCA-COLA LATA 350ML</xProd>
+          <NCM>22021000</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>UN</uCom>
+          <qCom>24.0000</qCom>
+          <vUnCom>3.2000</vUnCom>
+          <vProd>76.80</vProd>
+          <cEANTrib>7894900011517</cEANTrib>
+          <uTrib>UN</uTrib>
+          <qTrib>24.0000</qTrib>
+          <vUnTrib>3.2000</vUnTrib>
+        </prod>
+      </det>
+      <det nItem="2">
+        <prod>
+          <cProd>BEB-0015</cProd>
+          <cEAN>17891991000830</cEAN>
+          <xProd>REFRIG GUARANA ANTARCTICA LATA 350ML CX C/12</xProd>
+          <NCM>22021000</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>CX</uCom>
+          <qCom>2.0000</qCom>
+          <vUnCom>33.6000</vUnCom>
+          <vProd>67.20</vProd>
+          <cEANTrib>7891991000833</cEANTrib>
+          <uTrib>UN</uTrib>
+          <qTrib>24.0000</qTrib>
+          <vUnTrib>2.8000</vUnTrib>
+        </prod>
+      </det>
+      <det nItem="3">
+        <prod>
+          <cProd>SNK-0102</cProd>
+          <cEAN>7892840800079</cEAN>
+          <xProd>SALGADINHO DORITOS QUEIJO NACHO 96G</xProd>
+          <NCM>19059090</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>UN</uCom>
+          <qCom>10.0000</qCom>
+          <vUnCom>6.9000</vUnCom>
+          <vProd>69.00</vProd>
+          <cEANTrib>7892840800079</cEANTrib>
+          <uTrib>UN</uTrib>
+          <qTrib>10.0000</qTrib>
+          <vUnTrib>6.9000</vUnTrib>
+        </prod>
+      </det>
+      <det nItem="4">
+        <prod>
+          <cProd>BEB-0330</cProd>
+          <cEAN>7898900123453</cEAN>
+          <xProd>ENERGETICO LATA 250ML</xProd>
+          <NCM>22029900</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>UN</uCom>
+          <qCom>12.0000</qCom>
+          <vUnCom>4.5000</vUnCom>
+          <vProd>54.00</vProd>
+          <cEANTrib>7898900123453</cEANTrib>
+          <uTrib>UN</uTrib>
+          <qTrib>12.0000</qTrib>
+          <vUnTrib>4.5000</vUnTrib>
+        </prod>
+      </det>
+      <det nItem="5">
+        <prod>
+          <cProd>GEL-0042</cProd>
+          <cEAN>SEM GTIN</cEAN>
+          <xProd>GELO EM CUBOS PACOTE 2KG</xProd>
+          <NCM>22019000</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>PC</uCom>
+          <qCom>10.0000</qCom>
+          <vUnCom>3.8000</vUnCom>
+          <vProd>38.00</vProd>
+          <cEANTrib>SEM GTIN</cEANTrib>
+          <uTrib>PC</uTrib>
+          <qTrib>10.0000</qTrib>
+          <vUnTrib>3.8000</vUnTrib>
+        </prod>
+      </det>
+      <total>
+        <ICMSTot>
+          <vProd>305.00</vProd>
+          <vNF>305.00</vNF>
+        </ICMSTot>
+      </total>
+    </infNFe>
+  </NFe>
+  <protNFe versao="4.00">
+    <infProt>
+      <chNFe>43261012345678000199550010000012361000012367</chNFe>
+      <cStat>100</cStat>
+    </infProt>
+  </protNFe>
+</nfeProc>
