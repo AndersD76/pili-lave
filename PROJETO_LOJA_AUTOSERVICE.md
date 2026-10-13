@@ -32,6 +32,7 @@ como produto paralelo. Ao abrir o app, o cliente escolhe entre
 - Cada abertura libera **uma pessoa** (mais as crianças declaradas) e cria uma **visita**.
 - **Capacidade máxima: 3 pessoas por vez**, com aviso fixado na porta. Loja cheia: o app mostra "Ocupação máxima esgotada, aguarde". Essa resposta vem do computador local **por BLE**, porque pode não haver internet.
 - Acompanhantes: o app pergunta "Entrando com criança(s)?" — Não / Sim 1 / Sim 2. Adulto não declarado = alarme.
+- **Acompanhante adulto sem app: não é permitido.** A ideia de liberar um acompanhante adulto na visita do titular foi avaliada em 13/10/2026 e descartada. Todo adulto entra com o próprio app.
 - **Bloqueio pelo dono**: o dono da loja pode bloquear a entrada de um cliente por problema de conduta, pelo app, informando o código do cliente e o motivo. O cliente não vê o motivo; vê que está bloqueado e a orientação de falar com o suporte.
 - **Suporte**: o cliente escreve num formulário no app, a mensagem chega no app do dono (com aviso), e o dono responde por lá em até 24 h.
 - **Dono de loja**: papel pedido pelo usuário no cadastro ou no perfil e aprovado pelo admin, como já acontece com o lavador. Depois de aprovar, o admin vincula a loja ao dono no painel.
