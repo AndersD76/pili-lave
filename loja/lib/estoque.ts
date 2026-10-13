@@ -41,6 +41,8 @@ export async function movimentar(
       usuarioId: args.usuarioId,
     },
   });
+  // chegou mercadoria: o produto sai da lista de compras
+  if (args.tipo === "ENTRADA") await tx.itemCompra.deleteMany({ where: { produtoId: args.produtoId } });
   return produto.estoqueAtual;
 }
 

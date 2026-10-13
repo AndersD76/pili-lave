@@ -22,6 +22,7 @@ primeiro acesso do lojista.
 | `/entrar` | Acesso administrativo (usuário e senha) | Lojista e funcionários |
 | `/gestao` | Painel: para comprar, sem preço, sem percentual, sem reajuste automático | Qualquer usuário ativo |
 | `/gestao/produtos` | Produtos e estoque, com as abas "Sem percentual" e "Sem reajuste automático" | Qualquer usuário ativo |
+| `/gestao/compras` | Lista de compras: marcar produtos (abaixo do mínimo ou todos), imprimir ou baixar | Permissão de compras |
 | `/gestao/entradas` | Entrada por nota fiscal (XML) e conferência | Permissão de entrada |
 | `/gestao/relatorios` | Estoque, entradas, saídas e perdas por período, com planilha CSV | Permissão de relatórios |
 | `/gestao/vendas`, `/usuarios`, `/atividades` | Vendas do caixa, funcionários e permissões, registro de quem fez o quê | Só o lojista |
@@ -32,7 +33,7 @@ primeiro acesso do lojista.
   definido como dono da loja em `/admin/lojas` do servidor. Depois do
   primeiro acesso, entra também sem internet.
 - **Funcionários**: cadastrados pelo lojista em Usuários, com as permissões
-  marcadas (produtos, preço, entrada, perda, inventário, relatórios).
+  marcadas (produtos, preço, entrada, perda, inventário, relatórios, compras).
 - A sessão dura 30 minutos.
 
 ## Preço de venda

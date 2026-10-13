@@ -64,6 +64,11 @@ export default async function Painel({ searchParams }: { searchParams: Promise<{
       </div>
 
       <h2 className="section-title">Para comprar ({criticos.length})</h2>
+      {pode(usuario, "COMPRAS") && (
+        <p className="sub" style={{ marginBottom: 10 }}>
+          <Link href="/gestao/compras">Montar a lista de compras →</Link>
+        </p>
+      )}
       {criticos.length === 0 ? (
         <p className="sub">Nenhum produto no estoque mínimo.</p>
       ) : (

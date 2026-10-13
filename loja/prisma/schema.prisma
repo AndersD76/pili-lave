@@ -99,8 +99,22 @@ model Produto {
   entradaItens EntradaItem[]
   codigos      CodigoFornecedor[]
   vendaItens   VendaItem[]
+  itemCompra   ItemCompra?
 
   @@index([nome])
+}
+
+/// Lista de compras: um produto marcado pra comprar, com a quantidade
+/// desejada. Sai da lista sozinho quando o produto recebe uma entrada
+/// (nota fiscal ou manual) — ver movimentar() em lib/estoque.ts.
+model ItemCompra {
+  produtoId  String   @id
+  quantidade Int
+  /// Quem marcou (Usuario.id).
+  usuarioId  String
+  criadoEm   DateTime @default(now())
+
+  produto Produto @relation(fields: [produtoId], references: [id])
 }
 
 /// Extrato do estoque: TODA mudança de saldo passa por aqui (nunca se mexe

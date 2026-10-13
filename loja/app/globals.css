@@ -116,3 +116,14 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .btn.caixa-btn { height: 64px; padding: 0 36px; font-size: 20px; }
 .btn.ghost.caixa-btn { height: 64px; padding: 0 28px; font-size: 17px; }
 .btn:disabled { opacity: 0.5; cursor: default; }
+
+/* --- impressão (lista de compras): só o conteúdo, preto no branco --- */
+@media print {
+  body { background: #fff; color: #000; }
+  .nao-imprimir { display: none !important; }
+  .admin-wrap { max-width: none; padding: 0; }
+  .section-title { color: #000; }
+  .tbl-wrap { border-color: #999; }
+  .tbl th, .tbl td { color: #000; border-bottom: 1px solid #ccc; }
+  a { color: #000; }
+}

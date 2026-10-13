@@ -2,7 +2,7 @@
 
 > Como o dono de uma loja de conveniência autoservice usa o sistema: virar dono, cadastrar a loja no computador dela, cuidar de produtos e estoque, responder clientes e bloquear quem der problema.
 
-> ⚠️ **A loja de conveniência está em construção.** Tudo o que este guia descreve funciona hoje só no ambiente de teste, não no sistema em produção. As partes que ainda não existem estão listadas na seção 15. Este guia é atualizado a cada etapa do projeto.
+> ⚠️ **A loja de conveniência está em construção.** Tudo o que este guia descreve funciona hoje só no ambiente de teste, não no sistema em produção. As partes que ainda não existem estão listadas na seção 16. Este guia é atualizado a cada etapa do projeto.
 
 📸 *Espaços `![...](imagens/lojista/arquivo.png)` — salve os prints com esse nome exato dentro de `docs/treinamento/imagens/lojista/`.*
 
@@ -71,7 +71,7 @@ A tela que fica aberta no computador é a do cliente. Para entrar na gestão, cl
 ![Acesso administrativo](imagens/lojista/02b-acesso-administrativo.png)
 
 - **Você (lojista)** entra com o **e-mail e a senha do app**. O administrador precisa ter definido você como dono desta loja; antes disso ninguém entra.
-- **Funcionários** entram com o usuário e a senha que você cadastrar (seção 11).
+- **Funcionários** entram com o usuário e a senha que você cadastrar (seção 12).
 
 Na primeira vez o computador precisa de **internet** para conferir quem é o dono. Depois disso você consegue entrar mesmo sem internet, com a mesma senha.
 
@@ -224,7 +224,32 @@ No menu do topo, **"Relatórios"** (para o lojista e para quem tem a permissão 
 - **"Baixar planilha (CSV)"** baixa o relatório que está na tela, para abrir no Excel.
 - No relatório de perdas, o valor é calculado pelo custo atual de cada produto. Ajuste negativo é produto que o sistema esperava e não estava na prateleira na contagem.
 
-## 10. O caixa (tela do cliente) e as vendas
+## 10. Lista de compras
+
+No menu do topo, **"Compras"** (para o lojista e para quem tem a permissão de montar a lista).
+
+![Lista de compras](imagens/lojista/05h-compras.png)
+
+A tela tem duas partes.
+
+**Em cima, a lista como está**: cada produto com a quantidade a comprar, o estoque, o último custo, o valor estimado e o último fornecedor de quem ele veio. Embaixo, o total de itens, de unidades e o valor estimado. Dali você pode:
+- **Imprimir** a lista para levar ao fornecedor;
+- **Baixar planilha (CSV)**;
+- **Esvaziar a lista**.
+
+**Embaixo, "Escolher o que comprar"**: é aqui que você marca os produtos.
+1. Escolha o que quer ver: **"Abaixo do mínimo"** (só o que está no estoque mínimo ou abaixo) ou **"Todos os produtos"**. Dá para buscar por nome ou código de barras.
+2. Marque a caixa **"Comprar?"** nos produtos que vai comprar.
+3. Confira a **quantidade**. Ela já vem sugerida: é o que falta para o produto passar do estoque mínimo. Mude se quiser.
+4. Clique em **"Salvar marcações"**.
+
+Como funciona:
+- Salvar só mexe nos produtos que estão na tela. Se você marcou algo em "Todos os produtos" e depois salvar em "Abaixo do mínimo", o que não aparece ali continua na lista.
+- **Desmarcar** um produto que está na tela e salvar tira ele da lista.
+- **O produto sai da lista sozinho quando recebe entrada**, por nota fiscal ou manual. Assim a lista mostra sempre o que ainda falta comprar.
+- O valor estimado usa o último custo de cada produto; o fornecedor pode cobrar diferente.
+
+## 11. O caixa (tela do cliente) e as vendas
 
 A tela que fica aberta no computador é o **caixa de autoatendimento**:
 
@@ -244,7 +269,7 @@ Regras do caixa:
 
 No menu da gestão, **"Vendas"** (só o lojista vê) mostra o total vendido no dia e as últimas vendas com os itens. No extrato de cada produto, a venda aparece com "Caixa" na coluna Quem.
 
-## 11. Funcionários e permissões
+## 12. Funcionários e permissões
 
 No menu do topo, **"Usuários"** (só o lojista vê).
 
@@ -260,6 +285,7 @@ Em **"Novo funcionário"**, informe o nome, o **usuário** que ele vai digitar p
 | Registrar perda | Baixar produto vencido, quebrado ou furtado |
 | Fazer contagem de inventário | Ajustar o estoque pelo que foi contado |
 | Ver relatórios | Abrir os relatórios e baixar as planilhas |
+| Montar a lista de compras | Marcar produtos para comprar, imprimir e baixar a lista |
 
 Ver o painel e consultar produtos e estoque todo funcionário ativo pode. Usuários e Atividades são só seus.
 
@@ -267,7 +293,7 @@ Em cada funcionário já cadastrado você pode mudar o nome, as permissões, tro
 
 > 💡 O funcionário só vê na tela o que pode fazer. Quem tem só "Dar entrada", por exemplo, não vê os cartões de perda e de contagem.
 
-## 12. Atividades: quem fez o quê
+## 13. Atividades: quem fez o quê
 
 No menu do topo, **"Atividades"** (só o lojista vê).
 
@@ -281,7 +307,7 @@ Tudo o que é feito na gestão fica registrado: **quando**, **quem**, **o quê**
 
 ---
 
-## 13. App: área "Minha loja"
+## 14. App: área "Minha loja"
 
 No celular, entre em **Loja conveniência**. Para quem é dono aprovado, aparece o botão **"Minha loja (área do dono)"**.
 
@@ -307,11 +333,11 @@ O cliente passa a ver que a entrada dele está bloqueada e é orientado a falar 
 
 Para liberar de novo, toque em **Desbloquear** ao lado do nome. O histórico do bloqueio fica guardado.
 
-> ⚠️ Enquanto a porta por celular não estiver instalada (seção 15), o bloqueio só aparece no app; ele ainda não impede fisicamente a entrada.
+> ⚠️ Enquanto a porta por celular não estiver instalada (seção 16), o bloqueio só aparece no app; ele ainda não impede fisicamente a entrada.
 
 ---
 
-## 14. Regras da loja que você precisa conhecer
+## 15. Regras da loja que você precisa conhecer
 
 - **Capacidade**: 3 pessoas por vez. Com a loja cheia, a porta não abre e o app do cliente mostra "Ocupação máxima esgotada, aguarde".
 - **Entrada**: só pelo app, uma pessoa por abertura (mais as crianças que ela declarar).
@@ -322,7 +348,7 @@ Para liberar de novo, toque em **Desbloquear** ao lado do nome. O histórico do 
 
 ---
 
-## 15. O que ainda não está disponível
+## 16. O que ainda não está disponível
 
 | Recurso | Situação |
 |---|---|
@@ -347,6 +373,7 @@ Entrar na gestão -> "Acesso administrativo" -> e-mail e senha do app (funcioná
 Dia a dia no computador -> Painel (o que comprar) -> Produtos e estoque -> entrada / perda / contagem
 Preço -> percentual na coluna "% de venda" -> Salvar percentuais (o preço acompanha o custo sozinho)
 Chegou mercadoria com nota -> Entradas -> enviar o XML -> conferir -> Confirmar e dar entrada
+Vai comprar -> Compras -> "Abaixo do mínimo" ou "Todos" -> marcar e ajustar a quantidade -> Salvar -> Imprimir
 Fechamento -> Relatórios (estoque, entradas, saídas, perdas) -> Baixar planilha
 Equipe -> Usuários (cadastrar funcionário e marcar permissões) -> Atividades (quem fez o quê)
 Caixa -> é a tela do cliente; as vendas aparecem em Vendas (pagamento ainda simulado)

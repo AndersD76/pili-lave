@@ -7,6 +7,7 @@ import { sair } from "../entrar/actions";
 const LINKS: { href: string; label: string; soLojista?: boolean; perm?: Permissao }[] = [
   { href: "/gestao", label: "Painel" },
   { href: "/gestao/produtos", label: "Produtos e estoque" },
+  { href: "/gestao/compras", label: "Compras", perm: "COMPRAS" },
   { href: "/gestao/entradas", label: "Entradas", perm: "ENTRADA" },
   { href: "/gestao/relatorios", label: "Relatórios", perm: "RELATORIOS" },
   { href: "/gestao/vendas", label: "Vendas", soLojista: true },

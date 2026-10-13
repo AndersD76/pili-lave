@@ -75,7 +75,7 @@ como produto paralelo. Ao abrir o app, o cliente escolhe entre
 ### Usuários do computador da loja
 - A tela principal do computador é sempre **a do cliente** (o caixa). Num canto fica o botão **"Acesso administrativo"**, que pede usuário e senha.
 - **Lojista**: o dono da loja, definido pelo admin. Tem acesso total. Entra com o e-mail e a senha do app; com internet, quem confere é o servidor, e sem internet vale a senha guardada no último acesso.
-- **Funcionário**: cadastrado pelo lojista no próprio computador, com as permissões que ele marcar. Hoje: cadastrar e editar produtos, alterar preço de venda, dar entrada de mercadoria (manual e por nota), registrar perda, fazer contagem de inventário, ver relatórios. Outras entram conforme o programa cresce.
+- **Funcionário**: cadastrado pelo lojista no próprio computador, com as permissões que ele marcar. Hoje: cadastrar e editar produtos, alterar preço de venda, dar entrada de mercadoria (manual e por nota), registrar perda, fazer contagem de inventário, ver relatórios, montar a lista de compras. Outras entram conforme o programa cresce.
 - **Toda ação fica registrada** com quem fez, quando e o quê (inclusive o valor antes e depois, em preço e cadastro). Só o lojista vê o registro, e ninguém edita nem apaga.
 - A sessão dura 30 minutos, porque a máquina fica na frente dos clientes.
 - Tirar uma permissão ou desativar um funcionário vale na hora, mesmo que ele esteja logado.
@@ -176,6 +176,7 @@ Gestão (etapa 2):
 - **Preço de venda**: percentual guardado no produto, com reajuste automático quando o custo muda; preço manual como exceção; abas "Sem percentual" e "Sem reajuste automático"; percentual editável direto na lista.
 - **Entrada por nota fiscal** em XML, com conferência, reconhecimento por código de barras ou pela última nota do fornecedor, e recusa de nota repetida.
 - **Relatórios** por período (estoque, entradas, saídas, perdas e ajustes), com planilha CSV.
+- **Lista de compras**: o lojista escolhe ver os produtos abaixo do mínimo ou todos, marca o que vai comprar e ajusta a quantidade; a lista pode ser impressa ou baixada, e o produto sai dela sozinho quando recebe entrada.
 
 Caixa (etapa 3):
 - **Tela do cliente**: leitura do código de barras, carrinho, fechamento da venda e baixa de estoque.

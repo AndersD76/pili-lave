@@ -12,6 +12,7 @@ export const ROTULO_ACAO: Record<string, string> = {
   ENTRADA: "Deu entrada",
   NOTA_ENTRADA: "Deu entrada por nota fiscal",
   PERDA: "Registrou perda",
+  LISTA_COMPRAS: "Alterou a lista de compras",
   INVENTARIO: "Contagem de inventário",
   USUARIO_CRIADO: "Cadastrou usuário",
   USUARIO_ALTERADO: "Alterou usuário",
