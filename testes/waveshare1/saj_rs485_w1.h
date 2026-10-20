@@ -26,10 +26,19 @@ static inline int16_t saj_freq_para_registrador(float freq_hz) {
     return (int16_t)((freq_hz / SAJ_FREQ_MAX_HZ) * 10000.0f);
 }
 
+// Projeto de testes: o SAJ pode ficar FORA do RS-485 (frequencia fixa e partida
+// configuradas no proprio inversor). Com 0, nao escreve nada no barramento —
+// escrever num escravo ausente travaria o loop a cada tentativa (4 x timeout).
+#ifndef TESTE_SAJ_POR_RS485
+#define TESTE_SAJ_POR_RS485 0
+#endif
+
 void saj_set_freq(float freq_hz) {
     g_saj_freq     = freq_hz;
     g_saj_mov_freq = (uint16_t)(freq_hz * 10);
+#if TESTE_SAJ_POR_RS485
     saj_write_reg_retry(SAJ_REG_FREQ, (uint16_t)saj_freq_para_registrador(freq_hz));
+#endif
 }
 
 bool saj_lendo_parado() {

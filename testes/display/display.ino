@@ -182,8 +182,8 @@ static void ui_atualizar() {
         snprintf(buf, sizeof(buf), "Etapa: %s   (giro %d/3)", NOMES_ETAPA_AP[s.sub_estado], (int)s.giro_n + 1);
         lv_label_set_text(lbl_etapa, buf);
     } else {
-        lv_label_set_text(lbl_etapa, s.bomba_on ? "Bomba habilitada no proximo teste (Y13 + SAJ 25 Hz)"
-                                                : "Teste a seco: sem Y13 e sem SAJ");
+        lv_label_set_text(lbl_etapa, s.bomba_on ? "Bomba habilitada no proximo teste (Y13; SAJ em frequencia fixa)"
+                                                : "Teste a seco: sem Y13 (bomba nao liga)");
     }
 
     char msg[56];
@@ -239,7 +239,7 @@ static void ui_atualizar() {
         lv_label_set_text(lbl_cmd, buf);
     }
 
-    lv_label_set_text(lbl_bomba, s.bomba_on ? "BOMBA: ON (Y13 + SAJ 25 Hz)" : "BOMBA: OFF (a seco)");
+    lv_label_set_text(lbl_bomba, s.bomba_on ? "BOMBA: ON (Y13)" : "BOMBA: OFF (a seco)");
     lv_obj_set_style_bg_color(btn_bomba, s.bomba_on ? lv_color_hex(0xE08A00) : COR_CINZA, 0);
 }
 
