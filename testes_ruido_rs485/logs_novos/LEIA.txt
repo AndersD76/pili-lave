@@ -1,0 +1,1 @@
+Coloque aqui os logs novos (ex.: depois_filtro_A.log). Ver ../PROCEDIMENTO.md
