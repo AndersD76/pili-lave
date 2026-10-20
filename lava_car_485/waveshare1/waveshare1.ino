@@ -1,363 +1,248 @@
 /*
-  waveshare1.ino — PRODUÇÃO (lava_car_485)
-  Waveshare ESP32-S3-POE-ETH-8DI-8DO #1 — escravo Modbus RTU endereco 1
-  Pili Tecnologia — migrado do ESP-NOW pro RS-485 cabeado (mesmo mapa de
-  pinos/DO/travas do firmware ESP-NOW anterior, só o transporte mudou).
+  waveshare1.ino — Waveshare ESP32-S3-8DI-8DO #1 — ESP-NOW (volta do RS-485)
+  Pili Tecnologia — migracao RS-485 -> ESP-NOW de novo (ver nota no display,
+  comm_waveshares_espnow.h, pro motivo: tirar as Waveshares da disputa do
+  barramento RS-485 compartilhado com o inversor Delta/SAJ).
 
-  ========================================================================
-  O QUE MUDOU EM RELACAO AO FIRMWARE ANTIGO (causa raiz do bug)
-  ========================================================================
-  O firmware antigo lia digitalRead() APENAS no instante em que o frame
-  Modbus FC02 chegava. Se o sensor pulsou 15ms e o frame chegou 20ms
-  depois, o pulso ja tinha sumido — perdido para sempre.
+  Papel: le 8 DIs (X0,X1,X2,X3,X4,X5,X6,X7) e aciona 8 DOs (Y1,Y2,Y3,Y4,Y5,Y6,Y7,Y11).
+  - Evento: a ISR de um DI marca a borda; o loop envia o pacote IMEDIATAMENTE.
+  - Heartbeat: a cada 200ms manda o estado ao vivo dos 8 DIs (detecta queda).
+  - Comando: recebe canal+estado do display e aciona a saida.
+  MAC logico por funcao (esp_wifi_set_mac) + PMK/LMK derivadas do ID_MAQUINA.
 
-  Este firmware faz LATCH POR HARDWARE (interrupcao) + LATCH POR SOFTWARE:
+  CANAL: comeca no ESPNOW_CANAL (1, padrao de fabrica) OU no ultimo canal
+  salvo na propria NVS, se houver (religamento normal depois de sincronizado
+  uma vez — nao precisa de pareamento de novo). So muda de canal quando
+  recebe MSG_CANAL do display (e salva na NVS pra proxima vez). NUNCA varre
+  canais sozinha — a varredura (achado real: travava tudo quando perdia
+  contato) agora e feita pelo DISPLAY, de forma limitada e so quando precisa
+  (ver ws_nudge_boot_tick() em comm_waveshares_espnow.h).
 
-    1. attachInterrupt() em cada DI: captura a borda no instante que ela
-       acontece, mesmo que dure 1 microssegundo.
-    2. O bit fica RETIDO num latch ate o mestre ler e confirmar.
-    3. Leitura destrutiva: o mestre le o latch e ele zera automaticamente
-       (read-and-clear). Nenhum pulso se perde.
-
-  ========================================================================
-  MAPA MODBUS (FC02 — Read Discrete Inputs)
-  ========================================================================
-    start = 0, count = 8   -> estado AO VIVO das 8 DIs (compatibilidade)
-    start = 8, count = 8   -> LATCH das 8 DIs (read-and-clear)
-                              bit=1 = houve pulso desde a ultima leitura
-
-    FC05 (Write Single Coil) — inalterado, coil 0-7 = DO1-DO8
-
-  ========================================================================
-  SENSOR MONITORADO NESTE TESTE
-  ========================================================================
-    DI8 (GPIO11) = X7 — sensor giro braco posicao intermediaria
-
-  ========================================================================
-  CONFIGURACOES OBRIGATORIAS (Tools no Arduino IDE)
-  ========================================================================
-    Board             ESP32S3 Dev Module
-    Flash Size        16MB
-    Partition Scheme  Default 8MB with spiffs
-    PSRAM             OPI PSRAM (8MB)
-    CPU Frequency     240MHz
-    Flash Mode        QIO 80MHz
-    USB CDC On Boot   Enabled
+  Config Arduino: ESP32S3 Dev Module, 16MB, PSRAM OPI, 240MHz, QIO, CDC On Boot = Enabled.
 */
-
 #include <Arduino.h>
 #include <Wire.h>
+#include <WiFi.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
+#include <esp_system.h>
+#include <nvs_flash.h>
+#include <Preferences.h>
 
-#define MB_ADDR 1
+// ===================== HARD RESET no boot (via firmware) =====================
+#define HARD_RESET_APAGA_NVS 0
+#define HR_MARCA 0x50494C49UL
+RTC_NOINIT_ATTR static uint32_t g_hr_marca;
+static void hard_reset_fase1(const char* nome) {
+    esp_reset_reason_t r = esp_reset_reason();
+    bool energizou = (r == ESP_RST_POWERON || r == ESP_RST_BROWNOUT || r == ESP_RST_UNKNOWN);
+    if (energizou && g_hr_marca != HR_MARCA) {
+        g_hr_marca = HR_MARCA;
+#if HARD_RESET_APAGA_NVS
+        nvs_flash_erase(); nvs_flash_init();
+#endif
+        Serial.printf("[%s] HARD RESET: motivo=%d -> reiniciando o chip inteiro (uma vez)\n", nome, (int)r);
+        Serial.flush(); delay(100);
+        esp_restart();
+    }
+    Serial.printf("[%s] boot limpo (motivo=%d, hard reset ja feito)\n", nome, (int)r);
+}
+static void hard_reset_radio() { WiFi.persistent(false); WiFi.mode(WIFI_OFF); delay(50); }
+static void i2c_recupera_barramento(int sda, int scl) {
+    pinMode(sda, INPUT_PULLUP);
+    pinMode(scl, OUTPUT_OPEN_DRAIN); digitalWrite(scl, HIGH); delayMicroseconds(5);
+    for (uint8_t i = 0; i < 9 && digitalRead(sda) == LOW; i++) {
+        digitalWrite(scl, LOW); delayMicroseconds(5);
+        digitalWrite(scl, HIGH); delayMicroseconds(5);
+    }
+    pinMode(sda, OUTPUT_OPEN_DRAIN); digitalWrite(sda, LOW); delayMicroseconds(5);   // STOP
+    digitalWrite(scl, HIGH); delayMicroseconds(5); digitalWrite(sda, HIGH); delayMicroseconds(5);
+    pinMode(sda, INPUT_PULLUP); pinMode(scl, INPUT_PULLUP);
+}
 
-// ── RS485 ───────────────────────────────────────────────────────────────
-#define RS485_TX     17
-#define RS485_RX     18
-#define RS485_DE_RE  21
-#define MB_BAUD      9600
-HardwareSerial RS485_SERIAL(2);
+// ===================== IDENTIDADE / ESP-NOW (igual ao tipos.h do display) =====
+#define ID_MAQUINA 1
+static const uint8_t MAC_DISPLAY[6] = {0x02,0x00,0x00,ID_MAQUINA,0x01,0x01};
+static const uint8_t MAC_WAVE1[6]   = {0x02,0x00,0x00,ID_MAQUINA,0x01,0x02};
+#define ESPNOW_CANAL   1
+#define ORIGEM_WAVE1   1
+#define HEARTBEAT_MS   200
+static const uint8_t ESPNOW_PMK[16] = {'P','I','L','I','-','p','m','k',ID_MAQUINA,0,0,0,0,0,0,0};
+static const uint8_t ESPNOW_LMK[16] = {'P','I','L','I','-','l','m','k',ID_MAQUINA,0,0,0,0,0,0,0};
 
-// ── I2C / PCA9554 (saidas DO) ───────────────────────────────────────────
-#define I2C_SDA         42
-#define I2C_SCL         41
-#define PCA9554_ADDR    0x20
-#define PCA9554_REG_OUTPUT   0x01
-#define PCA9554_REG_CONFIG   0x03
+enum : uint8_t { MSG_EVENTO=1, MSG_HEARTBEAT=2, MSG_COMANDO=3, MSG_CANAL=4 };
+typedef struct __attribute__((packed)) { uint8_t tipo,id_maquina,origem,seq; } CabEspNow;
+typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t di_vivo,di_borda; uint32_t t_us; } MsgEvento;
+typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t di_vivo,do_estado; } MsgHeartbeat;
+typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal,estado; } MsgComando;
+typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal; } MsgCanal;
+
+// ===================== I2C / PCA9554 (saidas) ================================
+#define I2C_SDA 42
+#define I2C_SCL 41
+#define PCA9554_ADDR 0x20
+#define PCA9554_REG_OUTPUT 0x01
+#define PCA9554_REG_CONFIG 0x03
 #define DO_LOGICA_INVERTIDA 1
 
-// ── LED RGB de debug ────────────────────────────────────────────────────
+// ===================== LED RGB de debug ======================================
 #define LED_PIN 38
-static inline void led_cor(uint8_t r, uint8_t g, uint8_t b) { rgbLedWrite(LED_PIN, r, g, b); }
+static inline void led_cor(uint8_t r,uint8_t g,uint8_t b){ rgbLedWrite(LED_PIN,r,g,b); }
+static uint32_t led_off_em = 0;
+static void led_pisca(uint8_t r,uint8_t g,uint8_t b){ led_cor(r,g,b); led_off_em = millis()+30; }
+static void led_tick(){ if (led_off_em && millis()>=led_off_em){ led_cor(0,0,0); led_off_em=0; } }
 
-// ── Pinos DI — logica NPN: sensor ativo = nivel BAIXO ───────────────────
-#define DI1_PIN 4    // X0 — sensor indutivo deslocamento
+// ===================== DIs (NPN ativo em LOW) ================================
+#define DI1_PIN 4    // X0 — sensor indutivo deslocamento (pulso)
 #define DI2_PIN 5    // X1 — botao modelo 1
 #define DI3_PIN 6    // X2 — botao modelo 2
 #define DI4_PIN 7    // X3 — manual/automatico
 #define DI5_PIN 8    // X4 — pause
-#define DI6_PIN 9    // X5 — botao modelo 4
-#define DI7_PIN 10   // X6 — botao modelo 3
-#define DI8_PIN 11   // X7 — SENSOR GIRO BRACO  <<< monitorado neste teste
+#define DI6_PIN 9    // X5 — botao modelo 3
+#define DI7_PIN 10   // X6 — botao modelo 4
+#define DI8_PIN 11   // X7 — sensor giro braco (pulso)
+static const uint8_t DI_PINS[8] = { DI1_PIN,DI2_PIN,DI3_PIN,DI4_PIN,DI5_PIN,DI6_PIN,DI7_PIN,DI8_PIN };
 
-static const uint8_t DI_PINS[8] = { DI1_PIN, DI2_PIN, DI3_PIN, DI4_PIN,
-                                    DI5_PIN, DI6_PIN, DI7_PIN, DI8_PIN };
+#define DEBOUNCE_US 800
+volatile uint8_t  g_borda_pend = 0;
+volatile bool     g_ev_pend    = false;
+volatile uint32_t g_ult_us[8]  = {0,0,0,0,0,0,0,0};
 
-// =======================================================================
-// LATCH DE PULSOS — o coracao da correcao
-// =======================================================================
-// Cada bit fica em 1 assim que o sensor pulsa (capturado por interrupcao)
-// e so volta a 0 quando o mestre le o latch (read-and-clear).
-// volatile porque e escrito dentro da ISR.
-volatile uint8_t  di_latch      = 0x00;
-volatile uint32_t di_contador[8] = {0,0,0,0,0,0,0,0};  // diagnostico
-
-// Anti-repique por canal (microsegundos). Pulso real do sensor indutivo
-// costuma ter >1ms; ruido eletrico costuma ter <200us.
-#define DEBOUNCE_US  800
-volatile uint32_t di_ultimo_us[8] = {0,0,0,0,0,0,0,0};
-
-// -----------------------------------------------------------------------
-// ISR generica — captura borda de descida (sensor NPN ativa em LOW)
-// IRAM_ATTR: a rotina vive na RAM interna, executa mesmo com o flash ocupado
-// -----------------------------------------------------------------------
-static void IRAM_ATTR di_isr(void* arg) {
+void IRAM_ATTR di_isr(void* arg) {
     uint32_t canal = (uint32_t)arg;
     uint32_t agora = micros();
-
-    // anti-repique: ignora bordas coladas
-    if (agora - di_ultimo_us[canal] < DEBOUNCE_US) return;
-    di_ultimo_us[canal] = agora;
-
-    di_latch |= (1 << canal);
-    di_contador[canal]++;
+    if (agora - g_ult_us[canal] < DEBOUNCE_US) return;
+    g_ult_us[canal] = agora;
+    g_borda_pend |= (1 << canal);
+    g_ev_pend = true;
 }
-
-// -----------------------------------------------------------------------
-// Le o latch e ZERA (read-and-clear) — operacao atomica
-// -----------------------------------------------------------------------
-static uint8_t le_e_limpa_latch() {
-    noInterrupts();
-    uint8_t v = di_latch;
-    di_latch = 0x00;
-    interrupts();
+static uint8_t le_entradas_vivo() {
+    uint8_t v = 0;
+    for (uint8_t i=0;i<8;i++) if (digitalRead(DI_PINS[i])==LOW) v |= (1<<i);
     return v;
 }
 
-// -----------------------------------------------------------------------
-// Le estado AO VIVO das 8 entradas (bit=1 quando sensor ATIVO)
-// -----------------------------------------------------------------------
-static uint8_t le_entradas_vivo() {
-    uint8_t val = 0;
-    for (uint8_t i = 0; i < 8; i++) {
-        if (digitalRead(DI_PINS[i]) == LOW) val |= (1 << i);
-    }
-    return val;
-}
-
-// =======================================================================
-// Saidas DO via PCA9554
-// =======================================================================
-#define CANAL_TRAVADO   3       // DO4 = Y4 (contator giro)
-#define TRAVA_MS        500
-
+// ===================== Saidas (PCA9554) + trava do contator ==================
+#define CANAL_TRAVADO 3     // DO4 = Y4 (contator giro): cooldown entre desligar/religar
+#define TRAVA_MS      500
 static uint8_t       do_estado = 0x00;
-static unsigned long ultimo_off_travado = 0;
+static unsigned long ult_off_travado = 0;
 static bool          primeiro_ciclo_trava = true;
 
-static void pca9554_write_reg(uint8_t reg, uint8_t val) {
-    Wire.beginTransmission(PCA9554_ADDR);
-    Wire.write(reg);
-    Wire.write(val);
-    Wire.endTransmission();
-}
-
-static void pca9554_init() {
-    pca9554_write_reg(PCA9554_REG_CONFIG, 0x00);
-    pca9554_write_reg(PCA9554_REG_OUTPUT, DO_LOGICA_INVERTIDA ? 0xFF : 0x00);
-    do_estado = 0x00;
-}
-
-static void pca9554_aplica_estado() {
-    uint8_t val = DO_LOGICA_INVERTIDA ? (uint8_t)~do_estado : do_estado;
-    pca9554_write_reg(PCA9554_REG_OUTPUT, val);
-}
+static void pca_write(uint8_t reg,uint8_t val){ Wire.beginTransmission(PCA9554_ADDR); Wire.write(reg); Wire.write(val); Wire.endTransmission(); }
+static void pca_init(){ pca_write(PCA9554_REG_CONFIG,0x00); pca_write(PCA9554_REG_OUTPUT, DO_LOGICA_INVERTIDA?0xFF:0x00); do_estado=0x00; }
+static void pca_aplica(){ pca_write(PCA9554_REG_OUTPUT, DO_LOGICA_INVERTIDA?(uint8_t)~do_estado:do_estado); }
 
 static bool escreve_do(uint8_t canal, bool ligar) {
     if (canal > 7) return false;
-    bool estava_ligado = (do_estado >> canal) & 0x01;
-
+    bool estava = (do_estado>>canal)&1;
     if (canal == CANAL_TRAVADO) {
-        if (ligar) {
-            unsigned long desde_off = millis() - ultimo_off_travado;
-            if (!primeiro_ciclo_trava && desde_off < TRAVA_MS) return false;
-        } else if (estava_ligado) {
-            ultimo_off_travado = millis();
-            primeiro_ciclo_trava = false;
-        }
+        if (ligar) { if (!primeiro_ciclo_trava && (millis()-ult_off_travado) < TRAVA_MS) return false; }
+        else if (estava) { ult_off_travado = millis(); primeiro_ciclo_trava = false; }
     }
-
-    if (ligar) do_estado |=  (1 << canal);
-    else       do_estado &= ~(1 << canal);
-    pca9554_aplica_estado();
+    if (ligar) do_estado |= (1<<canal); else do_estado &= ~(1<<canal);
+    pca_aplica();
     return true;
 }
 
-// =======================================================================
-// Modbus RTU
-// =======================================================================
-static uint16_t crc16(const uint8_t* buf, uint8_t len) {
-    uint16_t crc = 0xFFFF;
-    for (uint8_t i = 0; i < len; i++) {
-        crc ^= buf[i];
-        for (uint8_t j = 0; j < 8; j++) {
-            if (crc & 0x0001) { crc >>= 1; crc ^= 0xA001; }
-            else               { crc >>= 1; }
+// ===================== ESP-NOW ===============================================
+static uint8_t g_seq = 0;
+static Preferences g_prefs;
+static uint8_t     g_canal_atual = ESPNOW_CANAL;   // aplicado no setup, a partir da NVS
+
+static void aplica_canal(uint8_t ch) {
+    esp_wifi_set_promiscuous(true);
+    esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+    esp_wifi_set_promiscuous(false);
+    g_canal_atual = ch;
+}
+
+static void on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
+    if (info->src_addr[3] != ID_MAQUINA) return;
+    if (len < (int)sizeof(CabEspNow)) return;
+    const CabEspNow* cab = (const CabEspNow*)data;
+    if (cab->id_maquina != ID_MAQUINA) return;
+    // MSG_CANAL: o display manda migrar — muda AGORA (ja estamos no mesmo
+    // canal pra ter recebido isso) e salva na NVS pra sobreviver a reboot.
+    if (cab->tipo == MSG_CANAL && len >= (int)sizeof(MsgCanal)) {
+        const MsgCanal* mc = (const MsgCanal*)data;
+        if (mc->canal >= 1 && mc->canal <= 13 && mc->canal != g_canal_atual) {
+            aplica_canal(mc->canal);
+            g_prefs.putUChar("canal", mc->canal);
+            Serial.printf("[WAVE1] migrou pro canal %d (display) -- salvo na NVS\n", mc->canal);
         }
+        return;
     }
-    return crc;
+    if (cab->tipo != MSG_COMANDO || len < (int)sizeof(MsgComando)) return;
+    const MsgComando* m = (const MsgComando*)data;
+    escreve_do(m->canal, m->estado != 0);
+    led_pisca(0,0,30);
+}
+static void envia_evento(uint8_t borda) {
+    MsgEvento e;
+    e.cab.tipo=MSG_EVENTO; e.cab.id_maquina=ID_MAQUINA; e.cab.origem=ORIGEM_WAVE1; e.cab.seq=g_seq++;
+    e.di_vivo = le_entradas_vivo();
+    e.di_borda = borda;
+    e.t_us = micros();
+    esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&e, sizeof(e));
+    led_pisca(30,0,0);
+}
+static void envia_heartbeat() {
+    MsgHeartbeat h;
+    h.cab.tipo=MSG_HEARTBEAT; h.cab.id_maquina=ID_MAQUINA; h.cab.origem=ORIGEM_WAVE1; h.cab.seq=g_seq++;
+    h.di_vivo = le_entradas_vivo();
+    h.do_estado = do_estado;
+    esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&h, sizeof(h));
+    led_pisca(0,30,0);
 }
 
-static unsigned long led_apagar_em = 0;
-static void led_pisca(uint8_t r, uint8_t g, uint8_t b) {
-    led_cor(r, g, b);
-    led_apagar_em = millis() + 30;
-}
-static void led_tick() {
-    if (led_apagar_em != 0 && millis() >= led_apagar_em) {
-        led_cor(0, 0, 0);
-        led_apagar_em = 0;
-    }
-}
+// A waveshare continua fisicamente no barramento RS-485 do inversor (mesmos
+// fios A/B, que agora so o Delta/SAJ usam). O transceiver PRECISA ficar em
+// recepcao (alta impedancia) pra NAO ocupar o barramento -> DE/RE em LOW.
+#define RS485_DE_RE 21
 
-static void rs485_enviar(const uint8_t* buf, uint8_t len) {
-    digitalWrite(RS485_DE_RE, HIGH);
-    RS485_SERIAL.write(buf, len);
-    RS485_SERIAL.flush();
-    delayMicroseconds(500);
-    digitalWrite(RS485_DE_RE, LOW);
-}
-
-static void processa_frame(uint8_t* frame, uint8_t len) {
-    uint8_t fc = frame[1];
-
-    if (fc == 0x02) {
-        // FC02 — Read Discrete Inputs
-        if (len != 8) return;
-        uint16_t start = (frame[2] << 8) | frame[3];
-        uint16_t count = (frame[4] << 8) | frame[5];
-        if (count == 0 || count > 8) return;
-
-        uint8_t dado;
-
-        if (start < 8) {
-            // ---- faixa 0-7: estado AO VIVO ----
-            if ((start + count) > 8) return;
-            uint8_t vivo = le_entradas_vivo();
-            dado = (vivo >> start) & (0xFF >> (8 - count));
-
-        } else if (start >= 8 && start < 16) {
-            // ---- faixa 8-15: LATCH (read-and-clear) ----
-            uint16_t s = start - 8;
-            if ((s + count) > 8) return;
-            uint8_t latch = le_e_limpa_latch();
-            dado = (latch >> s) & (0xFF >> (8 - count));
-
-        } else {
-            return;   // fora do mapa
-        }
-
-        uint8_t resp[6];
-        resp[0] = MB_ADDR;
-        resp[1] = 0x02;
-        resp[2] = 0x01;
-        resp[3] = dado;
-        uint16_t crc = crc16(resp, 4);
-        resp[4] = crc & 0xFF;
-        resp[5] = (crc >> 8) & 0xFF;
-
-        rs485_enviar(resp, 6);
-        led_pisca(0, 30, 0);   // verde = leitura OK
-
-    } else if (fc == 0x05) {
-        // FC05 — Write Single Coil
-        if (len != 8) return;
-        uint16_t coil  = (frame[2] << 8) | frame[3];
-        uint16_t value = (frame[4] << 8) | frame[5];
-        if (coil > 7) return;
-        if (value != 0xFF00 && value != 0x0000) return;
-
-        bool ok = escreve_do((uint8_t)coil, (value == 0xFF00));
-
-        if (ok) {
-            rs485_enviar(frame, len);
-            led_pisca(0, 0, 30);   // azul = escrita OK
-        } else {
-            uint8_t resp[5];
-            resp[0] = MB_ADDR;
-            resp[1] = 0x05 | 0x80;
-            resp[2] = 0x04;
-            uint16_t crc = crc16(resp, 3);
-            resp[3] = crc & 0xFF;
-            resp[4] = (crc >> 8) & 0xFF;
-            rs485_enviar(resp, 5);
-            led_pisca(30, 0, 0);   // vermelho = rejeitado
-        }
-    }
-}
-
-// -----------------------------------------------------------------------
-// Recepcao — fim de frame por silencio T3.5
-// -----------------------------------------------------------------------
-#define FRAME_BUF_SIZE 32
-static uint8_t       frame_buf[FRAME_BUF_SIZE];
-static uint8_t       frame_pos = 0;
-static unsigned long ultimo_byte_us = 0;
-#define T35_US  4010
-
-static void modbus_rx_tick() {
-    while (RS485_SERIAL.available()) {
-        if (frame_pos < FRAME_BUF_SIZE) frame_buf[frame_pos++] = RS485_SERIAL.read();
-        else                            RS485_SERIAL.read();
-        ultimo_byte_us = micros();
-    }
-
-    if (frame_pos > 0 && (micros() - ultimo_byte_us) > T35_US) {
-        if (frame_pos >= 4 && frame_buf[0] == MB_ADDR) {
-            uint16_t crc_calc = crc16(frame_buf, frame_pos - 2);
-            uint16_t crc_recv = frame_buf[frame_pos-2] | (frame_buf[frame_pos-1] << 8);
-            if (crc_calc == crc_recv) {
-                processa_frame(frame_buf, frame_pos);
-            } else {
-                led_pisca(30, 15, 0);   // laranja = CRC ruim
-            }
-        }
-        frame_pos = 0;
-    }
-}
-
-// =======================================================================
-// Setup
-// =======================================================================
 void setup() {
     Serial.begin(115200);
-    delay(300);
-    Serial.println();
-    Serial.println("[WS1-TESTE] Escravo Modbus addr 1 — LATCH de pulsos ativo");
-    Serial.println("[WS1-TESTE] FC02 start=0  -> estado ao vivo");
-    Serial.println("[WS1-TESTE] FC02 start=8  -> latch (read-and-clear)");
-    Serial.println("[WS1-TESTE] DI8 (GPIO11) = X7 sensor giro");
-
-    // Entradas com pull-up + interrupcao na borda de DESCIDA (NPN ativa LOW)
-    for (uint32_t i = 0; i < 8; i++) {
-        pinMode(DI_PINS[i], INPUT_PULLUP);
-        attachInterruptArg(digitalPinToInterrupt(DI_PINS[i]),
-                           di_isr, (void*)i, FALLING);
-    }
-
-    Wire.begin(I2C_SDA, I2C_SCL);
-    pca9554_init();
-
-    led_cor(0, 0, 0);
-
+    delay(200);
+    hard_reset_fase1("WAVE1");
+    hard_reset_radio();
     pinMode(RS485_DE_RE, OUTPUT);
     digitalWrite(RS485_DE_RE, LOW);
-    RS485_SERIAL.begin(MB_BAUD, SERIAL_8E1, RS485_RX, RS485_TX);
+    i2c_recupera_barramento(I2C_SDA, I2C_SCL);
+    Wire.begin(I2C_SDA, I2C_SCL);
+    pca_init();
+    for (uint8_t i=0;i<8;i++) {
+        pinMode(DI_PINS[i], INPUT_PULLUP);
+        attachInterruptArg(digitalPinToInterrupt(DI_PINS[i]), di_isr, (void*)(uint32_t)i, FALLING);
+    }
 
-    Serial.println("[WS1-TESTE] Pronto");
+    g_prefs.begin("ws1", false);
+    uint8_t canal_salvo = g_prefs.getUChar("canal", ESPNOW_CANAL);
+    if (canal_salvo < 1 || canal_salvo > 13) canal_salvo = ESPNOW_CANAL;
+    g_canal_atual = canal_salvo;
+
+    WiFi.mode(WIFI_STA); WiFi.disconnect();
+    esp_wifi_set_mac(WIFI_IF_STA, (uint8_t*)MAC_WAVE1);
+    esp_wifi_set_promiscuous(true);
+    esp_wifi_set_channel(g_canal_atual, WIFI_SECOND_CHAN_NONE);
+    esp_wifi_set_promiscuous(false);
+    if (esp_now_init()!=ESP_OK){ Serial.println("[ESP-NOW] init FALHOU"); }
+    esp_now_set_pmk(ESPNOW_PMK);
+    esp_now_register_recv_cb(on_recv);
+    esp_now_peer_info_t p = {}; p.channel=0; p.ifidx=WIFI_IF_STA; p.encrypt=true;
+    memcpy(p.lmk, ESPNOW_LMK, 16); memcpy(p.peer_addr, MAC_DISPLAY, 6); esp_now_add_peer(&p);
+    Serial.printf("[WAVE1] pronto (ESP-NOW, canal %d%s)\n", g_canal_atual,
+                  (canal_salvo == ESPNOW_CANAL) ? "" : " -- da NVS");
 }
 
-// =======================================================================
-// Loop
-// =======================================================================
 void loop() {
-    modbus_rx_tick();
-    led_tick();
-
-    // Heartbeat com contadores de pulso (diagnostico local)
-    static unsigned long t_hb = 0;
-    if (millis() - t_hb > 3000) {
-        t_hb = millis();
-        Serial.printf("[HB-WS1] vivo=0x%02X latch=0x%02X | X7(DI8) pulsos=%lu\n",
-                      le_entradas_vivo(), di_latch, (unsigned long)di_contador[7]);
+    if (g_ev_pend) {
+        noInterrupts();
+        uint8_t borda = g_borda_pend; g_borda_pend = 0; g_ev_pend = false;
+        interrupts();
+        envia_evento(borda);
     }
+    static uint32_t t_hb = 0;
+    if (millis() - t_hb >= HEARTBEAT_MS) { t_hb = millis(); envia_heartbeat(); }
+    led_tick();
 }

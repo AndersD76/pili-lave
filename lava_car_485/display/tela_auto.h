@@ -18,13 +18,14 @@ static lv_obj_t* lbl_giro_to        = nullptr;   // TEMPORARIO (tuning giro): va
 // sub-estado do processo e os sensores-chave. Chamar com o lock do LVGL.
 void tela_auto_atualizar_diag() {
     if (!lbl_diag_auto) return;
-    char buf[128];
+    char buf[160];
     snprintf(buf, sizeof(buf),
-        "St:%d %s X17:%d X16:%d X7:%d X11:%d X10:%d X12:%d X13:%d X14:%d X15:%d",
+        "St:%d %s X17:%d X16:%d X7:%d X11:%d X10:%d X12:%d X13:%d X14:%d X15:%d | VFD falhas: %u",
         proc_estado(),
         giro_dupla() ? "[!MSG DUPLA X7+X11!]" : "",
         io2_get_di(7), io2_get_di(8), io1_get_di(8), io2_get_di(2),
-        io2_get_di(1), io2_get_di(3), io2_get_di(4), io2_get_di(5), io2_get_di(6));
+        io2_get_di(1), io2_get_di(3), io2_get_di(4), io2_get_di(5), io2_get_di(6),
+        (unsigned)g_vfd_write_falhas);
     lv_label_set_text(lbl_diag_auto, buf);
 }
 

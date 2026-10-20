@@ -163,13 +163,24 @@ static bool mb_read_regs(uint8_t addr, uint16_t start, uint8_t count, uint16_t* 
     return true;
 }
 
+// Contador de falhas de escrita no inversor (4 tentativas esgotadas) — exposto
+// pra diagnostico (tela/log). Investigacao de ruido RS-485 associado a troca
+// de sentido do giro: antes isso era silencioso, sem evidencia nenhuma.
+uint32_t g_vfd_write_falhas = 0;
+
 // Escreve registrador do inversor com RETRY (ate 4x). Critico p/ a FREQUENCIA:
 // se o write se perde, o VFD fica com a freq velha e o motor arranca errado.
+// Se as 4 tentativas falharem, LOGA (antes era silencioso — nao dava pra saber
+// se o "soluco" visual do motor durante o giro era ruido de verdade ou outra
+// coisa) e incrementa o contador de diagnostico.
 static void vfd_write_reg_retry(uint16_t reg, uint16_t val) {
     for (uint8_t i = 0; i < 4; i++) {
         if (mb_write_reg(MB_ADDR_INVERSOR, reg, val)) return;
         delay(15);
     }
+    g_vfd_write_falhas++;
+    DBG_PRINTF("[VFD] FALHA escrita reg=0x%04X val=%u apos 4 tentativas (total falhas=%u)\n",
+                  reg, val, (unsigned)g_vfd_write_falhas);
 }
 
 void vfd_run_fwd(uint16_t freq_hz10) {
@@ -189,6 +200,38 @@ void vfd_stop() {
     vfd_write_reg_retry(MB_VFD_CMD, VFD_STOP);
 }
 bool vfd_em_falha() { return (g_vfd_status & 0x0008) != 0; }   // bit3 = FALHA
+
+// Confirma se o inversor REALMENTE entrou em RUN (bit0 do status), lendo
+// agora mesmo (nao depende do vfd_poll periodico, que fica suspenso durante
+// o processo pra nao disputar o barramento com os sensores do carrinho/giro).
+// Diferente do ACK do write (mb_write_reg_retry): aquele so confirma que o
+// comando CHEGOU pela serial; isso aqui confirma que o VFD ACEITOU rodar —
+// pode chegar e ser rejeitado (falha latched, trava mecanica detectada pelo
+// proprio inversor, etc). Usado pra distinguir "motor nao girou" (erro no
+// inversor/escrita) de "motor girou mas o carrinho ficou travado" (X0 nao
+// pulsa apesar do motor rodando).
+//
+// IMPORTANTE (achado ao revisar): essa LEITURA usa o mesmo barramento ruidoso
+// que estamos tentando driblar — uma unica falha de leitura (timeout/CRC) nao
+// prova que o motor parou, so que o ruido atrapalhou ESSA leitura. Por isso:
+//   - tenta ate 3x (igual ao espirito do retry de escrita) antes de desistir;
+//   - se CONSEGUIR ler em qualquer tentativa e o bit RUN vier 1 -> true;
+//   - se CONSEGUIR ler e o bit vier 0 -> false (parada CONFIRMADA de verdade);
+//   - se NAO CONSEGUIR ler nenhuma vez (3 timeouts/CRC seguidos) -> INCONCLUSIVO,
+//     devolve true (nao aciona reenvio/erro por ruido puro de leitura — quem
+//     continua sendo a rede de seguranca real contra travamento de verdade sao
+//     os sensores fisicos, X0/X16/X17, que ja tem seus proprios watchdogs).
+bool vfd_lendo_rodando() {
+    for (uint8_t i = 0; i < 3; i++) {
+        uint16_t s[1];
+        if (mb_read_regs(MB_ADDR_INVERSOR, MB_VFD_STATUS, 1, s)) {
+            g_vfd_status = s[0];
+            return (s[0] & 0x0001) != 0;   // bit0 = RUN — leitura valida, resultado real
+        }
+        delay(10);
+    }
+    return true;   // 3 falhas de leitura seguidas -> inconclusivo, nao reage
+}
 
 // Le freq/corrente/status do inversor (chamar periodicamente, ~200ms).
 void vfd_poll() {

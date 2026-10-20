@@ -13,11 +13,15 @@ static lv_obj_t* sb_vel[4][NUM_ETAPAS];
 // Cria aba de um programa com todos os spinboxes de etapa
 // -----------------------------------------------------------------------
 static void criar_aba_programa(lv_obj_t* tab_content, int prog) {
+    // 7 linhas por coluna (era 6) — com NUM_ETAPAS=14 (3 campos novos da bomba
+    // SAJ), 6 por coluna geraria uma 3a coluna comecando em x=790, fora da
+    // tela (800px de largura). 7 linhas mantem so 2 colunas, e o espacamento
+    // vertical foi reduzido (58->50px) pra caber nos 390px de altura da aba.
     for (int e = 0; e < NUM_ETAPAS; e++) {
-        int row = e % 6;
-        int col = e / 6;
+        int row = e % 7;
+        int col = e / 7;
         lv_coord_t x = 10 + col * 390;
-        lv_coord_t y = 10 + row * 58;
+        lv_coord_t y = 10 + row * 50;
 
         lv_obj_t* lbl = lv_label_create(tab_content);
         lv_label_set_text(lbl, NOMES_ETAPA[e]);

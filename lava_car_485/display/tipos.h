@@ -1,6 +1,18 @@
 #pragma once
 
 // -----------------------------------------------------------------------
+// Log seguro: achado em campo — Serial.print/printf pode BLOQUEAR o loop
+// inteiro (incluindo comandos de parar o motor) se o buffer de saida da
+// USB encher e ninguem estiver com o monitor serial aberto do outro lado
+// (comum em uso normal, sem notebook plugado). Em todos os testes que
+// travaram de verdade, o serial ficou em silencio TOTAL depois — sinal de
+// loop preso numa escrita, nao so "parou de logar". Essas macros so
+// escrevem se houver espaco no buffer; senao, descartam a linha em vez de
+// esperar — nunca travam o loop de controle por causa de log.
+#define DBG_PRINTF(...)  do { if (Serial.availableForWrite() > 64) Serial.printf(__VA_ARGS__); } while(0)
+#define DBG_PRINTLN(x)   do { if (Serial.availableForWrite() > 64) Serial.println(x); } while(0)
+
+// -----------------------------------------------------------------------
 // Processos disponíveis
 // -----------------------------------------------------------------------
 typedef enum {
@@ -34,7 +46,7 @@ typedef enum {
 } EstadoAuto;
 
 #define NUM_PROCESSOS 11
-#define NUM_ETAPAS    11   // etapas de velocidade por programa
+#define NUM_ETAPAS    14   // etapas de velocidade por programa (11 do Delta + 3 da bomba SAJ)
 #define NUM_SLOTS     10   // slots de processo por modelo
 
 // Nomes dos processos para exibição
@@ -55,7 +67,7 @@ static const char* NOMES_PROCESSO[NUM_PROCESSOS] = {
 // Nomes das etapas de velocidade
 static const char* NOMES_ETAPA[NUM_ETAPAS] = {
     "Pre-lavagem",
-    "Spray agua",
+    "Enxague",
     "Espuma A deslocamento",
     "Espuma A giro",
     "Espuma B deslocamento",
@@ -65,6 +77,12 @@ static const char* NOMES_ETAPA[NUM_ETAPAS] = {
     "Alta pressao",
     "Secagem",
     "Retorno",
+    // Etapas 11-13: velocidade da BOMBA DE AGUA (inversor SAJ, motor separado
+    // do Delta que move o carrinho/giro) — antes era fixo no codigo (24Hz na
+    // Pre-lavagem/Enxague, 32Hz na Alta Pressao), agora configuravel aqui.
+    "Pre-lavagem - Bomba SAJ",
+    "Enxague - Bomba SAJ",
+    "Alta pressao - Bomba SAJ",
 };
 
 // -----------------------------------------------------------------------
@@ -93,10 +111,10 @@ typedef struct {
     uint16_t sobrecarga_main;     // Amperes
     uint16_t sobrecarga_rotacao;  // Amperes
     uint16_t tempo_sobrecarga;    // segundos
-    uint16_t atraso_espuma_a;     // segundos
-    uint16_t atraso_espuma_b;     // segundos
-    uint16_t atraso_cor_magica;   // segundos
-    uint16_t atraso_spray;        // segundos
+    uint16_t atraso_espuma_a;     // segundos — espera APOS desligar a Espuma A
+    uint16_t atraso_espuma_b;     // segundos — espera APOS desligar a Espuma B
+    uint16_t atraso_cor_magica;   // segundos — espera APOS desligar a Cor Magica
+    uint16_t atraso_secagem;      // segundos — espera ANTES de ligar o secador (escoar a bomba)
 } ConfigSistema;
 
 // -----------------------------------------------------------------------

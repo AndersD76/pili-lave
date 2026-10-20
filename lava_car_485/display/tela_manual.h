@@ -206,25 +206,42 @@ static void cb_toggle_cera(lv_event_t* e) {
     btn_set_ativo(btn_cera, _ativo_cera);
 }
 
+// Frequencia fixa do deslocamento manual (carrinho) — achado em campo: antes
+// usava g_velocidades[g_estado.programa_sel-1][0], e com NENHUM modelo
+// selecionado (programa_sel=0, o padrao fora do ciclo automatico) isso virava
+// g_velocidades[-1] — indice invalido, lendo memoria aleatoria (explicava o
+// "Delta em 1Hz e nao anda" visto num teste real). Agora e sempre 15Hz fixo
+// no manual, independente de modelo selecionado.
+#define MANUAL_DESLOC_FREQ_HZ10 150   // 15.0Hz
+
+// Mesma blindagem pro braço (giro manual) — usa a velocidade do modelo
+// selecionado QUANDO valido, cai pra 15Hz fixo se nao houver modelo
+// selecionado (evita o mesmo indice invalido).
+static inline uint16_t vel_braco_manual() {
+    uint8_t sel = g_estado.programa_sel;
+    if (sel < 1 || sel > 4) return MANUAL_DESLOC_FREQ_HZ10;
+    return g_velocidades[sel - 1][3];   // etapa 3 = Espuma A giro
+}
+
 // Carrinho (deslocamento) — pressionar e soltar.
 // Espelha o braço: engata o contator Y14 (deslocamento) ANTES de rodar o VFD,
 // e ao soltar para o VFD ANTES de desligar o Y14 (não abrir contator sob carga).
 // A trava de segurança em io2_set_do bloqueia Y14 se o Y4 (giro) estiver ativo.
 static void cb_carr_fwd_press(lv_event_t* e) {
     // FRENTE (sentido A) — engata Y14, roda, e PARA sozinho no fim de curso X13
-    desloc_frente_iniciar(g_velocidades[g_estado.programa_sel-1][0]);
+    desloc_frente_iniciar(MANUAL_DESLOC_FREQ_HZ10);
 }
 static void cb_carr_fwd_rel(lv_event_t* e)  { desloc_parar(); }
 static void cb_carr_rev_press(lv_event_t* e) {
     // TRAS (sentido B) — engata Y14, roda, e PARA sozinho no fim de curso X12
-    desloc_tras_iniciar(g_velocidades[g_estado.programa_sel-1][0]);
+    desloc_tras_iniciar(MANUAL_DESLOC_FREQ_HZ10);
 }
 static void cb_carr_rev_rel(lv_event_t* e)  { desloc_parar(); }
 
 // Braço — pressionar e soltar
 static void cb_braco_fwd_press(lv_event_t* e) {
     io1_set_do(4, true);   // Y4 giro sentido A
-    vfd_run_fwd(g_velocidades[g_estado.programa_sel-1][3]);  // freq giro espuma A
+    vfd_run_fwd(vel_braco_manual());
 }
 static void cb_braco_fwd_rel(lv_event_t* e) {
     vfd_stop();
@@ -232,7 +249,7 @@ static void cb_braco_fwd_rel(lv_event_t* e) {
 }
 static void cb_braco_rev_press(lv_event_t* e) {
     io1_set_do(4, true);
-    vfd_run_rev(g_velocidades[g_estado.programa_sel-1][3]);
+    vfd_run_rev(vel_braco_manual());
 }
 static void cb_braco_rev_rel(lv_event_t* e) {
     vfd_stop();

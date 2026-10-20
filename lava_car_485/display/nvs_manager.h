@@ -245,7 +245,26 @@ void nvs_set_giro_to(uint32_t ms) {
 void nvs_save_modelos(const void* buf, size_t len)     { _nvs.putBytes(NVS_MODELOS, buf, len); }
 bool nvs_load_modelos(void* buf, size_t len)           { return _nvs.getBytes(NVS_MODELOS, buf, len) == len; }
 void nvs_save_velocidades(const void* buf, size_t len) { _nvs.putBytes(NVS_VELOCID, buf, len); }
-bool nvs_load_velocidades(void* buf, size_t len)       { return _nvs.getBytes(NVS_VELOCID, buf, len) == len; }
+// So carrega se o blob salvo tiver EXATAMENTE o tamanho esperado. Sem essa
+// checagem, aumentar NUM_ETAPAS (como ao adicionar os campos da bomba SAJ)
+// faria um blob salvo MENOR (do firmware anterior) ser copiado desalinhado
+// dentro do array maior — como e tudo um bloco contiguo [4][NUM_ETAPAS], o
+// deslocamento de tamanho de linha espalha os valores do Modelo 1 errados
+// nos Modelos 2/3/4 (corrupcao silenciosa das velocidades reais da maquina).
+// Se o tamanho nao bater (post-firmware-update), mantem os defaults do
+// display.ino e avisa no log — o operador reconfigura a tela uma vez.
+bool nvs_load_velocidades(void* buf, size_t len) {
+    size_t salvo = _nvs.getBytesLength(NVS_VELOCID);
+    if (salvo != len) {
+        if (salvo > 0) {
+            Serial.printf("[NVS] velocidades salvas tem tamanho diferente (salvo=%u esperado=%u) -> "
+                          "mantendo defaults do firmware, reconfigure a tela de Velocidades\n",
+                          (unsigned)salvo, (unsigned)len);
+        }
+        return false;   // buf NAO e tocado — continua com os defaults ja carregados nele
+    }
+    return _nvs.getBytes(NVS_VELOCID, buf, len) == len;
+}
 
 // -----------------------------------------------------------------------
 // Senhas

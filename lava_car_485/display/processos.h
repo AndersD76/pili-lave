@@ -67,7 +67,7 @@ bool               g_giro_ativo = false;
 #define GIRO_IGNORA_X17_MS   6500  // retardo de leitura do X17: no giro 2->1 a combinacao X17+HOME so pode PARAR o giro apos 6,5s contados do T=0 (Y4 liga, inicio do giro)
 #define GIRO_INICIO_RAMPA_MS 6000  // fixo: rampa comeca aos 6s do INICIO do giro — INDEPENDENTE do tempo acima
 #define GIRO_TIMEOUT_DEFAULT_MS 10000  // valor inicial do timeout (usado quando a NVS ainda nao tem valor)
-#define VFD_SETTLE_MS         500  // regra do inversor: parar -> esperar -> comandar
+#define VFD_SETTLE_MS         1000  // regra do inversor: parar -> esperar -> comandar (era 500ms — aumentado pra dar mais folga ao tempo real de desaceleracao do motor antes de reverter)
 #define GIRO_X17_CONST_MS     300  // X17 (NIVEL ao vivo) precisa ficar constante por esse tempo pra valer o fim do giro — ignora os pulsos de travessia que davam parada na hora errada
 #define GIRO_HOME_CONST_MS    200  // HOME_GIRO precisa ficar constante por esse tempo — SO nos giros que terminam na posicao 1 (home). Filtra repique de X17 sem o HOME acompanhando.
 #define GIRO_DUR_DEFAULT_MS  7500  // valor inicial do tempo de giro (usado quando a NVS ainda nao tem valor)
@@ -104,6 +104,16 @@ static uint32_t _giro_t_recmd   = 0;
 static uint32_t _giro_t_x17_on  = 0;   // instante em que o NIVEL de X17 comecou constante
 static bool     _giro_dest_home = false;// true se ESTE giro termina na posicao 1 (home): para em X17+HOME
 static uint32_t _giro_t_home_on = 0;   // (legado, nao usado)
+// Watchdog de "braco parado de verdade" durante o giro NORMAL — achado em
+// campo: o motor pode parar de girar de verdade (comando de RUN perdido por
+// ruido) e o firmware nao percebia, pois o relogio (dt) continuava contando
+// como se estivesse girando, ate cair sem querer na busca fina do home ja
+// perto do fim do processo. Agora acompanha se X11/X16/X17/X7 MUDAM de
+// estado (nao so o nivel) — se ficar tempo demais sem nenhuma mudanca, reenvia
+// o comando de giro (so ESCREVE, nao le nada — nao bloqueia o loop).
+#define GIRO_STALL_MS     2500   // sem nenhuma mudanca de sensor por esse tempo -> reenvia o comando
+static uint32_t _giro_t_vida    = 0;   // ultima vez que algum sensor do giro mudou
+static uint8_t  _giro_sensores_ant = 0; // snapshot anterior (bits: X11,X16,X17,X7)
 // --- estado do fine-homing (busca do home em pulsos apos o giro 2->1) ---
 static bool     _giro_viu_home  = false;// memoria: passou pelo home durante o giro?
 static bool     _giro_saiu_pos2 = false;// ja saiu da pos2 inicial (X17 zerou)
@@ -119,6 +129,7 @@ static uint8_t  _fh_st          = 0;   // sub-estado da busca
 static bool     _fh_fwd         = false;// sentido do pulso: true=horario(fwd), false=anti-horario(rev)
 static uint8_t  _fh_n           = 0;   // pulsos ja dados na perna atual
 static uint8_t  _fh_leg         = 0;   // 0 = 1a perna (budget 5) ; 1 = perna invertida (budget 10)
+static uint8_t  _fh_tentativa   = 0;   // 0 = 1a rodada completa ; 1 = 2a rodada (retry) antes de desistir de vez
 static uint32_t _fh_t           = 0;   // timer dos pulsos/settle
 
 // Prepara o giro e retorna NA HORA — nao bloqueia.
@@ -161,6 +172,9 @@ static void giro_iniciar(bool fwd, uint16_t freq_hz10, bool dest_home) {
     _giro_viu_x7     = false;
     _giro_fase       = GIRO_FASE_GIRO;
     _fh_st           = 0;
+    _fh_tentativa    = 0;
+    _giro_t_vida        = millis();
+    _giro_sensores_ant  = 0;
 }
 
 // Chamado a cada ciclo do laco principal. SEMPRE retorna imediatamente.
@@ -189,7 +203,7 @@ static int giro_tick() {
         if (combo) {
             SET_Y4(false); vfd_stop();
             g_giro_ativo = false;
-            Serial.println("[GIRO] fine-home OK (X17+HOME) [imediato]");
+            DBG_PRINTLN("[GIRO] fine-home OK (X17+HOME) [imediato]");
             return SUB_DONE;
         }
         switch (_fh_st) {
@@ -199,10 +213,10 @@ static int giro_tick() {
                 //  AQUEM  do home (viu X11 mas nao chegou/ficou)  -> segue ANTI-HORARIO (rev).
                 if (_giro_saiu_x16 || _giro_viu_x7) {
                     _fh_fwd = true;   // horario — voltar
-                    Serial.println("[GIRO] fine-home: PASSOU (saiu X16 / chegou X7) -> horario");
+                    DBG_PRINTLN("[GIRO] fine-home: PASSOU (saiu X16 / chegou X7) -> horario");
                 } else {
                     _fh_fwd = false;  // anti-horario — avancar
-                    Serial.printf("[GIRO] fine-home: AQUEM (viu_x11=%d) -> anti-horario\n", (int)_giro_viu_x11);
+                    DBG_PRINTF("[GIRO] fine-home: AQUEM (viu_x11=%d) -> anti-horario\n", (int)_giro_viu_x11);
                 }
                 _fh_n = 0; _fh_leg = 0;
                 vfd_stop(); _fh_t = agora; _fh_st = 1;
@@ -228,12 +242,23 @@ static int giro_tick() {
                     if (_fh_leg == 0 && (perdeu_tudo || _fh_n >= budget)) {
                         _fh_fwd = !_fh_fwd;              // inverte -> 2a perna com budget 10
                         _fh_leg = 1; _fh_n = 0;
-                        Serial.println("[GIRO] fine-home inverte sentido");
+                        DBG_PRINTLN("[GIRO] fine-home inverte sentido");
                     } else if (_fh_leg == 1 && _fh_n >= budget) {
+                        // Esgotou as 2 pernas (5+10 pulsos) sem achar X16+X17 juntos.
+                        // Achado em campo: isso pode ser ruido pontual durante a janela
+                        // critica de busca (nao mecanico de verdade) — antes de desistir
+                        // da maquina inteira, da mais UMA rodada completa (reseta e tenta
+                        // de novo do zero) antes de declarar erro real.
+                        if (_fh_tentativa == 0) {
+                            _fh_tentativa = 1;
+                            _fh_st = 0;   // volta pro inicio: reescolhe sentido e tenta de novo
+                            DBG_PRINTLN("[GIRO] fine-home esgotou 1a rodada -> tentando 2a rodada completa");
+                            break;
+                        }
                         SET_Y4(false); vfd_stop();
                         g_giro_ativo = false;
                         _giro_msg = "ERRO: home nao encontrado";
-                        Serial.println("[GIRO] fine-home FALHOU");
+                        DBG_PRINTLN("[GIRO] fine-home FALHOU (apos 2 rodadas)");
                         return SUB_ERR;
                     }
                     _fh_t = agora; _fh_st = 1;           // proximo pulso (settle -> run)
@@ -245,6 +270,32 @@ static int giro_tick() {
 
     // ================= FASE 1: GIRO NORMAL =================
     uint32_t dt = agora - _giro_t0;      // tempo desde que Y4 ligou (T=0)
+
+    // (A tentativa anterior de confirmar RUN aqui usava uma LEITURA
+    // bloqueante no barramento e foi revertida — ver vfd_rs485.h. No lugar
+    // dela, o watchdog abaixo so OLHA os sensores que ja sao lidos (sem
+    // leitura extra) e so ESCREVE quando precisa — nunca bloqueia o loop.)
+    //
+    // WATCHDOG DE "BRACO PARADO DE VERDADE": acompanha se X11/X16/X17/X7
+    // mudam de estado durante o giro normal. Achado em campo: o motor pode
+    // parar de girar de verdade (RUN perdido por ruido) sem nenhum sensor
+    // terminal ser atingido — o relogio (dt) seguia contando como se
+    // estivesse girando, e o giro acabava caindo na busca fina do home sem
+    // nunca ter se movido de verdade, falhando a busca (braco longe do
+    // home). Se nenhum sensor mudar por GIRO_STALL_MS, reenvia o comando.
+    {
+        uint8_t snap = (uint8_t)x17_raw | ((uint8_t)x16_raw << 1) |
+                       ((uint8_t)X11 << 2) | ((uint8_t)X7 << 3);
+        if (snap != _giro_sensores_ant) {
+            _giro_sensores_ant = snap;
+            _giro_t_vida = agora;
+        } else if (!_giro_desac && agora - _giro_t_vida > GIRO_STALL_MS) {
+            DBG_PRINTF("[GIRO] sensores parados ha %ums -> reenviando comando\n",
+                          (unsigned)(agora - _giro_t_vida));
+            if (_giro_fwd) vfd_run_fwd(_giro_freq); else vfd_run_rev(_giro_freq);
+            _giro_t_vida = agora;   // reinicia a janela (evita reenvio em loop apertado)
+        }
+    }
 
     if (_giro_dest_home) {
         // ---- lado 2->1 (home): Opcao A — parada principal = COMBINACAO X17+HOME.
@@ -260,7 +311,7 @@ static int giro_tick() {
         if (!x17 && !_giro_saiu_pos2) {
             _giro_saiu_pos2 = true;
             _giro_t_saiu_pos2 = agora;
-            Serial.printf("[GIRO] saiu pos2 dt_y4=%ums\n", (unsigned)(agora - _giro_t0));
+            DBG_PRINTF("[GIRO] saiu pos2 dt_y4=%ums\n", (unsigned)(agora - _giro_t0));
         }
         if (_giro_saiu_pos2) {
             if (x17)  _giro_viu_x17 = true;              // reentrou na zona do X17 (perto do home)
@@ -282,7 +333,7 @@ static int giro_tick() {
         bool parada_home = home && _giro_viu_x17;
         if ((parada_home && dt_saiu >= GIRO_IGNORA_X17_MS) || dt_saiu >= g_giro_timeout_ms) {
             vfd_stop();
-            Serial.printf("[GIRO] 2->1 fim giro (viu_home=%d parada=%d dt_saiu=%ums) -> fine-home\n",
+            DBG_PRINTF("[GIRO] 2->1 fim giro (viu_home=%d parada=%d dt_saiu=%ums) -> fine-home\n",
                           (int)_giro_viu_home, (int)parada_home, (unsigned)dt_saiu);
             _giro_fase = GIRO_FASE_HOME; _fh_st = 0;
             return SUB_RUN;                              // segue no proximo tick ja buscando
@@ -292,7 +343,7 @@ static int giro_tick() {
         if (dt >= g_giro_dur_ms) {
             vfd_stop(); SET_Y4(false);
             g_giro_ativo = false;
-            Serial.printf("[GIRO] 1->2 tempo %ums -> DONE\n", (unsigned)g_giro_dur_ms);
+            DBG_PRINTF("[GIRO] 1->2 tempo %ums -> DONE\n", (unsigned)g_giro_dur_ms);
             return SUB_DONE;
         }
     }
@@ -318,7 +369,7 @@ static int giro_tick() {
             if (dtr >= GIRO_DESAC_MS) { f = GIRO_DESAC_FLOOR; _giro_desac_piso = true; }
             else f = (uint16_t)(_giro_freq -
                     (uint32_t)(_giro_freq - GIRO_DESAC_FLOOR) * dtr / GIRO_DESAC_MS);
-            Serial.printf("[RAMPA] dtr=%u f=%u (freq_giro=%u)\n", (unsigned)dtr, (unsigned)f, (unsigned)_giro_freq);  // TEMP debug rampa
+            DBG_PRINTF("[RAMPA] dtr=%u f=%u (freq_giro=%u)\n", (unsigned)dtr, (unsigned)f, (unsigned)_giro_freq);  // TEMP debug rampa
             if (_giro_fwd) vfd_run_fwd(f); else vfd_run_rev(f);
         }
     } else if (!_giro_desac) {
@@ -336,7 +387,7 @@ static int giro_tick() {
         vfd_stop(); SET_Y4(false);
         g_giro_ativo = false;
         _giro_msg = "ERRO: timeout giro";
-        Serial.println("[GIRO] TIMEOUT -> ERR");
+        DBG_PRINTLN("[GIRO] TIMEOUT -> ERR");
         return SUB_ERR;
     }
 
@@ -394,7 +445,7 @@ static void vfd_parar_de_vez(uint32_t ms) {
 // fixo (CARRINHO_X10_FREQ_HZ10); nos demais e a mesma freq_antes_x10 (sem
 // troca nenhuma).
 static void carr_fwd_iniciar(uint16_t freq_antes_x10, uint16_t freq_apos_x10, uint32_t dwell_ms) {
-    Serial.printf("[CARRINHO] FWD freq_antes_x10=%.1fHz freq_apos_x10=%.1fHz dwell=%ums\n",
+    DBG_PRINTF("[CARRINHO] FWD freq_antes_x10=%.1fHz freq_apos_x10=%.1fHz dwell=%ums\n",
                   freq_antes_x10 / 10.0f, freq_apos_x10 / 10.0f, (unsigned)dwell_ms);  // TEMP debug
     vfd_parar_de_vez(VFD_SETTLE_MS);       // motor parado antes de reverter p/ FWD
     SET_Y14(true);
@@ -409,6 +460,11 @@ static void carr_fwd_iniciar(uint16_t freq_antes_x10, uint16_t freq_apos_x10, ui
 }
 
 static int carr_fwd_tick() {
+    // REVERTIDO (achado em campo): essa confirmacao usava vfd_lendo_rodando(),
+    // leitura BLOQUEANTE (ate 3x ~100ms) dentro do loop de controle — gerou
+    // falha falsa num teste real ("INVERSOR NAO CONFIRMOU RUN" no retorno do
+    // carrinho, sem motivo real) e, pior, atrasou o giro a ponto dele nao
+    // parar a tempo em outro teste. Ver nota maior em giro_tick().
     // X0 (indutivo) pulsa rapido (~300ms) e o tick principal (LVGL + comm)
     // pode ser lento demais pra amostrar sem perder pulso -> OVERSAMPLE: le o
     // io1 varias vezes seguidas aqui, amostrando o X0 a cada ~25ms, garantindo
@@ -435,7 +491,7 @@ static int carr_fwd_tick() {
                  if (!X10 && X15) {
                      if (_cf_t_x10_lost == 0) _cf_t_x10_lost = millis();          // X10 caiu a 0 agora
                      if (millis() - _cf_t_x10_lost >= X10_FWD_LOST_MS) {          // ficou 0 por 150ms -> perdeu de verdade
-                         Serial.printf("[CARRINHO] perdeu X10 -> inicia rampa %.1fHz -> %.1fHz em %ums\n",
+                         DBG_PRINTF("[CARRINHO] perdeu X10 -> inicia rampa %.1fHz -> %.1fHz em %ums\n",
                                        _cf_freq_antes_x10 / 10.0f, _cf_freq_apos_x10 / 10.0f, CARR_RAMPA_MS);  // TEMP debug
                          _cf_st = 1; _cf_t_x10 = millis(); _cf_t_ramp = 0;
                      }
@@ -488,7 +544,7 @@ static uint32_t _cr_t_pulso = 0;   // watchdog X0: ultimo instante em que o X0 p
 static bool     _cr_x0_ant  = false;
 
 static void carr_rev_x10_iniciar(uint16_t freq_hz10) {
-    Serial.printf("[CARRINHO] REV_X10 freq=%.1fHz\n", freq_hz10 / 10.0f);  // TEMP debug
+    DBG_PRINTF("[CARRINHO] REV_X10 freq=%.1fHz\n", freq_hz10 / 10.0f);  // TEMP debug
     vfd_parar_de_vez(VFD_SETTLE_MS);       // motor parado antes de reverter p/ REV
     SET_Y14(true);
     vfd_run_rev(freq_hz10);
@@ -508,6 +564,8 @@ static void carr_rev_x10_iniciar(uint16_t freq_hz10) {
 // duas sub-máquinas parecidas (carr_fwd_tick/carr_rev_x12_tick) já tinham
 // esse watchdog de X0; faltava só nesta.
 static int carr_rev_x10_tick() {
+    // REVERTIDO — ver nota em carr_fwd_tick()/giro_tick() (leitura bloqueante
+    // causou essa exata mensagem de erro falso num teste real).
     for (uint8_t k = 0; k < 5; k++) {
         bool x0 = X0;
         if (x0 != _cr_x0_ant) { _cr_t_pulso = millis(); _cr_x0_ant = x0; }
@@ -551,7 +609,7 @@ static uint16_t _cx_freq    = 0;   // freq que estava rodando ao achar o X12 —
 static uint32_t _cx_t_ramp  = 0;   // ultimo recalculo da rampa
 
 static void carr_rev_x12_iniciar(uint16_t freq_hz10) {
-    Serial.printf("[CARRINHO] REV_X12 (retorno final) freq=%.1fHz\n", freq_hz10 / 10.0f);  // TEMP debug
+    DBG_PRINTF("[CARRINHO] REV_X12 (retorno final) freq=%.1fHz\n", freq_hz10 / 10.0f);  // TEMP debug
     vfd_parar_de_vez(VFD_SETTLE_MS);       // motor parado antes de arrancar o deslocamento
     SET_Y14(true);
     vfd_run_rev(freq_hz10);
@@ -563,6 +621,7 @@ static void carr_rev_x12_iniciar(uint16_t freq_hz10) {
 }
 
 static int carr_rev_x12_tick() {
+    // REVERTIDO — ver nota em carr_fwd_tick()/giro_tick().
     // Watchdog do X0 SO na fase 0 (enquanto o carrinho anda ate o X12). Igual ao carr_fwd:
     // oversample do X0 (le a io1 varias vezes) e, se nao pulsar por CARRO_WD_MS, acusa travado.
     // Na fase 1 (ja achou o X12, rampa de 500ms) o X0 nao pulsa mais -> nao roda o watchdog la.
@@ -612,6 +671,19 @@ enum {
     PL_GIRO2_INI, PL_GIRO2, PL_RET_INI, PL_RET, PL_FIM
 };
 
+// Etapa de velocidade: Pre-lavagem e Enxague agora tem campo PROPRIO na tela
+// (antes dividiam vel(0) — o Enxague usava a mesma velocidade configurada pra
+// Pre-lavagem). Reaproveita o slot 1 ("Spray agua"), que nunca teve processo
+// implementado (PROC_SPRAY cai direto no default do dispatcher).
+static inline uint16_t pl_vel() {
+    return (g_estado.processo_ativo == PROC_ENXAGUE) ? vel(1) : vel(0);
+}
+// Velocidade da bomba SAJ (motor separado do Delta) — etapa 11 (Pre-lavagem)
+// ou 12 (Enxague), configuravel na tela de Velocidades.
+static inline float pl_saj_freq() {
+    return vel((g_estado.processo_ativo == PROC_ENXAGUE) ? 12 : 11) / 10.0f;
+}
+
 static bool tick_pre_lavagem() {
     switch (_pst) {
         case PL_HOME:
@@ -621,13 +693,13 @@ static bool tick_pre_lavagem() {
             _pst = PL_BOMBA; break;
         case PL_BOMBA:
             SET_Y13(true);
-            saj_set_freq(24.0f);   // SAJ — Pre-Lavagem/Enxague: 24Hz
+            saj_set_freq(pl_saj_freq());   // SAJ — Pre-Lavagem/Enxague: configuravel na tela de Velocidades
             _pt = millis(); _pst = PL_BOMBA_WAIT; break;
         case PL_BOMBA_WAIT:
             if (millis() - _pt >= 2000) _pst = PL_GIRO1_INI; break;
 
         case PL_GIRO1_INI:
-            giro_iniciar(false, vel(0), false); _pst = PL_GIRO1; break;   // REV (anti-horario) pos1->2 (nao-home)
+            giro_iniciar(false, pl_vel(), false); _pst = PL_GIRO1; break;   // REV (anti-horario) pos1->2 (nao-home)
         case PL_GIRO1: {
             int r = giro_tick();
             if (r == SUB_ERR)  { auto_erro(_giro_msg); return false; }
@@ -635,7 +707,7 @@ static bool tick_pre_lavagem() {
             break; }
 
         case PL_FWD_INI:
-            carr_fwd_iniciar(vel(0), CARRINHO_X10_FREQ_HZ10, 1000); _pst = PL_FWD; break;    // ate 1000ms apos perder X10 — cai pra 20Hz so apos perder o X10
+            carr_fwd_iniciar(pl_vel(), CARRINHO_X10_FREQ_HZ10, 1000); _pst = PL_FWD; break;    // ate 1000ms apos perder X10 — cai pra 20Hz so apos perder o X10
         case PL_FWD: {
             int r = carr_fwd_tick();
             if (r == SUB_ERR) { auto_erro(_cf_msg); return false; }
@@ -653,7 +725,7 @@ static bool tick_pre_lavagem() {
             break; }
 
         case PL_GIRO2_INI:
-            giro_iniciar(false, vel(0), true); _pst = PL_GIRO2; break;   // REV (anti-horario) pos2->1 (home)
+            giro_iniciar(false, pl_vel(), true); _pst = PL_GIRO2; break;   // REV (anti-horario) pos2->1 (home)
         case PL_GIRO2: {
             int r = giro_tick();
             if (r == SUB_ERR)  { auto_erro(_giro_msg); return false; }
@@ -661,7 +733,7 @@ static bool tick_pre_lavagem() {
             break; }
 
         case PL_RET_INI:
-            carr_rev_x12_iniciar(vel(0)); _pst = PL_RET; break;     // retorno ate X12 (rampa 1s) — propria velocidade do processo (era vel(10) compartilhado)
+            carr_rev_x12_iniciar(pl_vel()); _pst = PL_RET; break;     // retorno ate X12 (rampa 1s) — propria velocidade do processo (era vel(10) compartilhado)
         case PL_RET: {
             int r = carr_rev_x12_tick();
             if (r == SUB_ERR)  { auto_erro(_cf_msg); return false; }   // X0 travado no retorno
@@ -717,7 +789,7 @@ static bool tick_alta_pressao() {
             _pst = AP_BOMBA; break;
         case AP_BOMBA:
             SET_Y13(true);
-            saj_set_freq(32.0f);   // SAJ — Alta Pressao: 32Hz
+            saj_set_freq(vel(13) / 10.0f);   // SAJ — Alta Pressao: configuravel na tela de Velocidades
             _pt = millis(); _pst = AP_BOMBA_WAIT; break;
         case AP_BOMBA_WAIT:
             if (millis() - _pt >= 2000) { _ap_giro_n = 0; _pst = AP_GI_INI; } break;
@@ -901,7 +973,7 @@ static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
 static void _off_espa() { SET_Y7(false); SET_Y2(false); }
 static bool tick_espuma_a() {
     if (_pst == SP_HOME) { SET_Y2(true); SET_Y7(true); saj_set_freq(35.0f); }   // solenoide ANTES do Y7 (intertravamento)
-    return _proc_simples(true, 1000, 2, 3, _off_espa, 2000, 60000);   // espera 60s apos desligar
+    return _proc_simples(true, 1000, 2, 3, _off_espa, 2000, (uint32_t)g_config.atraso_espuma_a * 1000);
 }
 
 // ---- Espuma B: Y7 + Y3, SEM giro (etapa desl=4) ----
@@ -910,7 +982,7 @@ static bool tick_espuma_a() {
 static void _off_espb() { SET_Y7(false); SET_Y3(false); }
 static bool tick_espuma_b() {
     if (_pst == SP_HOME) { SET_Y3(true); SET_Y7(true); saj_set_freq(35.0f); }   // solenoide ANTES do Y7 (intertravamento)
-    return _proc_simples(false, 2000, 4, 5, _off_espb, 2000, 15000);   // espera 15s apos desligar
+    return _proc_simples(false, 2000, 4, 5, _off_espb, 2000, (uint32_t)g_config.atraso_espuma_b * 1000);
 }
 
 // ---- Cor Magica: Y1 + Y7, SEM giro (etapa desl=6) ----
@@ -919,7 +991,7 @@ static bool tick_espuma_b() {
 static void _off_cm() { SET_Y1(false); SET_Y7(false); SET_Y0(false); }
 static bool tick_cor_magica() {
     if (_pst == SP_HOME) { SET_Y1(true); SET_Y7(true); SET_Y0(true); saj_set_freq(35.0f); }   // Y0 junto com a Cor Magica
-    return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, 60000);   // espera 60s apos desligar
+    return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, (uint32_t)g_config.atraso_cor_magica * 1000);
 }
 
 // ---- Cera de agua: Y7 + Y10, SEM giro (usa etapa 0 como default) ----
@@ -940,7 +1012,9 @@ static bool tick_cera_agua() {
 //      compressor ligar, pra nao respingar no carro. So depois disso liga
 //      o compressor (Y5) e fica MAIS 5s parado, e so entao comeca a andar
 //      pra frente (era 4s genericos antes, sem a pausa inicial). ----
-#define SEC_PAUSA_INICIAL_MS 10000   // 10s parado, Y5 desligado (escoar a bomba)
+// SEC_PAUSA_INICIAL_MS agora vem de g_config.atraso_secagem (tela Config,
+// "Atraso Secagem (s, ANTES)") — era fixo em 10000ms, virou configuravel.
+#define SEC_PAUSA_MAX_EXTRA_MS 20000 // alem do atraso configurado, ate +20s esperando CONFIRMAR o motor parado
 #define SEC_LIGA_PARADO_MS    5000   // 5s com Y5 ligado, ainda parado, antes de andar
 static bool     _sec_pausa_feita = false;
 static uint32_t _sec_t_pausa = 0;
@@ -950,11 +1024,25 @@ static bool tick_secagem() {
         // pausa inicial: nem o _proc_simples comeca ainda (ele quem liga o
         // Y5, no primeiro SP_LIGA_WAIT) — so conta o tempo e sai.
         if (_sec_t_pausa == 0) _sec_t_pausa = millis();
-        if (millis() - _sec_t_pausa < SEC_PAUSA_INICIAL_MS) return false;
+        uint32_t decorrido  = millis() - _sec_t_pausa;
+        uint32_t pausa_ms   = (uint32_t)g_config.atraso_secagem * 1000;
+        if (decorrido < pausa_ms) return false;        // minimo configurado, sempre
+        // Depois dos 10s minimos, so libera quando CONFIRMAR que o motor da
+        // bomba parou de verdade (mesmo motor SAJ usado por Enxague/Alta
+        // Pressao e pela Secagem, so trocando de funcao por rele) — achado em
+        // campo: so o tempo nao bastava, subia pra 55Hz com a bomba ainda
+        // girando. Teto de seguranca (+20s): se a leitura ficar inconclusiva
+        // por tanto tempo (falha persistente de comunicacao, nao ruido
+        // pontual), libera mesmo assim pra nao travar a lavagem pra sempre —
+        // mas fica registrado no log pra investigar depois.
+        if (!saj_lendo_parado()) {
+            if (decorrido < pausa_ms + SEC_PAUSA_MAX_EXTRA_MS) return false;
+            DBG_PRINTLN("[SECAGEM] motor nao confirmou parado apos teto de seguranca -> liberando 55Hz mesmo assim");
+        }
         _sec_pausa_feita = true;
     }
     if (_pst == SP_HOME) {
-        SET_Y5(true);   // liga o compressor SO depois da pausa inicial
+        SET_Y5(true);   // liga o compressor SO depois da pausa + confirmacao (ou teto)
         saj_set_freq(55.0f);   // SAJ — Secagem: 55Hz
     }
     bool fim = _proc_simples(false, 2500, 9, 9, _off_sec, SEC_LIGA_PARADO_MS);

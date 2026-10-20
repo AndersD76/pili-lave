@@ -105,7 +105,7 @@ static int _http_post(const String& endpoint, const String& body,
         static WiFiClient client;
         ok = http.begin(client, url);
     }
-    if (!ok) { Serial.println("[HB] http.begin falhou"); return -1; }
+    if (!ok) { DBG_PRINTLN("[HB] http.begin falhou"); return -1; }
     http.addHeader("Content-Type", "application/json");
     http.addHeader("x-device-key", nvs_get_device_key());
     http.setTimeout(HTTP_TIMEOUT_MS);
@@ -114,7 +114,7 @@ static int _http_post(const String& endpoint, const String& body,
     else if (code < 0) {   // diagnóstico: DNS? memória do TLS?
         IPAddress ip;
         bool dns = WiFi.hostByName("pili-lave-production.up.railway.app", ip);
-        Serial.printf("[HTTP] code=%d (%s) heap=%u maxblk=%u dns=%d ip=%s\n",
+        DBG_PRINTF("[HTTP] code=%d (%s) heap=%u maxblk=%u dns=%d ip=%s\n",
                       code, http.errorToString(code).c_str(),
                       ESP.getFreeHeap(), ESP.getMaxAllocHeap(),
                       (int)dns, dns ? ip.toString().c_str() : "-");
@@ -164,7 +164,7 @@ bool backend_espnow_handle(const uint8_t* mac, const uint8_t* data, int len) {
                 String r = doc["r"] | "";
                 if (r == String(a->res)) {
                     nvs_evt_pop();
-                    Serial.printf("[EVT] ACK(via cam) tipo=%d res=%s -> pop\n", a->evt_tipo, a->res);
+                    DBG_PRINTF("[EVT] ACK(via cam) tipo=%d res=%s -> pop\n", a->evt_tipo, a->res);
                 }
             }
         }
@@ -174,7 +174,7 @@ bool backend_espnow_handle(const uint8_t* mac, const uint8_t* data, int len) {
     if (cab->tipo != MSG_HB_RESP)      return false;
     if (len < (int)sizeof(MsgHbResp))  return true;
     const MsgHbResp* m = (const MsgHbResp*)data;
-    if (!m->ok) { Serial.println("[HB] camera reportou falha no backend"); return true; }
+    if (!m->ok) { DBG_PRINTLN("[HB] camera reportou falha no backend"); return true; }
     g_backend_ok = true;
     g_hb_last_ok = millis();
     nvs_set_last_hb_ok((uint32_t)(esp_timer_get_time() / 1000000ULL));
@@ -189,7 +189,7 @@ bool backend_espnow_handle(const uint8_t* mac, const uint8_t* data, int len) {
         g_start_cmd.duracaoSeg    = m->start_dur;
     }
     g_vacuum_restante_seg = m->vacuum_seg;
-    Serial.printf("[HB] OK(via cam) lamp=%d start=%d dias=%d blk=%d vacuum=%d\n",
+    DBG_PRINTF("[HB] OK(via cam) lamp=%d start=%d dias=%d blk=%d vacuum=%d\n",
                   (int)g_lamp_state, (int)g_start_cmd.valido, m->lic_days, m->lic_blocked,
                   (int)g_vacuum_restante_seg);
     return true;
@@ -218,7 +218,7 @@ static void _backend_heartbeat_legacy_json(const String& resp) {
             g_start_cmd.duracaoSeg   = dur;
         }
     }
-    Serial.printf("[HB] OK lamp=%d start=%d\n",
+    DBG_PRINTF("[HB] OK lamp=%d start=%d\n",
                   (int)g_lamp_state, (int)g_start_cmd.valido);
 }
 // -----------------------------------------------------------------------
@@ -233,7 +233,7 @@ static void _backend_processar_start() {
     nvs_set_last_res_id(g_start_cmd.reservationId);
     auto_iniciar(g_start_cmd.programId);
     ir_tela_auto_se_preciso();   // leva a tela pra TELA_AUTO (fica lá se já estiver)
-    Serial.printf("[HB] START: prog=%d res=%s\n",
+    DBG_PRINTF("[HB] START: prog=%d res=%s\n",
                   g_start_cmd.programId,
                   g_start_cmd.reservationId.c_str());
 }
@@ -250,7 +250,7 @@ static void _backend_processar_vacuum() {
     if (deveLigar != g_aspirador_ligado) {
         g_aspirador_ligado = deveLigar;
         SET_ASPIRADOR(deveLigar);
-        Serial.printf("[VACUUM] aspirador %s (restante=%d s)\n",
+        DBG_PRINTF("[VACUUM] aspirador %s (restante=%d s)\n",
                       deveLigar ? "LIGADO" : "desligado", (int)g_vacuum_restante_seg);
     }
 }
@@ -284,7 +284,7 @@ static void _backend_flush_fila() {
     strncpy(m.source,  s.c_str(), sizeof(m.source)  - 1);
     strncpy(m.errcode, e.c_str(), sizeof(m.errcode) - 1);
     esp_now_send((uint8_t*)MAC_CAMERA, (uint8_t*)&m, sizeof(m));
-    Serial.printf("[EVT] %s enviado a camera (aguardando ACK)\n", tipo.c_str());
+    DBG_PRINTF("[EVT] %s enviado a camera (aguardando ACK)\n", tipo.c_str());
 }
 // -----------------------------------------------------------------------
 // API pública para enfileirar eventos
@@ -298,7 +298,7 @@ void backend_evt_car_entered() {
     else
         json = "{\"t\":\"car-entered\"}";
     nvs_evt_push(json);
-    Serial.println("[EVT] car-entered enfileirado");
+    DBG_PRINTLN("[EVT] car-entered enfileirado");
 }
 // Enfileira wash-complete
 // source: "" = veio do app (usa reservationId)
@@ -314,7 +314,7 @@ void backend_evt_wash_complete(uint8_t programId, const String& source = "") {
                "\",\"p\":\"" + String(programId) + "\"}";
     }
     nvs_evt_push(json);
-    Serial.printf("[EVT] wash-complete enfileirado prog=%d src=%s\n",
+    DBG_PRINTF("[EVT] wash-complete enfileirado prog=%d src=%s\n",
                   programId, source.c_str());
 }
 // Enfileira fault. errorCode: descrição/código do erro (ex: msg_alarme de
@@ -330,7 +330,7 @@ void backend_evt_fault(const char* errorCode = "") {
     if (ec.length() > 0)    json += ",\"e\":\"" + ec + "\"";
     json += "}";
     nvs_evt_push(json);
-    Serial.printf("[EVT] fault enfileirado (erro=%s)\n", errorCode);
+    DBG_PRINTF("[EVT] fault enfileirado (erro=%s)\n", errorCode);
 }
 // -----------------------------------------------------------------------
 // Inicialização — chamar no setup() após wifi_init()
@@ -339,7 +339,7 @@ void backend_init() {
     g_lamp_state  = LAMP_OFF;
     g_backend_ok  = false;
     g_hb_last_ok  = 0;
-    Serial.println("[HB] backend_client iniciado");
+    DBG_PRINTLN("[HB] backend_client iniciado");
 }
 // -----------------------------------------------------------------------
 // Tick — chamar no loop() a cada ciclo
@@ -352,7 +352,7 @@ void backend_tick() {
     if (g_backend_ok && agora - g_hb_last_ok > HB_FAILSAFE_MS) {
         g_lamp_state = LAMP_OFF;
         g_backend_ok = false;
-        Serial.println("[HB] failsafe: 60s sem OK -> lamp OFF");
+        DBG_PRINTLN("[HB] failsafe: 60s sem OK -> lamp OFF");
     }
     // Heartbeat a cada 10s + flush da fila de eventos VIA CÂMERA (Fase 2 feita:
     // MSG_EVT -> câmera POSTa -> MSG_EVT_ACK -> pop). 1 evento por ciclo.

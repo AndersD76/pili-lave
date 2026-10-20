@@ -38,10 +38,11 @@
 #include <Arduino.h>
 #include <esp_display_panel.hpp>
 #include <lvgl.h>
+#include "esp_task_wdt.h"   // watchdog de tarefa — reinicia sozinho e imprime onde travou
 #include "hard_reset.h"    // hard reset no boot disparado pelo firmware (fase 1/2)
 #include "lvgl_v8_port.h"
 #include "comm_espnow.h"        // display <-> CÂMERA (ESP-NOW, só ela)
-#include "modbus_waveshares.h"  // display <-> WAVESHARES + inversor Delta (RS-485)
+#include "comm_waveshares_espnow.h"  // display <-> WAVESHARES por ESP-NOW; inversor Delta/SAJ continuam em RS-485
 #include "saj_rs485.h"          // display <-> inversor SAJ (bomba de alta pressao), mesmo barramento
 #include "nvs_manager.h"
 #include "maquina_estados.h"   // FSM automatica (usa modbus/nvs; pull processos.h)
@@ -106,20 +107,20 @@ ConfigSistema g_config = {
     .sobrecarga_main    = 15,
     .sobrecarga_rotacao = 12,
     .tempo_sobrecarga   = 75,
-    .atraso_espuma_a    = 50,
-    .atraso_espuma_b    = 50,
-    .atraso_cor_magica  = 100,
-    .atraso_spray       = 20,
+    .atraso_espuma_a    = 60,   // igual ao valor fixo usado ate hoje (60s apos desligar)
+    .atraso_espuma_b    = 15,   // igual ao valor fixo usado ate hoje (15s apos desligar)
+    .atraso_cor_magica  = 60,   // igual ao valor fixo usado ate hoje (60s apos desligar)
+    .atraso_secagem     = 10,   // igual ao valor fixo usado ate hoje (10s antes de ligar o secador)
 };
 
 // Velocidades padrão (Hz * 10) por programa e etapa
-// [programa 0-3][etapa 0-10]
+// [programa 0-3][etapa 0-13]
 uint16_t g_velocidades[4][NUM_ETAPAS] = {
-    // Prog 1: Pre, Spray, EspA_Desl, EspA_Giro, EspB_Desl, EspB_Giro, CM_Desl, CM_Giro, AltaPres, Sec, Retorno
-    { 200, 250, 200, 150, 200, 150, 200, 150, 350, 300, 200 },
-    { 200, 250, 200, 150, 200, 150, 200, 150, 350, 300, 200 },
-    { 200, 250, 200, 150, 200, 150, 200, 150, 350, 300, 200 },
-    { 200, 250, 200, 150, 200, 150, 200, 150, 350, 300, 200 },
+    // Prog 1: Pre, Enxague, EspA_Desl, EspA_Giro, EspB_Desl, EspB_Giro, CM_Desl, CM_Giro, AltaPres, Sec, Retorno, Pre_SAJ, Enxague_SAJ, AltaPres_SAJ
+    { 200, 200, 200, 150, 200, 150, 200, 150, 350, 300, 200, 240, 240, 320 },
+    { 200, 200, 200, 150, 200, 150, 200, 150, 350, 300, 200, 240, 240, 320 },
+    { 200, 200, 200, 150, 200, 150, 200, 150, 350, 300, 200, 240, 240, 320 },
+    { 200, 200, 200, 150, 200, 150, 200, 150, 350, 300, 200, 240, 240, 320 },
 };
 
 // Sequência de processos por modelo [modelo 0-3][slot 0-9]
@@ -285,6 +286,25 @@ void setup() {
     delay(300);
     log_mem("boot_start");
 
+    // Watchdog de tarefa (TWDT): achado em campo — o display vinha TRAVANDO DE
+    // VERDADE (tela congelada, serial mudo pra sempre), sem nenhuma rede de
+    // seguranca pra isso. Os watchdogs que ja existiam (X0, etc) sao codigo
+    // normal — param junto com o resto se o travamento for um loop/mutex
+    // preso de verdade. O TWDT roda fora do nosso codigo: se o loop() nao
+    // "alimentar" ele por 15s, reinicia o chip sozinho e, NA PROXIMA
+    // inicializacao, imprime no serial o backtrace de onde travou —
+    // antes a gente nao tinha como saber.
+    // reconfigure (nao init): o Arduino-ESP32 3.x ja sobe com um watchdog
+    // padrao ativo; init() falha silenciosamente nesse caso (mesma pegadinha
+    // ja encontrada no firmware da camera).
+    esp_task_wdt_config_t twdt_config = {
+        .timeout_ms = 15000,
+        .idle_core_mask = 0,
+        .trigger_panic = true,
+    };
+    esp_task_wdt_reconfigure(&twdt_config);
+    esp_task_wdt_add(NULL);   // registra a task do loop() (core 1)
+
     // HARD RESET (via firmware): ao energizar, reinicia o chip inteiro uma vez
     // com a alimentacao ja estavel.
     // TESTE DE ISOLAMENTO: desativado por completo pra confirmar se e a causa
@@ -403,6 +423,8 @@ void setup() {
 // Loop principal
 // -----------------------------------------------------------------------
 void loop() {
+    esp_task_wdt_reset();   // alimenta o watchdog — se o loop nao chegar aqui por 15s, reinicia sozinho
+
     // Consulta o inversor (freq/corrente/status) a cada 500ms — era 100ms.
     // So roda quando ocioso (modbus_tick ja suspende isso 100% durante giro/
     // home/processo, sem mudanca ali); no ocioso, 100ms sobrecarregava o
@@ -425,7 +447,7 @@ void loop() {
     static unsigned long t_dbg = 0;
     if (millis() - t_dbg >= 1000) {
         t_dbg = millis();
-        Serial.printf("[DBG] X10=%d X0=%d | Y4=%d Y14=%d vfd=%d | X15=%d X16=%d X17=%d X12=%d | rec=%d auto=%d | wave_ok=%d hb1_ms=%lu hb2_ms=%lu | heap=%u max_bloco=%u\n",
+        DBG_PRINTF("[DBG] X10=%d X0=%d | Y4=%d Y14=%d vfd=%d | X15=%d X16=%d X17=%d X12=%d | rec=%d auto=%d | wave_ok=%d hb1_ms=%lu hb2_ms=%lu | heap=%u max_bloco=%u\n",
             (int)X10, (int)io1_get_di(1),
             (int)((g_io1.do_ >> 3) & 1), (int)((g_io2.do_ >> 3) & 1), (int)g_vfd_mov,
             (int)X15, (int)HOME_GIRO, (int)X17, (int)X12,
@@ -445,9 +467,10 @@ void loop() {
     // --- App / backend (roda sempre, mesmo bloqueado por licenca) ---
     comm_espnow_canal_tick();      // Opção A: segue o canal anunciado pela câmera (MSG_CANAL)
     espnow_cacar_tick();           // "modo caça": varre os 13 canais em background quando pedido
-    // Waveshares agora são RS-485 cabeado — sem keepalive/resgate de canal
-    // de rádio (isso era só pro ESP-NOW). O alarme de comunicação delas
-    // roda sozinho dentro da task de poll (modbus_waveshares.h).
+    ws_nudge_boot_tick();          // tentativa unica e limitada de achar waveshare sem contato no boot
+    // Waveshares voltaram pro ESP-NOW (mesmo rádio da câmera) — o alarme de
+    // comunicação delas roda dentro de wave_alarme_tick(), chamado a cada
+    // mensagem recebida (comm_waveshares_espnow.h).
     tela_wifi_scan_tick();      // aplica a lista de redes assim que a câmera responde o scan
     tela_boot_tick();           // cadastro da máquina (Nova/Substituição) — barato, só age nas telas próprias
     wifi_tick();                // Opção A: no-op (display sem Wi-Fi)
@@ -516,7 +539,7 @@ void loop() {
         static bool x4_ant = false;
         bool x4 = io1_get_di(5);
         if (x4 && !x4_ant) {
-            Serial.printf("[PAINEL] X4 (estado_auto=%d)\n", (int)g_estado_auto);
+            DBG_PRINTF("[PAINEL] X4 (estado_auto=%d)\n", (int)g_estado_auto);
             if (g_estado_auto == AUTO_PROCESSO)      auto_pausar();
             else if (g_estado_auto == AUTO_PAUSADO)  auto_retomar();
             lvgl_port_lock(-1);

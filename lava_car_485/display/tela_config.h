@@ -24,25 +24,28 @@ static int n_rows = 0;
 static ParamRow criar_param(lv_obj_t* pai, const char* nome, uint16_t* ptr,
                              uint16_t min_v, uint16_t max_v,
                              lv_coord_t x, lv_coord_t y) {
+    // Layout compactado (achado: a coluna direita, que comeca em x=430,
+    // deixava o botao "-" nascendo em x=800..836 — fora da tela, que tem
+    // 800px de largura. Reduzido pra caber com folga nas duas colunas.
     lv_obj_t* lbl = lv_label_create(pai);
     lv_label_set_text(lbl, nome);
     lv_obj_set_style_text_color(lbl, COR_TEXTO, 0);
     lv_obj_set_pos(lbl, x, y + 6);
-    lv_obj_set_width(lbl, 220);
+    lv_obj_set_width(lbl, 180);
 
     lv_obj_t* sb = lv_spinbox_create(pai);
     lv_spinbox_set_range(sb, min_v, max_v);
     lv_spinbox_set_value(sb, *ptr);
     lv_spinbox_set_digit_format(sb, 4, 0);
-    lv_obj_set_size(sb, 100, 36);
-    lv_obj_set_pos(sb, x + 225, y);
+    lv_obj_set_size(sb, 90, 32);
+    lv_obj_set_pos(sb, x + 184, y);
     lv_obj_set_style_bg_color(sb, COR_ATIVO, 0);
     lv_obj_set_style_text_color(sb, COR_TEXTO, 0);
 
     // Botões + e -
     lv_obj_t* btn_p = lv_btn_create(pai);
-    lv_obj_set_size(btn_p, 36, 36);
-    lv_obj_set_pos(btn_p, x + 330, y);
+    lv_obj_set_size(btn_p, 32, 32);
+    lv_obj_set_pos(btn_p, x + 278, y);
     lv_obj_set_style_bg_color(btn_p, COR_VERDE, 0);
     lv_obj_t* l1 = lv_label_create(btn_p);
     lv_label_set_text(l1, LV_SYMBOL_PLUS);
@@ -53,8 +56,8 @@ static ParamRow criar_param(lv_obj_t* pai, const char* nome, uint16_t* ptr,
     }, LV_EVENT_CLICKED, sb);
 
     lv_obj_t* btn_m = lv_btn_create(pai);
-    lv_obj_set_size(btn_m, 36, 36);
-    lv_obj_set_pos(btn_m, x + 370, y);
+    lv_obj_set_size(btn_m, 32, 32);
+    lv_obj_set_pos(btn_m, x + 314, y);
     lv_obj_set_style_bg_color(btn_m, COR_DESTAQUE, 0);
     lv_obj_t* l2 = lv_label_create(btn_m);
     lv_label_set_text(l2, LV_SYMBOL_MINUS);
@@ -129,13 +132,13 @@ void tela_config_criar(void (*cb_voltar)(), void (*cb_vel)(), void (*cb_mod)(), 
     param_rows[n_rows++] = criar_param(scr_config, "Distância compensação (pulsos)",&g_config.dist_compensacao,  0, 100,   10, 224);
     param_rows[n_rows++] = criar_param(scr_config, "Sobrecarga mainframe (A)",     &g_config.sobrecarga_main,    0, 50,    10, 268);
 
-    // Coluna direita (x=430)
-    param_rows[n_rows++] = criar_param(scr_config, "Sobrecarga rotação (A)",       &g_config.sobrecarga_rotacao, 0, 50,   430, 48);
-    param_rows[n_rows++] = criar_param(scr_config, "Tempo sobrecarga (s)",         &g_config.tempo_sobrecarga,   0, 300,  430, 92);
-    param_rows[n_rows++] = criar_param(scr_config, "Atraso Espuma A (s)",          &g_config.atraso_espuma_a,    0, 300,  430, 136);
-    param_rows[n_rows++] = criar_param(scr_config, "Atraso Espuma B (s)",          &g_config.atraso_espuma_b,    0, 300,  430, 180);
-    param_rows[n_rows++] = criar_param(scr_config, "Atraso Cor Mágica (s)",        &g_config.atraso_cor_magica,  0, 600,  430, 224);
-    param_rows[n_rows++] = criar_param(scr_config, "Atraso spray água (s)",        &g_config.atraso_spray,       0, 300,  430, 268);
+    // Coluna direita (x=420 — era 430; com o layout compactado, 420+346=766, cabe com folga nos 800px da tela)
+    param_rows[n_rows++] = criar_param(scr_config, "Sobrecarga rotação (A)",       &g_config.sobrecarga_rotacao, 0, 50,   420, 48);
+    param_rows[n_rows++] = criar_param(scr_config, "Tempo sobrecarga (s)",         &g_config.tempo_sobrecarga,   0, 300,  420, 92);
+    param_rows[n_rows++] = criar_param(scr_config, "Atraso Espuma A (s, APOS)",    &g_config.atraso_espuma_a,    0, 300,  420, 136);
+    param_rows[n_rows++] = criar_param(scr_config, "Atraso Espuma B (s, APOS)",    &g_config.atraso_espuma_b,    0, 300,  420, 180);
+    param_rows[n_rows++] = criar_param(scr_config, "Atraso Cor Mágica (s, APOS)",  &g_config.atraso_cor_magica,  0, 600,  420, 224);
+    param_rows[n_rows++] = criar_param(scr_config, "Atraso Secagem (s, ANTES)",    &g_config.atraso_secagem,     0, 300,  420, 268);
 
     // Linha divisória
     lv_obj_t* linha = lv_obj_create(scr_config);

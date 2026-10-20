@@ -6,9 +6,11 @@
 #include "tipos.h"
 
 // =======================================================================
-// comm_espnow.h — Display <-> CÂMERA por ESP-NOW. SÓ a câmera (Opção A:
-// ela é o gateway de internet). As waveshares saíram do rádio e foram pro
-// RS-485 (ver modbus_waveshares.h) — esse arquivo não fala mais com elas.
+// comm_espnow.h — Display <-> CÂMERA + WAVESHARES por ESP-NOW, mesmo rádio
+// compartilhado (um só canal, uma só inicialização). As mensagens da
+// câmera são tratadas aqui direto; as das waveshares (MSG_EVENTO/
+// MSG_HEARTBEAT) são repassadas pro shadow em comm_waveshares_espnow.h
+// (incluído DEPOIS deste arquivo no display.ino).
 // =======================================================================
 
 static uint8_t g_seq = 0;   // sequência dos pacotes ESP-NOW (câmera)
@@ -16,7 +18,8 @@ static uint8_t g_seq = 0;   // sequência dos pacotes ESP-NOW (câmera)
 // -----------------------------------------------------------------------
 // Callback de recepcao — só mensagens da câmera passam por aqui agora.
 // -----------------------------------------------------------------------
-void alarme_modbus(const char* msg);   // definida em modbus_waveshares.h (incluído depois)
+void alarme_modbus(const char* msg);   // definida em comm_waveshares_espnow.h (incluído depois)
+void waveshares_espnow_on_recv(uint8_t origem, const uint8_t* data, int len);   // idem
 bool wifi_espnow_handle(const uint8_t* mac, const uint8_t* data, int len);
 bool backend_espnow_handle(const uint8_t* mac, const uint8_t* data, int len);
 bool espnow_pode_varrer();
@@ -36,6 +39,15 @@ static void espnow_on_recv(const esp_now_recv_info_t* info, const uint8_t* data,
     const CabEspNow* cab = (const CabEspNow*)data;
     if (cab->id_maquina != ID_MAQUINA) return;
 
+    // Waveshares: MSG_EVENTO (borda de pulso) e MSG_HEARTBEAT (vivo, a cada
+    // 200ms) — roteia pelo campo origem (ORIGEM_WAVE1/ORIGEM_WAVE2), nao
+    // atualiza g_cam_last_ms (isso e so da camera).
+    if (cab->tipo == MSG_EVENTO || cab->tipo == MSG_HEARTBEAT) {
+        if (cab->origem == ORIGEM_WAVE1 || cab->origem == ORIGEM_WAVE2) {
+            waveshares_espnow_on_recv(cab->origem, data, len);
+        }
+        return;
+    }
     if (cab->tipo == MSG_WIFI_REQ) { wifi_espnow_handle(info->src_addr, data, len); return; }
     if (cab->tipo == MSG_HB_RESP || cab->tipo == MSG_EVT_ACK) {
         g_cam_last_ms = millis(); backend_espnow_handle(info->src_addr, data, len); return;
@@ -209,5 +221,13 @@ void comm_espnow_init() {
     memcpy(pb.peer_addr, MAC_BCAST, 6);
     if (!esp_now_is_peer_exist(MAC_BCAST)) esp_now_add_peer(&pb);
 
-    Serial.println("[ESP-NOW] display pronto (so camera — waveshares em RS-485)");
+    // Peers das Waveshares — channel=0 segue o radio (nao precisa re-registrar
+    // ao trocar de canal, so chamar esp_wifi_set_channel).
+    esp_now_peer_info_t pw = {};
+    pw.channel = 0; pw.ifidx = WIFI_IF_STA; pw.encrypt = true;
+    memcpy(pw.lmk, ESPNOW_LMK, 16);
+    memcpy(pw.peer_addr, MAC_WAVE1, 6); if (!esp_now_is_peer_exist(MAC_WAVE1)) esp_now_add_peer(&pw);
+    memcpy(pw.peer_addr, MAC_WAVE2, 6); if (!esp_now_is_peer_exist(MAC_WAVE2)) esp_now_add_peer(&pw);
+
+    Serial.println("[ESP-NOW] display pronto (camera + waveshares no mesmo radio)");
 }

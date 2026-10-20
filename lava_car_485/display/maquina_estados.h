@@ -98,7 +98,7 @@ static void auto_erro(const char* msg) {
     g_estado.alarme     = true;
     g_estado_auto       = AUTO_ERRO;
     backend_evt_fault(msg);
-    Serial.printf("[AUTO] ERRO: %s\n", msg);
+    DBG_PRINTF("[AUTO] ERRO: %s\n", msg);
 }
 
 // Forward: implementadas em processos.h (incluido no fim deste arquivo)
@@ -117,7 +117,7 @@ void auto_tick() {
     static int _ea_ant = -1;
     if ((int)g_estado_auto != _ea_ant) {
         _ea_ant = (int)g_estado_auto;
-        Serial.printf("[AUTO] estado=%d idx=%d proc=%d\n",
+        DBG_PRINTF("[AUTO] estado=%d idx=%d proc=%d\n",
                       (int)g_estado_auto, g_processo_atual_idx, (int)g_estado.processo_ativo);
     }
 
@@ -172,22 +172,35 @@ void auto_tick() {
             }
             break;
 
-        case AUTO_AGUARDA_POS:
+        case AUTO_AGUARDA_POS: {
             modbus_refresh_io2_di();      // leitura FRESCA da waveshare2 (nao confiar na cache p/ X15)
-            Serial.printf("[DIAG] io2.di=0x%02X X15=%d X10=%d X12=%d HOME_GIRO=%d\n",
+            DBG_PRINTF("[DIAG] io2.di=0x%02X X15=%d X10=%d X12=%d HOME_GIRO=%d\n",
                           g_io2.di, (int)X15, (int)X10, (int)X12, (int)HOME_GIRO);
-            if (X15) {                    // carro na posicao de lavagem
-                SET_Y11(false);           // apaga verde
-                SET_Y12(true);            // acende vermelho
-                t_estado = agora;
-                g_estado_auto = AUTO_INICIANDO;
+            // DEBOUNCE: exige X15=1 CONTINUO por 300ms antes de aceitar a posicao —
+            // sem isso, um unico tick de ruido eletrico (ex.: comutacao do X14
+            // desligando, bit adjacente no mesmo byte da waveshare2) e suficiente
+            // pra avancar o ciclo com o carro ainda fora da posicao, e so da erro
+            // bem depois, no debounce do AUTO_INICIANDO (achado em teste real).
+            static uint32_t _t_x15_um = 0;
+            if (X15) {
+                if (_t_x15_um == 0) _t_x15_um = agora;
+                if (agora - _t_x15_um >= 300) {
+                    _t_x15_um = 0;
+                    SET_Y11(false);           // apaga verde
+                    SET_Y12(true);            // acende vermelho
+                    t_estado = agora;
+                    g_estado_auto = AUTO_INICIANDO;
+                }
+            } else {
+                _t_x15_um = 0;             // X15 caiu -> reinicia o debounce
             }
             break;
+        }
 
         case AUTO_INICIANDO:
             if (agora - t_estado >= 6000) {   // 6s (luz vermelha) — era 4s
                 modbus_refresh_io2_di();      // leitura fresca antes de checar o home
-                Serial.printf("[DIAG] INICIANDO: HOME_GIRO=%d io2.di=0x%02X\n",
+                DBG_PRINTF("[DIAG] INICIANDO: HOME_GIRO=%d io2.di=0x%02X\n",
                               (int)HOME_GIRO, g_io2.di);
                 if (braco_em_home()) {        // exige braço no HOME (feito manualmente) — sem auto-home
                     g_processo_atual_idx = 0;
@@ -206,12 +219,21 @@ void auto_tick() {
             modbus_refresh_io2_di();
 
             // Carro saiu da posicao no meio do processo? Se o X15 ficar ausente por
-            // 500ms (debounce — o X15 e instavel), ABORTA o programa e faz HOME.
+            // 1s (debounce — o X15 e instavel), ABORTA o programa e faz HOME.
+            // NAO vale durante o giro ativo (g_giro_ativo): o carrinho fisicamente
+            // nao se move nessa hora (Y14 nem esta acionado), entao perder o X15
+            // ali so pode ser ruido na leitura — nao o carro saindo de verdade.
+            // Achado em campo: o surto de EMI da reversao do giro corrompia o X15
+            // por um instante, abortava o programa, chamava home_iniciar(), e o
+            // PROPRIO watchdog do HOME (X0 sem pulsar, pois o carrinho nao estava
+            // realmente se movendo) disparava "HOME FALHOU: carro travado (X0)" —
+            // mensagem que parecia vir do giro, mas era do deslocamento do HOME,
+            // disparado por engano.
             static uint32_t _t_x15_off = 0;
-            if (!X15) {
+            if (!X15 && !g_giro_ativo) {
                 if (_t_x15_off == 0) _t_x15_off = agora;
-                if (agora - _t_x15_off >= 500) {
-                    Serial.println("[AUTO] X15 saiu no processo -> aborta programa + HOME");
+                if (agora - _t_x15_off >= 1000) {
+                    DBG_PRINTLN("[AUTO] X15 saiu no processo -> aborta programa + HOME");
                     desligar_tudo();
                     processos_reset();
                     g_estado.processo_ativo = PROC_NENHUM;
@@ -274,7 +296,7 @@ void auto_tick() {
 // =======================================================================
 void auto_iniciar(uint8_t modelo) {
     if (licenca_bloqueada()) {
-        Serial.println("[AUTO] bloqueado por licenca");
+        DBG_PRINTLN("[AUTO] bloqueado por licenca");
         return;
     }
     g_estado.programa_sel   = modelo;
@@ -306,7 +328,7 @@ void auto_limpar_erro() {
     g_estado.msg_alarme = "";
     g_estado.processo_ativo = PROC_NENHUM;
     g_estado_auto       = AUTO_IDLE;
-    Serial.println("[AUTO] erro limpo -> IDLE");
+    DBG_PRINTLN("[AUTO] erro limpo -> IDLE");
 }
 
 static uint8_t  _pausa_mov  = 0;   // movimento que estava rodando ao pausar
@@ -320,7 +342,7 @@ void auto_pausar() {
     vfd_stop();                     // para o motor JA
     g_estado_auto     = AUTO_PAUSADO;
     g_estado.em_pausa = true;
-    Serial.println("[AUTO] PAUSADO (motor parado)");
+    DBG_PRINTLN("[AUTO] PAUSADO (motor parado)");
 }
 
 void auto_retomar() {
@@ -332,7 +354,7 @@ void auto_retomar() {
     else if (_pausa_mov == 2) vfd_run_rev(_pausa_freq);
     g_estado_auto     = AUTO_PROCESSO;
     g_estado.em_pausa = false;
-    Serial.printf("[AUTO] RETOMADO (pausa=%ums deslocada)\n", (unsigned)delta);
+    DBG_PRINTF("[AUTO] RETOMADO (pausa=%ums deslocada)\n", (unsigned)delta);
 }
 
 // =======================================================================
@@ -369,7 +391,7 @@ void recuperacao_tick() {
         if (no_zero) { g_rec_estado = REC_CONCLUIDA; return; }   // ja referenciado
         desligar_tudo();          // zera saidas presas de um ciclo interrompido (Y13, solenoides, etc.)
         g_rec_estado = REC_ATIVA; g_rec_home_iniciado = false;
-        Serial.println("[REC] boot fora do zero -> recuperacao ativa (saidas zeradas)");
+        DBG_PRINTLN("[REC] boot fora do zero -> recuperacao ativa (saidas zeradas)");
         return;
     }
     if (g_rec_estado != REC_ATIVA) return;
@@ -382,7 +404,7 @@ void recuperacao_tick() {
         // FASE 1 — carro na posicao: se um home estava em andamento, aborta.
         if (home_rodando() || g_rec_home_iniciado) {
             home_reset(); g_rec_home_iniciado = false;
-            Serial.println("[REC] carro reentrou -> aborta home (Fase 1)");
+            DBG_PRINTLN("[REC] carro reentrou -> aborta home (Fase 1)");
         }
         rec_lamp_fase1();
         return;
@@ -391,7 +413,7 @@ void recuperacao_tick() {
     // FASE 2 — X15 livre: inicia o home (uma vez) e acompanha ate concluir.
     if (!g_rec_home_iniciado) {
         home_iniciar(); g_rec_home_iniciado = true;
-        Serial.println("[REC] X15 livre -> inicia HOME");
+        DBG_PRINTLN("[REC] X15 livre -> inicia HOME");
     }
     rec_lamp_fase2();
 
@@ -399,10 +421,10 @@ void recuperacao_tick() {
     if (he == HOME_OK) {
         SET_Y11(false); SET_Y12(false);
         g_rec_estado = REC_CONCLUIDA;
-        Serial.println("[REC] HOME concluido -> recuperacao encerrada");
+        DBG_PRINTLN("[REC] HOME concluido -> recuperacao encerrada");
     } else if (he == HOME_FALHA) {
         g_rec_home_iniciado = false;                 // retenta no proximo tick (se X15 livre)
-        Serial.println("[REC] HOME falhou -> vai retentar");
+        DBG_PRINTLN("[REC] HOME falhou -> vai retentar");
     }
 }
 

@@ -87,12 +87,12 @@ void io1_set_do(uint8_t canal, bool estado) {
     // estiver ligado — Y2 (Espuma A), Y3 (Espuma B) ou Y10 (Cera de água).
     if (canal == 7 && estado &&
         !((g_io1.do_ & (1 << 1)) || (g_io1.do_ & (1 << 2)) || (g_io2.do_ & (1 << 0)))) {
-        Serial.println("[SEGURANCA] Y7 bloqueado: nenhum solenoide de espuma/cera (Y2/Y3/Y10) ligado");
+        DBG_PRINTLN("[SEGURANCA] Y7 bloqueado: nenhum solenoide de espuma/cera (Y2/Y3/Y10) ligado");
         return;
     }
     if (!mb_write_coil(MB_ADDR_IO1, canal - 1, estado)) {
         alarme_modbus("[MODBUS] comando W1 nao confirmado (sem resposta)");
-        Serial.printf("[MODBUS] FALHA write W1 canal=%d estado=%d\n", canal, estado);
+        DBG_PRINTF("[MODBUS] FALHA write W1 canal=%d estado=%d\n", canal, estado);
         return;   // não atualiza o espelho local se o escravo não confirmou
     }
     g_hb1 = millis();   // write com ACK também conta como "vivo"
@@ -106,7 +106,7 @@ void io2_set_do(uint8_t canal, bool estado) {
     }
     if (!mb_write_coil(MB_ADDR_IO2, canal - 1, estado)) {
         alarme_modbus("[MODBUS] comando W2 nao confirmado (sem resposta)");
-        Serial.printf("[MODBUS] FALHA write W2 canal=%d estado=%d\n", canal, estado);
+        DBG_PRINTF("[MODBUS] FALHA write W2 canal=%d estado=%d\n", canal, estado);
         return;
     }
     g_hb2 = millis();
@@ -162,8 +162,10 @@ static void wave_alarme_tick() {
 static uint32_t g_poll_ok = 0, g_poll_falha = 0;
 
 static void modbus_poll_task(void* arg) {
+    esp_task_wdt_add(NULL);   // registra esta task no watchdog (roda em core separado do loop())
     static uint32_t t_diag = 0;
     for (;;) {
+        esp_task_wdt_reset();
         uint8_t v = 0, l = 0;
         uint32_t t_med = millis();
         bool ok_v1 = mb_read_di(MB_ADDR_IO1, MB_DI_VIVO, 8, &v);
@@ -171,7 +173,7 @@ static void modbus_poll_task(void* arg) {
         static uint32_t t_log_dur = 0;
         if (millis() - t_log_dur >= 3000) {
             t_log_dur = millis();
-            Serial.printf("[MODBUS-TEMPO] leitura W1 vivo: %lums (ok=%d)\n", (unsigned long)dur_v1, (int)ok_v1);
+            DBG_PRINTF("[MODBUS-TEMPO] leitura W1 vivo: %lums (ok=%d)\n", (unsigned long)dur_v1, (int)ok_v1);
         }
         if (ok_v1) {
             portENTER_CRITICAL(&g_iomux); g_viv1 = v; portEXIT_CRITICAL(&g_iomux);
@@ -194,7 +196,7 @@ static void modbus_poll_task(void* arg) {
         if (millis() - t_diag >= 5000) {
             t_diag = millis();
             uint32_t total = g_poll_ok + g_poll_falha;
-            Serial.printf("[MODBUS-DIAG] ok=%lu falha=%lu (%.1f%% erro em %lu transacoes)\n",
+            DBG_PRINTF("[MODBUS-DIAG] ok=%lu falha=%lu (%.1f%% erro em %lu transacoes)\n",
                           (unsigned long)g_poll_ok, (unsigned long)g_poll_falha,
                           total ? (100.0f * g_poll_falha / total) : 0.0f, (unsigned long)total);
         }
@@ -216,7 +218,7 @@ void modbus_init() {
     // intervalos entre repaints, e cada leitura (que deveria ser <20ms)
     // media ~100ms+. Tirando pro core 0, sem disputa nenhuma com a UI.
     xTaskCreatePinnedToCore(modbus_poll_task, "mbpoll", 4096, NULL, 2, NULL, 0);
-    Serial.println("[MODBUS] display pronto (RS-485: W1=1 W2=2 INV=3)");
+    DBG_PRINTLN("[MODBUS] display pronto (RS-485: W1=1 W2=2 INV=3)");
 }
 
 // HARD RESET das saidas: manda OFF para os 8 canais das DUAS waveshares e zera
@@ -228,7 +230,7 @@ void comm_hard_reset_saidas() {
         mb_write_coil(MB_ADDR_IO2, canal, false); delay(5);
     }
     g_io1.do_ = 0; g_io2.do_ = 0;
-    Serial.println("[HARD RESET] saidas das waveshares em OFF");
+    DBG_PRINTLN("[HARD RESET] saidas das waveshares em OFF");
 }
 
 // =======================================================================

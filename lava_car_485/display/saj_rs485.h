@@ -43,3 +43,27 @@ void saj_set_freq(float freq_hz) {
     g_saj_mov_freq = (uint16_t)(freq_hz * 10);
     saj_write_reg_retry(SAJ_REG_FREQ, (uint16_t)saj_freq_para_registrador(freq_hz));
 }
+
+// Confirma que o motor do SAJ REALMENTE parou de girar, lendo a frequencia de
+// SAIDA (SAJ_REG_FREQ_OUT, 0.01Hz) — nao a de comando. Usado pra travar a
+// troca de funcao do mesmo motor (bomba de agua <-> soprador de secagem): a
+// bomba de agua (Enxague/Alta Pressao, 24/32Hz) e o soprador da secagem
+// (55Hz) sao o MESMO motor SAJ, so trocando de funcao via rele (Y13/Y5) — se
+// o Y13 desligar mas o motor ainda estiver com inercia/nao tiver realmente
+// parado, subir pra 55Hz nesse instante e perigoso (confirmado em campo).
+//
+// Mesmo cuidado do vfd_lendo_rodando(): a LEITURA usa o mesmo barramento
+// ruidoso. Diferenca proposital aqui: se a leitura falhar (inconclusivo), o
+// padrao e CONSERVADOR -> retorna false (ainda rodando/nao confirmado) em vez
+// de liberar o 55Hz sem certeza. E melhor esperar mais um pouco do que supor
+// parado por falta de informacao.
+bool saj_lendo_parado() {
+    for (uint8_t i = 0; i < 3; i++) {
+        uint16_t s[1];
+        if (mb_read_regs(MB_ADDR_SAJ, SAJ_REG_FREQ_OUT, 1, s)) {
+            return s[0] < 20;   // < 0,20Hz (registrador em 0.01Hz) -> praticamente parado
+        }
+        delay(10);
+    }
+    return false;   // 3 falhas de leitura -> inconclusivo, NAO libera (conservador)
+}
