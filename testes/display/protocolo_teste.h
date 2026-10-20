@@ -40,7 +40,9 @@ enum : uint8_t {
 };
 
 // acao: 0=HOME (alterna iniciar/cancelar)  1=INICIAR teste da Alta Pressao
-//       2=PARAR tudo  3=bomba OFF (sem Y13/SAJ)  4=bomba ON (Y13 + SAJ 25Hz)
+//       2=PARAR tudo  3=bomba OFF (sem Y13/SAJ)  4=bomba ON (Y13; SAJ em frequencia fixa)
+//       MANUAL (segurando o botao; repetir a cada ~150ms enquanto pressionado):
+//       10=giro horario  11=giro anti-horario  12=carrinho frente  13=carrinho tras  14=soltou
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t acao; } MsgTesteCmd;
 
 typedef struct __attribute__((packed)) {
@@ -74,5 +76,6 @@ typedef struct __attribute__((packed)) {
     uint32_t up_s;            // segundos desde o boot (cai a ~0 se a W1 reiniciar)
     uint16_t loop_max_ms;     // maior intervalo entre voltas do loop desde o ultimo status
     uint8_t  rst_motivo;      // esp_reset_reason() deste boot (1=POWERON 3=SW 4=PANIC 6=TASK_WDT 11=USB ...)
-    char     msg[48];         // ultima mensagem (erro ou HOME)
+    uint8_t  manual_mov;      // movimento MANUAL em curso (0=nenhum, 10..13 como em MsgTesteCmd)
+    char     msg[48];         // ultima mensagem (erro, HOME ou aviso do manual)
 } MsgTesteStatus;

@@ -31,15 +31,27 @@ Abrir a porta serial reinicia a Waveshare 1 (o botão da bomba volta a OFF).
 Aterramento (A: malha só na W1; B: malha também nos inversores) **não mudou** o resultado.
 Causa: o SAJ no barramento. Filtro de RS-485 comprado, ainda não instalado.
 
-## Proteções já no firmware de teste
-- Espera do RS-485 de 100 para 40 ms (loop preso menos tempo a cada resposta perdida).
-- X16/X17 capturados no callback do ESP-NOW (não se perdem se o loop estiver preso).
-- Cancelar HOME de verdade; parada do giro confirmada com reenvios.
+## Proteções no firmware de teste (todas validadas na bancada)
+- Espera do RS-485 de 100 para 40 ms; X16/X17 capturados no callback do ESP-NOW.
+- **Item 1** — o callback do rádio só enfileira; PARAR é flag de prioridade e cancela as esperas.
+- **Item 3** — HOME sem laço bloqueante (a tela e o status seguem vivos); cancelar e PARAR funcionam.
+- **Item 4** — comando ao Delta é repetido até entregar; se não entregar, para tudo com erro;
+  6 escritas perdidas seguidas também param o ciclo.
+- **Itens 5/6** — a W1 manda a W2 desligar tudo no boot e reenvia saídas divergentes (comandado x real).
+- **Homem morto** — movimento manual (giro/carrinho) só enquanto o botão é segurado; sem sinal do
+  display por 0,5 s o motor para (log `[MANUAL] parou ... motivo=DEADMAN`). Teto de 20 s.
+- **HOME** só com a máquina parada; **INICIAR** só com X16 (braço no home) e X12 (carrinho recuado).
 - SAJ por RS-485 desligado por padrão (`TESTE_SAJ_POR_RS485 0` em `saj_rs485_w1.h`).
+- Tela: o canto inferior esquerdo não responde ao toque; controles críticos ficam em cima/no meio.
 
-## Plano (um item por vez, com a bancada como teste de regressão)
-1. Segurança: fila de comandos, homem morto, falha de escrita vira ação, HOME sem laço bloqueante.
-2. Estado confiável: reset das saídas da W2 no boot, conferir "comandado x real", validar modelo/config.
-3. Display <-> W1: fim de ciclo não perdido, painel com toque curto, canal ESP-NOW.
-4. Telas e automático completo, nuvem; só então avaliar promover no lugar da `lava_car_485/`.
+## Diagnóstico no serial (a cada 5 s)
+`[RS485]` (ok/sem resposta/CRC, mov, giro, home), `[LINK]` (maior pausa do loop, maior intervalo da
+W2, envios entregues/falhos, reconciliações), `[HOME]` (estados e sensores), `[MANUAL]` (início/parada
+com motivo), `[GIRO]` (sensores e decisões). Análise: `testes_ruido_rs485/ferramentas/analisar_ciclos.py`.
+
+## Plano
+1. ~~Segurança e estado confiável~~ (feito, acima). Item 2 (homem morto) feito junto com a tela manual.
+2. Display <-> W1: fim de ciclo não perdido, painel físico com toque curto, canal ESP-NOW.
+3. Telas e automático completo (modelos, velocidades, configuração com NVS), nuvem; só então avaliar
+   promover no lugar da `lava_car_485/`. Cada tela entra uma por vez, testada na bancada.
 Ideia em aberto: testar a `lava_car_485/` com o SAJ fora do RS-485.

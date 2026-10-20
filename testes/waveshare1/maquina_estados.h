@@ -266,6 +266,7 @@ void auto_tick() {
             // esta recebendo ordens. Para tudo e acusa, em vez de seguir como se nada tivesse acontecido.
             if (g_vfd_falhas_seguidas >= 6) {
                 g_vfd_falhas_seguidas = 0;
+    g_manual_cmd = 0;   // cancela qualquer movimento manual em curso (manual_tick completa a parada)
                 auto_erro("RS-485: Delta sem resposta (6 escritas perdidas seguidas)");
                 break;
             }
@@ -338,6 +339,16 @@ void auto_iniciar(uint8_t modelo) {
 void teste_iniciar() {
     if (g_estado_auto != AUTO_IDLE && g_estado_auto != AUTO_ERRO) return;   // ja rodando
     if (home_rodando()) return;
+    // O ciclo parte do principio de que o braco esta na posicao 1 (X16) e o carrinho recuado (X12):
+    // todos os giros e o carrinho contam a partir dai. Fora disso o braco passa do ponto e o ciclo
+    // da erro. (Na maquina original o AUTO_INICIANDO conferia isso; o teste pulava essa etapa.)
+    modbus_refresh_io2_di();
+    if (!HOME_GIRO || !X12) {
+        g_manual_msg = "Faca o HOME antes de iniciar (braco fora da posicao 1 ou carrinho nao recuado)";
+        g_manual_msg_ms = millis();
+        DBG_PRINTF("[TESTE] INICIAR recusado: X16=%d X12=%d (faca o HOME)\n", (int)HOME_GIRO, (int)X12);
+        return;
+    }
     g_estado.programa_sel = 1;
     g_estado.alarme       = false;
     g_estado.msg_alarme   = "";

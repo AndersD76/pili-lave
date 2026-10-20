@@ -146,7 +146,8 @@ static volatile uint32_t g_hb2=0;
 // Diagnostico do enlace (resumo [LINK] a cada 5 s no serial):
 static uint32_t          g_w2_prev_ms = 0, g_w2_gap_max = 0;      // maior intervalo entre pacotes da W2
 static volatile uint32_t g_tx_ok = 0, g_tx_fail = 0;              // entrega dos envios por radio (display e W2)
-uint16_t                 g_loop_max_5s = 0;                       // maior pausa do loop() na janela de 5 s
+uint16_t                 g_loop_max_5s = 0;
+static uint32_t          g_recon_n = 0;                            // saidas da W2 reenviadas por divergencia (comandado x real)                       // maior pausa do loop() na janela de 5 s
 static inline void w2_gap_atualiza(uint32_t agora) {              // chamar dentro da secao critica g_iomux2
     if (g_w2_prev_ms) { uint32_t gp = agora - g_w2_prev_ms; if (gp > g_w2_gap_max) g_w2_gap_max = gp; }
     g_w2_prev_ms = agora;
@@ -245,6 +246,21 @@ void nvs_inc_prog(uint8_t p) { (void)p; }
 static QueueHandle_t   g_fila_cmd = nullptr;
 void processa_comandos();   // definida mais abaixo
 
+// ---- Movimento MANUAL segurando o botao (homem morto) ----
+// O callback so anota "estou segurando" (g_manual_cmd/g_manual_ms). Quem move o motor e o loop
+// (manual_tick): se nao chegar nenhum pacote de "segurando" por MANUAL_DEADMAN_MS, ele PARA
+// (display travado, rádio caiu, dedo fora do botao). Codigos: 10=giro horario 11=giro anti-horario
+// 12=carrinho frente 13=carrinho tras; 0=solto.
+volatile uint8_t   g_manual_cmd = 0;
+volatile uint32_t  g_manual_ms  = 0;
+static uint8_t     g_manual_ativo = 0;        // o que esta realmente em movimento
+static uint32_t    g_manual_t0 = 0;
+static const char* g_manual_msg = "";         // aviso mostrado na tela por alguns segundos
+static uint32_t    g_manual_msg_ms = 0;
+#define MANUAL_FREQ_HZ10   150                // 15 Hz
+#define MANUAL_DEADMAN_MS  500
+#define MANUAL_MAX_MS      20000              // teto de seguranca por acionamento
+
 #define HOME_FREQ_HZ10   400
 #define HOME_TIMEOUT_MS  25000
 #define HOME_TIMEOUT_DESLOC_MS 50000
@@ -301,6 +317,16 @@ void home_tick() {
         // os comandos (PARAR/cancelar) sao processados no topo do loop e o watchdog e alimentado
         // normalmente. (Antes era um laco for(;;) de ate 25 s que prendia tudo.)
         modbus_refresh_io2_di();
+        {   // diagnostico: registra cada mudanca de X16/X17/X11 durante a busca do giro
+            static uint8_t snap_ant = 255;
+            uint8_t snap = (uint8_t)home_sensor_giro() | ((uint8_t)home_sensor_x17() << 1) | ((uint8_t)home_sensor_x11() << 2);
+            if (snap != snap_ant) {
+                snap_ant = snap;
+                DBG_PRINTF("[HOME] sensores X16=%d X17=%d X11=%d | t=%ums\n",
+                           (int)home_sensor_giro(), (int)home_sensor_x17(), (int)home_sensor_x11(),
+                           (unsigned)(millis() - g_home_t0));
+            }
+        }
         if (home_sensor_giro() && home_sensor_x17()) {
             vfd_stop(); io1_set_do(4,false);
             g_home_estado = HOME_FASE_PARADA; g_home_t0 = millis(); g_home_msg = "HOME: parando...";
@@ -370,9 +396,9 @@ static DeslocDir g_desloc_dir = DESLOC_PARADO;
 static inline bool desloc_lim_x12() { return (g_io2.di >> 2) & 0x01; }
 static inline bool desloc_lim_x13() { return (g_io2.di >> 3) & 0x01; }
 bool desloc_movendo() { return g_desloc_dir != DESLOC_PARADO; }
-void desloc_parar() { g_desloc_dir=DESLOC_PARADO; vfd_stop(); io2_set_do(4,false); }
-bool desloc_frente_iniciar(uint16_t f) { modbus_refresh_io2_di(); if (desloc_lim_x13()) return false; g_desloc_dir=DESLOC_FRENTE; io2_set_do(4,true); vfd_run_fwd(f); return true; }
-bool desloc_tras_iniciar(uint16_t f)   { modbus_refresh_io2_di(); if (desloc_lim_x12()) return false; g_desloc_dir=DESLOC_TRAS;   io2_set_do(4,true); vfd_run_rev(f); return true; }
+void desloc_parar() { g_desloc_dir=DESLOC_PARADO; vfd_stop_garantido(); io2_set_do(4,false); }
+bool desloc_frente_iniciar(uint16_t f) { modbus_refresh_io2_di(); if (desloc_lim_x13()) return false; g_desloc_dir=DESLOC_FRENTE; io2_set_do(4,true); if (!vfd_run_garantido(true, f)) { desloc_parar(); return false; } return true; }
+bool desloc_tras_iniciar(uint16_t f)   { modbus_refresh_io2_di(); if (desloc_lim_x12()) return false; g_desloc_dir=DESLOC_TRAS;   io2_set_do(4,true); if (!vfd_run_garantido(false, f)) { desloc_parar(); return false; } return true; }
 void desloc_tick() {
     if (g_desloc_dir == DESLOC_PARADO) return;
     static uint32_t t = 0;
@@ -457,12 +483,14 @@ static void status_enviar() {
     s.ug_tipo = g_ult_giro.tipo; s.ug_como = g_ult_giro.como; s.ug_fh = g_ult_giro.fh;
     s.ug_pulsos = g_ult_giro.pulsos; s.ug_dt_ms = g_ult_giro.dt_ms;
     s.ug_x16_ms = g_ult_giro.x16_ms; s.ug_x17_ms = g_ult_giro.x17_ms;
+    s.manual_mov = g_manual_ativo;
     s.up_s = millis() / 1000; s.loop_max_ms = g_loop_max_ms; g_loop_max_ms = 0; s.rst_motivo = g_rst_motivo;
     s.w1_do = do_estado1; s.w2_do_cmd = (uint8_t)g_io2.do_; s.w2_do_real = g_w2_do_real;
     s.vfd_mov = g_vfd_mov; s.vfd_mov_freq = g_vfd_mov_freq;
     const char* m = "";
     if (g_estado_auto == AUTO_ERRO && g_estado.msg_alarme) m = g_estado.msg_alarme;
     else if (home_estado() != 0)                            m = home_mensagem();
+    else if (g_manual_msg[0] && (millis() - g_manual_msg_ms) < 4000) m = g_manual_msg;
     strncpy(s.msg, m, sizeof(s.msg) - 1);
     esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&s, sizeof(s));
 }
@@ -494,6 +522,8 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* 
     if (cab->tipo == MSG_TESTE_CMD && len >= (int)sizeof(MsgTesteCmd)) {
         const MsgTesteCmd* m = (const MsgTesteCmd*)data;
         if (m->acao == 2) g_parar_pedido = true;                       // PARAR: prioridade maxima
+        else if (m->acao >= 10 && m->acao <= 13) { g_manual_cmd = m->acao; g_manual_ms = millis(); }   // segurando
+        else if (m->acao == 14) g_manual_cmd = 0;                       // soltou
         else if (g_fila_cmd) { uint8_t a = m->acao; xQueueSend(g_fila_cmd, &a, 0); }
     }
 }
@@ -504,7 +534,11 @@ void processa_comandos() {
     uint8_t a;
     while (g_fila_cmd && xQueueReceive(g_fila_cmd, &a, 0) == pdTRUE) {
         switch (a) {
-            case 0: home_iniciar();        break;   // alterna iniciar/cancelar
+            case 0:                                          // HOME: alterna iniciar/cancelar
+                if (home_rodando()) home_iniciar();         // cancelar sempre pode
+                else if (g_estado_auto == AUTO_IDLE && !g_teste_rodando && !g_manual_ativo) home_iniciar();
+                else { g_manual_msg = "HOME bloqueado: ciclo ou manual em andamento"; g_manual_msg_ms = millis(); }
+                break;
             case 1: teste_iniciar();       break;
             case 3: g_teste_bomba = false; break;
             case 4: g_teste_bomba = true;  break;
@@ -516,6 +550,60 @@ void processa_comandos() {
 static void on_send_cb(const esp_now_send_info_t* info, esp_now_send_status_t st) {
     (void)info;
     if (st == ESP_NOW_SEND_SUCCESS) g_tx_ok++; else g_tx_fail++;
+}
+
+// Chamar no loop() logo depois de processa_comandos().
+static const char* g_manual_motivo = "solto";   // por que esta parando (so para o log)
+static void manual_parar() {
+    DBG_PRINTF("[MANUAL] parou cmd=%d motivo=%s dur=%ums\n", (int)g_manual_ativo, g_manual_motivo,
+               (unsigned)(millis() - g_manual_t0));
+    if (g_manual_ativo == 10 || g_manual_ativo == 11) { vfd_stop_garantido(); io1_set_do(4, false); }
+    else if (g_manual_ativo == 12 || g_manual_ativo == 13) { desloc_parar(); }
+    g_manual_ativo = 0;
+}
+static void manual_aviso(const char* m) { g_manual_msg = m; g_manual_msg_ms = millis(); }
+
+void manual_tick() {
+    uint8_t cmd = g_manual_cmd;
+    bool vivo = cmd && (uint32_t)(millis() - g_manual_ms) < MANUAL_DEADMAN_MS;
+
+    if (g_manual_ativo) {                       // ja esta em movimento: confere se deve continuar
+        bool teto = (millis() - g_manual_t0) > MANUAL_MAX_MS;
+        if (!vivo || cmd != g_manual_ativo || teto || g_parar_pedido) {
+            if (teto) manual_aviso("MANUAL: parou no teto de 20 s");
+            g_manual_motivo = teto ? "teto 20s" : (g_parar_pedido ? "PARAR" :
+                              (cmd == 0 ? "solto" : (!vivo ? "DEADMAN (sem sinal do display)" : "troca de botao")));
+            manual_parar();
+            if (!vivo) g_manual_cmd = 0;
+        } else if (g_manual_ativo >= 12 && !desloc_movendo()) {   // fim de curso (desloc_tick parou)
+            manual_aviso("MANUAL: carrinho no fim de curso");
+            DBG_PRINTF("[MANUAL] parou cmd=%d motivo=fim de curso dur=%ums\n", (int)g_manual_ativo,
+                       (unsigned)(millis() - g_manual_t0));
+            g_manual_ativo = 0; g_manual_cmd = 0;
+        }
+        return;
+    }
+    if (!vivo) return;                          // nada pedido
+
+    // Quer comecar um movimento: so com a maquina parada (sem ciclo, sem HOME, sem PARAR pendente)
+    if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_parar_pedido) {
+        g_manual_cmd = 0;
+        manual_aviso("MANUAL bloqueado: ciclo ou HOME em andamento");
+        return;
+    }
+    if (cmd == 10 || cmd == 11) {
+        io1_set_do(4, true);                    // Y4: contator do giro (trava com Y14)
+        if (!vfd_run_garantido(cmd == 10, MANUAL_FREQ_HZ10)) {
+            vfd_stop_garantido(); io1_set_do(4, false);
+            g_manual_cmd = 0; manual_aviso("MANUAL: Delta nao recebeu o comando do giro");
+            return;
+        }
+    } else if (cmd == 12 || cmd == 13) {
+        bool ok = (cmd == 12) ? desloc_frente_iniciar(MANUAL_FREQ_HZ10) : desloc_tras_iniciar(MANUAL_FREQ_HZ10);
+        if (!ok) { g_manual_cmd = 0; manual_aviso("MANUAL: carrinho no fim de curso ou comando nao entregue"); return; }
+    } else { g_manual_cmd = 0; return; }
+    g_manual_ativo = cmd; g_manual_t0 = millis();
+    DBG_PRINTF("[MANUAL] inicio cmd=%d\n", (int)cmd);
 }
 
 void controle_init() {
@@ -543,8 +631,9 @@ void controle_tick() {
     static uint32_t t_rs = 0;
     if (millis() - t_rs >= 5000) {
         t_rs = millis();
-        DBG_PRINTF("[LINK] loop_max=%ums w2_gap_max=%ums tx_ok=%u tx_fail=%u\n",
-                   (unsigned)g_loop_max_5s, (unsigned)g_w2_gap_max, (unsigned)g_tx_ok, (unsigned)g_tx_fail);
+        DBG_PRINTF("[LINK] loop_max=%ums w2_gap_max=%ums tx_ok=%u tx_fail=%u recon=%u\n",
+                   (unsigned)g_loop_max_5s, (unsigned)g_w2_gap_max, (unsigned)g_tx_ok, (unsigned)g_tx_fail,
+                   (unsigned)g_recon_n);
         g_loop_max_5s = 0; g_w2_gap_max = 0;
         uint32_t tot = g_mb_ok + g_mb_zero + g_mb_curta + g_mb_crc;
         DBG_PRINTF("[RS485] ok=%u zero_bytes=%u curta=%u crc=%u | total=%u (%u%% ok) | mov=%d giro=%d home=%d\n",
@@ -552,6 +641,29 @@ void controle_tick() {
                    (unsigned)tot, (unsigned)(tot ? (100UL * g_mb_ok / tot) : 0),
                    (int)g_vfd_mov, (int)g_giro_ativo, home_estado());
     }
+    // Reconciliacao das saidas da W2 (item 6): o comando sai UMA vez por radio, sem confirmacao,
+    // e a W2 pode recusar o Y14 se ele foi desligado ha menos de 500 ms. Aqui comparamos o que
+    // mandamos ligar (g_io2.do_) com o que a W2 diz ter ligado (heartbeat) e reenviamos a diferenca.
+    // O DO5 (Y15) e BLOQUEADO na W2 — nunca conta como divergencia.
+    static uint32_t t_rec = 0;
+    if (millis() - t_rec >= 400) {
+        t_rec = millis();
+        if ((millis() - g_hb2) <= COMM_TIMEOUT_MS) {
+            uint8_t cmd = (uint8_t)g_io2.do_, real = g_w2_do_real;
+            uint8_t dif = (cmd ^ real) & (uint8_t)~(1 << 4);
+            for (uint8_t ch = 0; ch < 8; ch++) {
+                if (dif & (1 << ch)) { ws2_envia_comando(ch, (cmd >> ch) & 1); g_recon_n++; }
+            }
+        }
+    }
+
+    // Registra no serial cada mudanca de estado do HOME (diagnostico).
+    static uint8_t home_ant = 255;
+    if (home_estado() != home_ant) {
+        home_ant = (uint8_t)home_estado();
+        DBG_PRINTF("[HOME] estado=%d %s\n", (int)home_ant, home_mensagem());
+    }
+
     static uint32_t t_status = 0;
     if (millis() - t_status >= 300) {
         t_status = millis();

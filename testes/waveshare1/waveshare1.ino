@@ -75,6 +75,8 @@ void setup() {
 
     controle_init();   // registra o callback de recepcao + peers (display, W2)
     modbus_init();     // RS-485: sobe o barramento, reseta o inversor
+    comm_hard_reset_saidas();   // item 5: desliga as saidas locais E manda a W2 desligar as dela (apos um reset da W1 ela
+                                // ficaria com Y13/Y14/solenoides como estavam, sem a W1 saber); o reconciliador corrige se perder
 
     // Watchdog de tarefa — mesma rede de seguranca que o display ja tem.
     esp_task_wdt_config_t twdt_config = { .timeout_ms = 15000, .idle_core_mask = 0, .trigger_panic = true };
@@ -94,6 +96,7 @@ void loop() {
       t_ult = agora_l; }
 
     processa_comandos();   // executa o que o display pediu (o callback so enfileira)
+    manual_tick();         // movimento manual segurando o botao (homem morto)
 
     static uint32_t t_modbus = 0;
     if (millis() - t_modbus >= 500) { t_modbus = millis(); modbus_tick(); }

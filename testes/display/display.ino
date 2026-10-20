@@ -77,6 +77,8 @@ static void radio_init() {
 // ------------------------------------------------------------------ UI -----
 static lv_obj_t *lbl_estado, *lbl_etapa, *lbl_msg, *lbl_cont, *lbl_link, *lbl_sens, *lbl_giro, *lbl_cmd, *lbl_w1;
 static lv_obj_t *btn_bomba, *lbl_bomba;
+static lv_obj_t *scr_principal = nullptr, *scr_manual = nullptr;      // as duas telas
+static lv_obj_t *lbl_m_estado = nullptr, *lbl_m_info = nullptr, *lbl_m_sens = nullptr;   // textos da tela manual
 
 static const char* NOMES_ETAPA_AP[] = {
     "espera inicial", "espera 5 s", "verifica home", "liga bomba", "espera bomba",
@@ -124,15 +126,67 @@ static void cb_bomba(lv_event_t*)   {
     enviar(ligada ? 3 : 4, 2);   // alterna (a fonte da verdade e a W1, no status)
 }
 
+static void cb_ir_manual(lv_event_t*)    { if (scr_manual) lv_scr_load(scr_manual); }
+static void cb_ir_principal(lv_event_t*) { enviar(14, 3); if (scr_principal) lv_scr_load(scr_principal); }
+
+// Botao de SEGURAR: manda o comando ao tocar e repete a cada ~150 ms enquanto pressionado (e o sinal de
+// "estou segurando" que mantem o motor ligado na Waveshare 1: se parar de chegar por 0,5 s, ela para).
+// Ao soltar (ou arrastar o dedo pra fora) manda "soltou" 3x.
+static void cb_hold(lv_event_t* e) {
+    static uint32_t t_ult = 0;
+    uint8_t acao = (uint8_t)(intptr_t)lv_event_get_user_data(e);
+    lv_event_code_t c = lv_event_get_code(e);
+    if (c == LV_EVENT_PRESSED) { t_ult = millis(); enviar(acao); }
+    else if (c == LV_EVENT_PRESSING) { if (millis() - t_ult >= 150) { t_ult = millis(); enviar(acao); } }
+    else if (c == LV_EVENT_RELEASED || c == LV_EVENT_PRESS_LOST) { enviar(14, 3); t_ult = 0; }
+}
+
+static lv_obj_t* novo_botao_hold(lv_obj_t* pai, const char* texto, lv_color_t cor, int x, int y, int w, int h, uint8_t acao) {
+    lv_obj_t* b = lv_btn_create(pai);
+    lv_obj_set_size(b, w, h);
+    lv_obj_set_pos(b, x, y);
+    lv_obj_set_style_bg_color(b, cor, 0);
+    lv_obj_t* l = lv_label_create(b);
+    lv_obj_set_style_text_font(l, &lv_font_montserrat_20, 0);
+    lv_label_set_text(l, texto);
+    lv_obj_center(l);
+    lv_obj_add_event_cb(b, cb_hold, LV_EVENT_ALL, (void*)(intptr_t)acao);
+    return b;
+}
+
+static void ui_manual_criar() {
+    scr_manual = lv_obj_create(nullptr);
+    lv_obj_set_style_bg_color(scr_manual, COR_FUNDO, 0);
+    lv_obj_clear_flag(scr_manual, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Faixa de CIMA: o canto inferior esquerdo da tela nao responde ao toque (defeito do painel),
+    // entao PARAR TUDO e VOLTAR ficam aqui em cima, onde funciona.
+    novo_botao(scr_manual, "PARAR TUDO", COR_VERMELHO, 8, 8, 300, 56, cb_parar);
+    lv_obj_t* t = novo_label(scr_manual, &lv_font_montserrat_20, COR_AMARELO, 330, 22, 300);
+    lv_label_set_text(t, "MANUAL (segure)");
+    novo_botao(scr_manual, "VOLTAR", COR_AZUL, 640, 8, 150, 56, cb_ir_principal);
+
+    novo_botao_hold(scr_manual, "GIRO  <  (anti-horario)", COR_AZUL,  16,  76, 380, 100, 11);
+    novo_botao_hold(scr_manual, "GIRO  >  (horario)",      COR_AZUL,  404, 76, 380, 100, 10);
+    novo_botao_hold(scr_manual, "CARRINHO  TRAS",          COR_CINZA, 16,  186, 380, 100, 13);
+    novo_botao_hold(scr_manual, "CARRINHO  FRENTE",        COR_CINZA, 404, 186, 380, 100, 12);
+
+    lbl_m_estado = novo_label(scr_manual, &lv_font_montserrat_20, COR_TEXTO,    16, 300, 770);
+    lbl_m_info   = novo_label(scr_manual, &lv_font_montserrat_18, COR_VERMELHO, 16, 332, 770);
+    lbl_m_sens   = novo_label(scr_manual, &lv_font_montserrat_16, COR_FRACO,    16, 364, 780);
+}
+
 static void ui_criar() {
     lv_obj_t* scr = lv_obj_create(nullptr);
+    scr_principal = scr;
     lv_obj_set_style_bg_color(scr, COR_FUNDO, 0);
     lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
     // Barra de cima: botao da BOMBA no canto superior esquerdo + titulo ao lado
     btn_bomba = novo_botao(scr, "BOMBA: OFF (a seco)", COR_CINZA, 8, 8, 320, 56, cb_bomba, &lbl_bomba);
-    lv_obj_t* t = novo_label(scr, &lv_font_montserrat_20, COR_AMARELO, 344, 22, 450);
-    lv_label_set_text(t, "TESTE ALTA PRESSAO (etapa 0)");
+    lv_obj_t* t = novo_label(scr, &lv_font_montserrat_20, COR_AMARELO, 344, 22, 280);
+    lv_label_set_text(t, "ALTA PRESSAO (bancada)");
+    novo_botao(scr, "MANUAL", COR_AZUL, 640, 8, 150, 56, cb_ir_manual);
 
     lbl_estado = novo_label(scr, &lv_font_montserrat_20, COR_TEXTO,    16, 80,  770);
     lbl_etapa  = novo_label(scr, &lv_font_montserrat_18, COR_FRACO,    16, 118, 770);
@@ -148,12 +202,50 @@ static void ui_criar() {
     novo_botao(scr, "INICIAR TESTE", COR_VERDE,   200,  352, 270, 100, cb_iniciar);
     novo_botao(scr, "PARAR",         COR_VERMELHO, 484, 352, 300, 100, cb_parar);
 
+    ui_manual_criar();
     lv_scr_load(scr);
+}
+
+// Atualiza os textos da tela MANUAL (estado, aviso do firmware e sensores/saidas relevantes).
+static void ui_atualizar_manual(bool contato, const MsgTesteStatus& s) {
+    char buf[200];
+    if (!g_st_ok || !contato) {
+        lv_label_set_text(lbl_m_estado, "SEM CONTATO COM A WAVESHARE 1 (os botoes nao funcionam)");
+        lv_obj_set_style_text_color(lbl_m_estado, COR_VERMELHO, 0);
+        lv_label_set_text(lbl_m_info, "");
+        lv_label_set_text(lbl_m_sens, "");
+        return;
+    }
+    static const char* MOV[14] = { "PARADO", "", "", "", "", "", "", "", "", "",
+                                   "GIRO HORARIO", "GIRO ANTI-HORARIO", "CARRINHO FRENTE", "CARRINHO TRAS" };
+    lv_color_t cor = COR_FRACO;
+    if (s.manual_mov >= 10 && s.manual_mov <= 13) {
+        snprintf(buf, sizeof(buf), "MOVENDO: %s  (solte para parar)", MOV[s.manual_mov]); cor = COR_VERDE;
+    } else if (s.estado_auto != 0 || s.home_estado >= 1) {
+        snprintf(buf, sizeof(buf), "Maquina ocupada (ciclo ou HOME): manual bloqueado"); cor = COR_AMARELO;
+    } else {
+        snprintf(buf, sizeof(buf), "Parado. Segure um botao para mover."); cor = COR_FRACO;
+    }
+    lv_label_set_text(lbl_m_estado, buf);
+    lv_obj_set_style_text_color(lbl_m_estado, cor, 0);
+
+    char msg[56];
+    strncpy(msg, s.msg, sizeof(msg) - 1); msg[sizeof(msg) - 1] = ' ';
+    lv_label_set_text(lbl_m_info, msg);
+
+    static const char* CMD[] = { "PARADO", "FRENTE", "REVERSO" };
+    snprintf(buf, sizeof(buf), "X12:%d X13:%d | X16:%d X17:%d X7:%d | Y4:%d Y14 cmd:%d real:%d | Delta: %s %.1f Hz",
+             (s.io2_di >> 2) & 1, (s.io2_di >> 3) & 1, (s.io2_di >> 7) & 1, (s.io2_di >> 6) & 1, (s.io1_di >> 7) & 1,
+             (s.w1_do >> 3) & 1, (s.w2_do_cmd >> 3) & 1, (s.w2_do_real >> 3) & 1,
+             CMD[s.vfd_mov > 2 ? 0 : s.vfd_mov], s.vfd_mov_freq / 10.0f);
+    lv_label_set_text(lbl_m_sens, buf);
 }
 
 static void ui_atualizar() {
     bool contato = g_st_ok && (millis() - g_st_ms) < 2000;
     MsgTesteStatus s = g_st;   // copia local (o callback pode atualizar a qualquer momento)
+
+    if (scr_manual && lv_scr_act() == scr_manual) { ui_atualizar_manual(contato, s); return; }
 
     if (!g_st_ok) {
         lv_label_set_text(lbl_estado, "SEM CONTATO COM A WAVESHARE 1 (nunca recebeu status)");
