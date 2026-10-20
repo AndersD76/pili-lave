@@ -262,6 +262,13 @@ void auto_tick() {
                 _t_x15_off = 0;
             }
 
+            // Escritas perdidas SEGUIDAS no Delta (4 tentativas cada, varias vezes): o inversor nao
+            // esta recebendo ordens. Para tudo e acusa, em vez de seguir como se nada tivesse acontecido.
+            if (g_vfd_falhas_seguidas >= 6) {
+                g_vfd_falhas_seguidas = 0;
+                auto_erro("RS-485: Delta sem resposta (6 escritas perdidas seguidas)");
+                break;
+            }
             executar_processo_tick();     // avanca a sub-maquina
             break;
         }
@@ -346,7 +353,8 @@ void teste_iniciar() {
 void teste_parar() {
     home_reset();
     desligar_tudo();
-    vfd_stop(); vfd_stop();   // reforco
+    vfd_stop_garantido();   // repete ate o Delta confirmar a parada
+    g_vfd_falhas_seguidas = 0;
     processos_reset();
     g_teste_rodando         = false;
     g_estado.processo_ativo = PROC_NENHUM;

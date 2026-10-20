@@ -243,7 +243,6 @@ void nvs_inc_prog(uint8_t p) { (void)p; }
 // parada do motor). PARAR e uma flag a parte (g_parar_pedido), checada tambem DENTRO das
 // esperas bloqueantes para o motor nao ser religado depois de um PARAR.
 static QueueHandle_t   g_fila_cmd = nullptr;
-static volatile bool   g_parar_pedido = false;
 void processa_comandos();   // definida mais abaixo
 
 #define HOME_FREQ_HZ10   400

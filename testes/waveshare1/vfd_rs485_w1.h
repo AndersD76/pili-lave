@@ -150,33 +150,62 @@ static bool mb_read_regs(uint8_t addr, uint16_t start, uint8_t count, uint16_t* 
 #define VFD_REV          0x0022
 #define VFD_STOP         0x0001
 
-uint32_t g_vfd_write_falhas = 0;
+uint32_t g_vfd_write_falhas = 0;      // escritas perdidas de vez (4 tentativas esgotadas), acumulado
+uint32_t g_vfd_falhas_seguidas = 0;   // perdidas SEGUIDAS (zera na 1a que passa) — monitorado pelo auto_tick
+bool     g_vfd_run_ok = true;         // resultado da ULTIMA ordem de movimento/parada ao Delta (todas as escritas)
 
-static void vfd_write_reg_retry(uint16_t reg, uint16_t val) {
+// Flag de PARAR pedida pelo operador (setada no callback do ESP-NOW; tratada no loop).
+// Fica aqui porque as funcoes "garantidas" abaixo a consultam.
+static volatile bool g_parar_pedido = false;
+
+static bool vfd_write_reg_retry(uint16_t reg, uint16_t val) {
     for (uint8_t i = 0; i < 4; i++) {
-        if (mb_write_reg(MB_ADDR_INVERSOR, reg, val)) return;
+        if (mb_write_reg(MB_ADDR_INVERSOR, reg, val)) { g_vfd_falhas_seguidas = 0; return true; }
         delay(15);
     }
-    g_vfd_write_falhas++;
-    Serial.printf("[VFD] FALHA escrita reg=0x%04X val=%u apos 4 tentativas (total falhas=%u)\n",
-                  reg, val, (unsigned)g_vfd_write_falhas);
+    g_vfd_write_falhas++; g_vfd_falhas_seguidas++;
+    Serial.printf("[VFD] FALHA escrita reg=0x%04X val=%u apos 4 tentativas (total falhas=%u, seguidas=%u)\n",
+                  reg, val, (unsigned)g_vfd_write_falhas, (unsigned)g_vfd_falhas_seguidas);
+    return false;
 }
 
 void vfd_run_fwd(uint16_t freq_hz10) {
     g_vfd_mov = 1; g_vfd_mov_freq = freq_hz10;
-    vfd_write_reg_retry(MB_VFD_FREQ, freq_hz10 * 10);
+    bool f = vfd_write_reg_retry(MB_VFD_FREQ, freq_hz10 * 10);
     delay(10);
-    vfd_write_reg_retry(MB_VFD_CMD, VFD_FWD);
+    bool c = vfd_write_reg_retry(MB_VFD_CMD, VFD_FWD);
+    g_vfd_run_ok = f && c;
 }
 void vfd_run_rev(uint16_t freq_hz10) {
     g_vfd_mov = 2; g_vfd_mov_freq = freq_hz10;
-    vfd_write_reg_retry(MB_VFD_FREQ, freq_hz10 * 10);
+    bool f = vfd_write_reg_retry(MB_VFD_FREQ, freq_hz10 * 10);
     delay(10);
-    vfd_write_reg_retry(MB_VFD_CMD, VFD_REV);
+    bool c = vfd_write_reg_retry(MB_VFD_CMD, VFD_REV);
+    g_vfd_run_ok = f && c;
 }
 void vfd_stop() {
     g_vfd_mov = 0;
-    vfd_write_reg_retry(MB_VFD_CMD, VFD_STOP);
+    g_vfd_run_ok = vfd_write_reg_retry(MB_VFD_CMD, VFD_STOP);
+}
+
+// "Garantidos": repetem a ordem quando ela NAO chega ao Delta (so repete se falhou).
+// Devolvem false se mesmo assim nao entregou (o chamador deve parar tudo e acusar erro).
+bool vfd_run_garantido(bool fwd, uint16_t freq_hz10) {
+    for (uint8_t t = 0; t < 3; t++) {
+        if (fwd) vfd_run_fwd(freq_hz10); else vfd_run_rev(freq_hz10);
+        if (g_vfd_run_ok) return true;
+        if (g_parar_pedido) return false;   // operador mandou parar: nao insiste
+        delay(30);
+    }
+    return false;
+}
+bool vfd_stop_garantido() {
+    for (uint8_t t = 0; t < 4; t++) {
+        vfd_stop();
+        if (g_vfd_run_ok) return true;
+        delay(20);
+    }
+    return false;
 }
 bool vfd_em_falha() { return (g_vfd_status & 0x0008) != 0; }
 

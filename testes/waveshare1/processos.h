@@ -170,7 +170,10 @@ static void giro_iniciar(bool fwd, uint16_t freq_hz10, bool dest_home) {
     // (2) liga Y4
     SET_Y4(true);
     // (3) envia parametros: freq do processo + REV (ou FWD)
-    if (fwd) vfd_run_fwd(freq_hz10); else vfd_run_rev(freq_hz10);
+    if (!vfd_run_garantido(fwd, freq_hz10)) {
+        if (!g_parar_pedido) auto_erro("RS-485: Delta nao recebeu o comando do giro");
+        return;
+    }
 
     _giro_t0         = millis();    // T=0 deste giro — base dos DOIS cronometros independentes
     _giro_fwd        = fwd;
@@ -521,7 +524,10 @@ static void carr_fwd_iniciar(uint16_t freq_antes_x10, uint16_t freq_apos_x10, ui
                   freq_antes_x10 / 10.0f, freq_apos_x10 / 10.0f, (unsigned)dwell_ms);  // TEMP debug
     if (vfd_parar_de_vez(VFD_SETTLE_MS)) return;   // motor parado antes de reverter p/ FWD (PARAR cancela)
     SET_Y14(true);
-    vfd_run_fwd(freq_antes_x10);
+    if (!vfd_run_garantido(true, freq_antes_x10)) {
+        if (!g_parar_pedido) auto_erro("RS-485: Delta nao recebeu o comando do carrinho");
+        return;
+    }
     _cf_st      = 0;
     _cf_dwell   = dwell_ms;
     _cf_freq_antes_x10 = freq_antes_x10;
@@ -619,7 +625,10 @@ static void carr_rev_x10_iniciar(uint16_t freq_hz10) {
     DBG_PRINTF("[CARRINHO] REV_X10 freq=%.1fHz\n", freq_hz10 / 10.0f);  // TEMP debug
     if (vfd_parar_de_vez(VFD_SETTLE_MS)) return;   // motor parado antes de reverter p/ REV (PARAR cancela)
     SET_Y14(true);
-    vfd_run_rev(freq_hz10);
+    if (!vfd_run_garantido(false, freq_hz10)) {
+        if (!g_parar_pedido) auto_erro("RS-485: Delta nao recebeu o comando do carrinho");
+        return;
+    }
     _cr_st       = 0;
     _cr_saiu     = !X10;   // se ja comeca com X10 falso, ok de cara; senao so libera
                            // apos ver o carrinho realmente sair da zona (evita
@@ -684,7 +693,10 @@ static void carr_rev_x12_iniciar(uint16_t freq_hz10) {
     DBG_PRINTF("[CARRINHO] REV_X12 (retorno final) freq=%.1fHz\n", freq_hz10 / 10.0f);  // TEMP debug
     if (vfd_parar_de_vez(VFD_SETTLE_MS)) return;   // motor parado antes de arrancar o deslocamento (PARAR cancela)
     SET_Y14(true);
-    vfd_run_rev(freq_hz10);
+    if (!vfd_run_garantido(false, freq_hz10)) {
+        if (!g_parar_pedido) auto_erro("RS-485: Delta nao recebeu o comando do carrinho");
+        return;
+    }
     _cx_st = 0;
     _cx_freq = freq_hz10;
     _cx_t_pulso = millis();               // arma o watchdog do X0 (carro travado no retorno)
@@ -895,7 +907,7 @@ static bool tick_alta_pressao() {
             if (g_teste_seco) {   // por tempo: nao depende de carro nem de X10
                 if (vfd_parar_de_vez(VFD_SETTLE_MS)) break;
                 SET_Y14(true);
-                vfd_run_fwd(vel(8));
+                if (!vfd_run_garantido(true, vel(8))) { if (!g_parar_pedido) auto_erro("RS-485: Delta nao recebeu o comando do carrinho"); break; }
                 _pt = millis(); _pst = AP_FWD; break;
             }
             carr_fwd_iniciar(vel(8), CARRINHO_X10_FREQ_HZ10, 1000); _pst = AP_FWD; break;    // cai pra 20Hz so apos perder o X10
@@ -918,7 +930,7 @@ static bool tick_alta_pressao() {
             if (g_teste_seco) {   // por tempo: nao depende de carro nem de X10
                 if (vfd_parar_de_vez(VFD_SETTLE_MS)) break;
                 SET_Y14(true);
-                vfd_run_rev(CARRINHO_X10_FREQ_HZ10);
+                if (!vfd_run_garantido(false, CARRINHO_X10_FREQ_HZ10)) { if (!g_parar_pedido) auto_erro("RS-485: Delta nao recebeu o comando do carrinho"); break; }
                 _pt = millis(); _pst = AP_REV_MEIO; break;
             }
             carr_rev_x10_iniciar(CARRINHO_X10_FREQ_HZ10); _pst = AP_REV_MEIO; break;    // 20Hz fixo
