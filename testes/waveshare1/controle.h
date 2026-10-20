@@ -229,6 +229,15 @@ void nvs_inc_prog(uint8_t p) { (void)p; }
 // HOME — referenciamento. SEM MUDANCA DE LOGICA (copiado do que o display
 // ja tinha em comm_waveshares_espnow.h).
 // =======================================================================
+// ---- Fila de comandos do display (item 1 da auditoria) ----
+// O callback do ESP-NOW NAO executa nada: so coloca o comando aqui. Quem executa e o loop(),
+// que chama processa_comandos() no topo de cada volta e dentro das esperas longas (HOME,
+// parada do motor). PARAR e uma flag a parte (g_parar_pedido), checada tambem DENTRO das
+// esperas bloqueantes para o motor nao ser religado depois de um PARAR.
+static QueueHandle_t   g_fila_cmd = nullptr;
+static volatile bool   g_parar_pedido = false;
+void processa_comandos();   // definida mais abaixo
+
 #define HOME_FREQ_HZ10   400
 #define HOME_TIMEOUT_MS  25000
 #define HOME_TIMEOUT_DESLOC_MS 50000
@@ -290,6 +299,7 @@ void home_tick() {
             // reconexao caia na tela padrao). Alimenta o watchdog aqui
             // tambem pra essa busca longa nao ser confundida com travamento.
             esp_task_wdt_reset();
+            processa_comandos();   // PARAR / cancelar HOME chegam por aqui mesmo com o laco preso
             if (g_home_estado != HOME_FASE_GIRO) return;   // cancelado (home_iniciar/home_reset mudou o estado): para de comandar o motor
             modbus_refresh_io2_di();
             if (home_sensor_giro() && home_sensor_x17()) {
@@ -481,14 +491,23 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* 
         return;
     }
 
-    // ---- do Display: so o comando do teste ----
+    // ---- do Display: so o comando do teste (NADA e executado aqui: fila / flag) ----
     if (cab->origem != ORIGEM_DISPLAY) return;
     if (cab->tipo == MSG_TESTE_CMD && len >= (int)sizeof(MsgTesteCmd)) {
         const MsgTesteCmd* m = (const MsgTesteCmd*)data;
-        switch (m->acao) {
-            case 0: home_iniciar();      break;   // alterna iniciar/cancelar
-            case 1: teste_iniciar();     break;
-            case 2: teste_parar();       break;
+        if (m->acao == 2) g_parar_pedido = true;                       // PARAR: prioridade maxima
+        else if (g_fila_cmd) { uint8_t a = m->acao; xQueueSend(g_fila_cmd, &a, 0); }
+    }
+}
+
+// Executa o que o display pediu. Chamar SO do loop()/das esperas do loop — nunca do callback.
+void processa_comandos() {
+    if (g_parar_pedido) { g_parar_pedido = false; teste_parar(); }
+    uint8_t a;
+    while (g_fila_cmd && xQueueReceive(g_fila_cmd, &a, 0) == pdTRUE) {
+        switch (a) {
+            case 0: home_iniciar();        break;   // alterna iniciar/cancelar
+            case 1: teste_iniciar();       break;
             case 3: g_teste_bomba = false; break;
             case 4: g_teste_bomba = true;  break;
         }
@@ -496,6 +515,7 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* 
 }
 
 void controle_init() {
+    g_fila_cmd = xQueueCreate(8, sizeof(uint8_t));
     pca_init();
     for (uint8_t i=0;i<8;i++) {
         pinMode(DI_PINS[i], INPUT_PULLUP);

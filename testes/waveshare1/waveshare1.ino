@@ -92,6 +92,8 @@ void loop() {
       if (t_ult) { uint32_t d = agora_l - t_ult; if (d > g_loop_max_ms) g_loop_max_ms = d > 65535 ? 65535 : (uint16_t)d; }
       t_ult = agora_l; }
 
+    processa_comandos();   // executa o que o display pediu (o callback so enfileira)
+
     static uint32_t t_modbus = 0;
     if (millis() - t_modbus >= 500) { t_modbus = millis(); modbus_tick(); }
 

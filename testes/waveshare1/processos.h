@@ -166,7 +166,7 @@ static void giro_iniciar(bool fwd, uint16_t freq_hz10, bool dest_home) {
     // (1) RESET do inversor: para explicito + espera zerar (nao herda o giro anterior)
     SET_Y14(false);                 // intertravamento Y4<->Y14
     vfd_stop();
-    delay(VFD_SETTLE_MS);           // unico delay curto que resta (reset do motor) — 500ms
+    for (uint32_t t0 = millis(); millis() - t0 < VFD_SETTLE_MS; ) { if (g_parar_pedido) return; delay(20); }   // reset do motor; PARAR cancela (nao liga o Y4/motor depois)
     // (2) liga Y4
     SET_Y4(true);
     // (3) envia parametros: freq do processo + REV (ou FWD)
@@ -502,9 +502,11 @@ static const char* _cf_msg = "";
 // vir logo apos o giro (REV); arrancar sem o motor parar = REVERSAO de sentido
 // que o VFD MS300 nao aceita -> nao anda ("CARRO TRAVADO"). Bloqueia ~500ms
 // (curto, so o carrinho usa isso — o giro tem seu proprio reset em giro_iniciar).
-static void vfd_parar_de_vez(uint32_t ms) {
+// Devolve true se um PARAR chegou durante a espera (o chamador NAO deve religar o motor).
+static bool vfd_parar_de_vez(uint32_t ms) {
     uint32_t ts = millis();
-    while (millis() - ts < ms) { vfd_stop(); delay(50); }
+    while (millis() - ts < ms) { if (g_parar_pedido) return true; vfd_stop(); delay(50); }
+    return g_parar_pedido;
 }
 
 // freq_antes_x10: velocidade enquanto o X10 ainda esta ativo (normalmente a
@@ -517,7 +519,7 @@ static void vfd_parar_de_vez(uint32_t ms) {
 static void carr_fwd_iniciar(uint16_t freq_antes_x10, uint16_t freq_apos_x10, uint32_t dwell_ms) {
     DBG_PRINTF("[CARRINHO] FWD freq_antes_x10=%.1fHz freq_apos_x10=%.1fHz dwell=%ums\n",
                   freq_antes_x10 / 10.0f, freq_apos_x10 / 10.0f, (unsigned)dwell_ms);  // TEMP debug
-    vfd_parar_de_vez(VFD_SETTLE_MS);       // motor parado antes de reverter p/ FWD
+    if (vfd_parar_de_vez(VFD_SETTLE_MS)) return;   // motor parado antes de reverter p/ FWD (PARAR cancela)
     SET_Y14(true);
     vfd_run_fwd(freq_antes_x10);
     _cf_st      = 0;
@@ -615,7 +617,7 @@ static bool     _cr_x0_ant  = false;
 
 static void carr_rev_x10_iniciar(uint16_t freq_hz10) {
     DBG_PRINTF("[CARRINHO] REV_X10 freq=%.1fHz\n", freq_hz10 / 10.0f);  // TEMP debug
-    vfd_parar_de_vez(VFD_SETTLE_MS);       // motor parado antes de reverter p/ REV
+    if (vfd_parar_de_vez(VFD_SETTLE_MS)) return;   // motor parado antes de reverter p/ REV (PARAR cancela)
     SET_Y14(true);
     vfd_run_rev(freq_hz10);
     _cr_st       = 0;
@@ -680,7 +682,7 @@ static uint32_t _cx_t_ramp  = 0;   // ultimo recalculo da rampa
 
 static void carr_rev_x12_iniciar(uint16_t freq_hz10) {
     DBG_PRINTF("[CARRINHO] REV_X12 (retorno final) freq=%.1fHz\n", freq_hz10 / 10.0f);  // TEMP debug
-    vfd_parar_de_vez(VFD_SETTLE_MS);       // motor parado antes de arrancar o deslocamento
+    if (vfd_parar_de_vez(VFD_SETTLE_MS)) return;   // motor parado antes de arrancar o deslocamento (PARAR cancela)
     SET_Y14(true);
     vfd_run_rev(freq_hz10);
     _cx_st = 0;
@@ -891,7 +893,7 @@ static bool tick_alta_pressao() {
 
         case AP_FWD_INI:
             if (g_teste_seco) {   // por tempo: nao depende de carro nem de X10
-                vfd_parar_de_vez(VFD_SETTLE_MS);
+                if (vfd_parar_de_vez(VFD_SETTLE_MS)) break;
                 SET_Y14(true);
                 vfd_run_fwd(vel(8));
                 _pt = millis(); _pst = AP_FWD; break;
@@ -914,7 +916,7 @@ static bool tick_alta_pressao() {
             if (millis() - _pt >= 500) _pst = AP_REV_MEIO_INI; break;
         case AP_REV_MEIO_INI:
             if (g_teste_seco) {   // por tempo: nao depende de carro nem de X10
-                vfd_parar_de_vez(VFD_SETTLE_MS);
+                if (vfd_parar_de_vez(VFD_SETTLE_MS)) break;
                 SET_Y14(true);
                 vfd_run_rev(CARRINHO_X10_FREQ_HZ10);
                 _pt = millis(); _pst = AP_REV_MEIO; break;
