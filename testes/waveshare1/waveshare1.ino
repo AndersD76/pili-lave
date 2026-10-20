@@ -89,7 +89,8 @@ void loop() {
     esp_task_wdt_reset();
 
     { static uint32_t t_ult = 0; uint32_t agora_l = millis();
-      if (t_ult) { uint32_t d = agora_l - t_ult; if (d > g_loop_max_ms) g_loop_max_ms = d > 65535 ? 65535 : (uint16_t)d; }
+      if (t_ult) { uint32_t d = agora_l - t_ult; if (d > g_loop_max_ms) g_loop_max_ms = d > 65535 ? 65535 : (uint16_t)d;
+        if (d > g_loop_max_5s) g_loop_max_5s = d > 65535 ? 65535 : (uint16_t)d; }
       t_ult = agora_l; }
 
     processa_comandos();   // executa o que o display pediu (o callback so enfileira)

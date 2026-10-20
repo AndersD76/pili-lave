@@ -143,6 +143,14 @@ static inline void w2_amostra_home(uint8_t di, uint32_t agora) {   // chamar DEN
     else     { g_x17_up = false; }
 }
 static volatile uint32_t g_hb2=0;
+// Diagnostico do enlace (resumo [LINK] a cada 5 s no serial):
+static uint32_t          g_w2_prev_ms = 0, g_w2_gap_max = 0;      // maior intervalo entre pacotes da W2
+static volatile uint32_t g_tx_ok = 0, g_tx_fail = 0;              // entrega dos envios por radio (display e W2)
+uint16_t                 g_loop_max_5s = 0;                       // maior pausa do loop() na janela de 5 s
+static inline void w2_gap_atualiza(uint32_t agora) {              // chamar dentro da secao critica g_iomux2
+    if (g_w2_prev_ms) { uint32_t gp = agora - g_w2_prev_ms; if (gp > g_w2_gap_max) g_w2_gap_max = gp; }
+    g_w2_prev_ms = agora;
+}
 static volatile uint8_t  g_w2_do_real=0;   // do_estado informado pela W2 no ultimo heartbeat (o que ela REALMENTE ligou)
 static portMUX_TYPE       g_iomux2 = portMUX_INITIALIZER_UNLOCKED;
 static uint8_t            g_ws_seq = 0;
@@ -255,6 +263,8 @@ static uint32_t    g_home_x0_t   = 0;
 static bool        g_home_x0_ant = false;
 static uint32_t    g_home_x12_t0    = 0;
 static uint32_t    g_home_x12_t_ramp= 0;
+static bool        _hg_desac = false;     // busca do giro: rampa de desaceleracao ja comecou?
+static uint32_t    _hg_t_desac = 0, _hg_t_ramp = 0;
 
 static inline bool home_sensor_giro() { return (g_io2.di >> 7) & 0x01; }
 static inline bool home_sensor_x17()  { return (g_io2.di >> 6) & 0x01; }
@@ -282,47 +292,36 @@ void home_iniciar() {
     modbus_refresh_io2_di();
     if (home_sensor_giro() && home_sensor_x17()) { home_iniciar_fase_desloc(); return; }
     g_home_estado = HOME_FASE_GIRO; g_home_t0 = millis(); g_home_msg = "HOME: buscando giro...";
+    _hg_desac = false; _hg_t_desac = 0; _hg_t_ramp = 0;
     io1_set_do(4,true); vfd_run_rev(HOME_FREQ_HZ10);
 }
 void home_tick() {
     if (!home_rodando()) return;
     if (g_home_estado == HOME_FASE_GIRO) {
-        bool desac=false; uint32_t t_desac=0, t_ramp=0;
+        // UMA passada por chamada — nao bloqueia o loop(): o status segue saindo pro display,
+        // os comandos (PARAR/cancelar) sao processados no topo do loop e o watchdog e alimentado
+        // normalmente. (Antes era um laco for(;;) de ate 25 s que prendia tudo.)
         modbus_refresh_io2_di();
-        for (;;) {
-            // Achado em campo: essa busca pode legitimamente levar ate
-            // HOME_TIMEOUT_MS (25s), mas o loop() principal (onde o TWDT de
-            // 15s e alimentado) fica BLOQUEADO aqui dentro o tempo todo —
-            // se o giro demorar mais de 15s pra achar a posicao, o watchdog
-            // disparava um PANIC e reiniciava a W1 no meio do HOME (motor
-            // parava onde estava, sem ler sensor nenhum, e o display via
-            // reconexao caia na tela padrao). Alimenta o watchdog aqui
-            // tambem pra essa busca longa nao ser confundida com travamento.
-            esp_task_wdt_reset();
-            processa_comandos();   // PARAR / cancelar HOME chegam por aqui mesmo com o laco preso
-            if (g_home_estado != HOME_FASE_GIRO) return;   // cancelado (home_iniciar/home_reset mudou o estado): para de comandar o motor
-            modbus_refresh_io2_di();
-            if (home_sensor_giro() && home_sensor_x17()) {
-                vfd_stop(); io1_set_do(4,false);
-                g_home_estado = HOME_FASE_PARADA; g_home_t0 = millis(); g_home_msg = "HOME: parando...";
-                return;
-            }
-            if (!desac && home_sensor_x11()) { desac=true; t_desac=millis(); }
-            if (desac) {
-                uint32_t ag = millis();
-                if (ag - t_ramp >= 120) {
-                    t_ramp = ag; uint32_t dt = ag - t_desac;
-                    uint16_t f = (dt >= HOME_DESAC_MS) ? HOME_DESAC_FLOOR
-                        : (uint16_t)(HOME_FREQ_HZ10 - (uint32_t)(HOME_FREQ_HZ10 - HOME_DESAC_FLOOR)*dt/HOME_DESAC_MS);
-                    vfd_run_rev(f);
-                }
-            }
-            if (millis() - g_home_t0 > HOME_TIMEOUT_MS) {
-                home_parar_tudo(); g_home_estado=HOME_FALHA; g_home_msg="HOME FALHOU: giro nao achado"; return;
-            }
-            if (comm_perdida()) { home_parar_tudo(); g_home_estado=HOME_FALHA; g_home_msg="HOME FALHOU: comunicacao"; return; }
-            delay(10);
+        if (home_sensor_giro() && home_sensor_x17()) {
+            vfd_stop(); io1_set_do(4,false);
+            g_home_estado = HOME_FASE_PARADA; g_home_t0 = millis(); g_home_msg = "HOME: parando...";
+            return;
         }
+        if (!_hg_desac && home_sensor_x11()) { _hg_desac = true; _hg_t_desac = millis(); }
+        if (_hg_desac) {
+            uint32_t ag = millis();
+            if (ag - _hg_t_ramp >= 120) {
+                _hg_t_ramp = ag; uint32_t dt = ag - _hg_t_desac;
+                uint16_t f = (dt >= HOME_DESAC_MS) ? HOME_DESAC_FLOOR
+                    : (uint16_t)(HOME_FREQ_HZ10 - (uint32_t)(HOME_FREQ_HZ10 - HOME_DESAC_FLOOR)*dt/HOME_DESAC_MS);
+                vfd_run_rev(f);
+            }
+        }
+        if (millis() - g_home_t0 > HOME_TIMEOUT_MS) {
+            home_parar_tudo(); g_home_estado=HOME_FALHA; g_home_msg="HOME FALHOU: giro nao achado"; return;
+        }
+        if (comm_perdida()) { home_parar_tudo(); g_home_estado=HOME_FALHA; g_home_msg="HOME FALHOU: comunicacao"; return; }
+        return;
     }
     static uint32_t t_le = 0;
     if (millis() - t_le < 30) return;
@@ -480,12 +479,12 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* 
         if (cab->tipo == MSG_EVENTO && len >= (int)sizeof(MsgEvento)) {
             const MsgEvento* e = (const MsgEvento*)data;
             portENTER_CRITICAL(&g_iomux2);
-            g_viv2 = e->di_vivo; g_lat2 |= (e->di_borda & PULSO_W2_MASK); g_hb2 = millis(); w2_amostra_home(e->di_vivo, g_hb2);
+            g_viv2 = e->di_vivo; g_lat2 |= (e->di_borda & PULSO_W2_MASK); g_hb2 = millis(); w2_amostra_home(e->di_vivo, g_hb2); w2_gap_atualiza(g_hb2);
             portEXIT_CRITICAL(&g_iomux2);
         } else if (cab->tipo == MSG_HEARTBEAT && len >= (int)sizeof(MsgHeartbeat)) {
             const MsgHeartbeat* h = (const MsgHeartbeat*)data;
             portENTER_CRITICAL(&g_iomux2);
-            g_viv2 = h->di_vivo; g_hb2 = millis(); g_w2_do_real = h->do_estado; w2_amostra_home(h->di_vivo, g_hb2);
+            g_viv2 = h->di_vivo; g_hb2 = millis(); g_w2_do_real = h->do_estado; w2_amostra_home(h->di_vivo, g_hb2); w2_gap_atualiza(g_hb2);
             portEXIT_CRITICAL(&g_iomux2);
         }
         return;
@@ -514,6 +513,12 @@ void processa_comandos() {
     }
 }
 
+// Resultado de entrega de cada esp_now_send (so confirma que o destino recebeu o quadro).
+static void on_send_cb(const esp_now_send_info_t* info, esp_now_send_status_t st) {
+    (void)info;
+    if (st == ESP_NOW_SEND_SUCCESS) g_tx_ok++; else g_tx_fail++;
+}
+
 void controle_init() {
     g_fila_cmd = xQueueCreate(8, sizeof(uint8_t));
     pca_init();
@@ -522,6 +527,7 @@ void controle_init() {
         attachInterruptArg(digitalPinToInterrupt(DI_PINS[i]), di1_isr, (void*)(uint32_t)i, FALLING);
     }
     esp_now_register_recv_cb(on_recv_controlador);
+    esp_now_register_send_cb(on_send_cb);
     esp_now_peer_info_t p = {}; p.channel=0; p.ifidx=WIFI_IF_STA; p.encrypt=true;
     memcpy(p.lmk, ESPNOW_LMK, 16);
     memcpy(p.peer_addr, MAC_DISPLAY, 6); esp_now_add_peer(&p);
@@ -538,6 +544,9 @@ void controle_tick() {
     static uint32_t t_rs = 0;
     if (millis() - t_rs >= 5000) {
         t_rs = millis();
+        DBG_PRINTF("[LINK] loop_max=%ums w2_gap_max=%ums tx_ok=%u tx_fail=%u\n",
+                   (unsigned)g_loop_max_5s, (unsigned)g_w2_gap_max, (unsigned)g_tx_ok, (unsigned)g_tx_fail);
+        g_loop_max_5s = 0; g_w2_gap_max = 0;
         uint32_t tot = g_mb_ok + g_mb_zero + g_mb_curta + g_mb_crc;
         DBG_PRINTF("[RS485] ok=%u zero_bytes=%u curta=%u crc=%u | total=%u (%u%% ok) | mov=%d giro=%d home=%d\n",
                    (unsigned)g_mb_ok, (unsigned)g_mb_zero, (unsigned)g_mb_curta, (unsigned)g_mb_crc,
