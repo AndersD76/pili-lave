@@ -1,0 +1,96 @@
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x15 (USB_UART_CHIP_RESET),boot:0x39 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037ade6
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x10cc
+load:0x403c8700,len:0xc2c
+load:0x403cb700,len:0x30b0
+entry 0x403c88b8
+[WAVE1-MESTRE] boot limpo (motivo=11, hard reset ja feito)
+[WAVE1-MESTRE] pronto (ESP-NOW canal 1, RS-485 Delta/SAJ sozinho)
+[AUTO] estado=0 idx=0 proc=0
+[RS485] ok=20 zero_bytes=0 curta=0 crc=0 | total=20 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=40 zero_bytes=0 curta=0 crc=0 | total=40 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=60 zero_bytes=0 curta=0 crc=0 | total=60 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=82 zero_bytes=0 curta=0 crc=0 | total=82 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=102 zero_bytes=0 curta=0 crc=0 | total=102 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=122 zero_bytes=0 curta=0 crc=0 | total=122 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=142 zero_bytes=0 curta=0 crc=0 | total=142 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=162 zero_bytes=0 curta=0 crc=0 | total=162 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=182 zero_bytes=0 curta=0 crc=0 | total=182 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=202 zero_bytes=0 curta=0 crc=0 | total=202 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=222 zero_bytes=0 curta=0 crc=0 | total=222 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=242 zero_bytes=0 curta=0 crc=0 | total=242 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=262 zero_bytes=0 curta=0 crc=0 | total=262 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=282 zero_bytes=0 curta=0 crc=0 | total=282 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=302 zero_bytes=0 curta=0 crc=0 | total=302 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=322 zero_bytes=0 curta=0 crc=0 | total=322 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=348 zero_bytes=0 curta=0 crc=0 | total=348 (100% ok) | mov=0 giro=0 home=5
+[RS485] ok=368 zero_bytes=0 curta=0 crc=0 | total=368 (100% ok) | mov=0 giro=0 home=5
+[RS485] ok=388 zero_bytes=0 curta=0 crc=0 | total=388 (100% ok) | mov=0 giro=0 home=5
+[RS485] ok=408 zero_bytes=0 curta=0 crc=0 | total=408 (100% ok) | mov=0 giro=0 home=5
+[RS485] ok=428 zero_bytes=0 curta=0 crc=0 | total=428 (100% ok) | mov=0 giro=0 home=5
+[RS485] ok=448 zero_bytes=0 curta=0 crc=0 | total=448 (100% ok) | mov=0 giro=0 home=5
+[RS485] ok=468 zero_bytes=0 curta=0 crc=0 | total=468 (100% ok) | mov=0 giro=0 home=5
+[RS485] ok=488 zero_bytes=0 curta=0 crc=0 | total=488 (100% ok) | mov=0 giro=0 home=5
+[RS485] ok=508 zero_bytes=0 curta=0 crc=0 | total=508 (100% ok) | mov=0 giro=0 home=5
+[RS485] ok=528 zero_bytes=0 curta=0 crc=0 | total=528 (100% ok) | mov=0 giro=0 home=5
+[RS485] ok=548 zero_bytes=0 curta=0 crc=0 | total=548 (100% ok) | mov=0 giro=0 home=5
+[RS485] ok=568 zero_bytes=0 curta=0 crc=0 | total=568 (100% ok) | mov=0 giro=0 home=5
+[TESTE] iniciado (bomba OFF)
+[AUTO] estado=5 idx=0 proc=0
+[RS485] ok=581 zero_bytes=0 curta=0 crc=0 | total=581 (100% ok) | mov=0 giro=0 home=5
+[RS485] ok=581 zero_bytes=0 curta=0 crc=0 | total=581 (100% ok) | mov=0 giro=0 home=5
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=0ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=1 | dt=69ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=119ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=0 X11=0 X7=0 | dt=537ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=755ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=1578ms fase=0 dest_home=0
+[TESTE] PARADO pelo operador
+[AUTO] estado=0 idx=0 proc=0
+[TESTE] PARADO pelo operador
+[RS485] ok=614 zero_bytes=2 curta=0 crc=0 | total=616 (99% ok) | mov=0 giro=0 home=0
+[RS485] ok=623 zero_bytes=2 curta=0 crc=0 | total=625 (99% ok) | mov=2 giro=0 home=1
+[RS485] ok=696 zero_bytes=5 curta=0 crc=0 | total=701 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=716 zero_bytes=5 curta=0 crc=0 | total=721 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=736 zero_bytes=5 curta=0 crc=0 | total=741 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=756 zero_bytes=5 curta=0 crc=0 | total=761 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=776 zero_bytes=5 curta=0 crc=0 | total=781 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=796 zero_bytes=5 curta=0 crc=0 | total=801 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=816 zero_bytes=5 curta=0 crc=0 | total=821 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=836 zero_bytes=5 curta=0 crc=0 | total=841 (99% ok) | mov=0 giro=0 home=5
+[TESTE] iniciado (bomba OFF)
+[AUTO] estado=5 idx=0 proc=0
+[RS485] ok=845 zero_bytes=5 curta=0 crc=0 | total=850 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=848 zero_bytes=5 curta=0 crc=0 | total=853 (99% ok) | mov=2 giro=1 home=5
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=1ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=1 | dt=69ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=119ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=0 X11=0 X7=0 | dt=624ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=942ms fase=0 dest_home=0
+[TESTE] PARADO pelo operador
+[AUTO] estado=0 idx=0 proc=0
+[TESTE] PARADO pelo operador
+[RS485] ok=880 zero_bytes=8 curta=0 crc=0 | total=888 (99% ok) | mov=0 giro=0 home=6
+[RS485] ok=893 zero_bytes=8 curta=0 crc=0 | total=901 (99% ok) | mov=2 giro=0 home=1
+[RS485] ok=970 zero_bytes=8 curta=0 crc=0 | total=978 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=990 zero_bytes=8 curta=0 crc=0 | total=998 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1010 zero_bytes=8 curta=0 crc=0 | total=1018 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1030 zero_bytes=8 curta=0 crc=0 | total=1038 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1050 zero_bytes=8 curta=0 crc=0 | total=1058 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1070 zero_bytes=8 curta=0 crc=0 | total=1078 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1090 zero_bytes=8 curta=0 crc=0 | total=1098 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1110 zero_bytes=8 curta=0 crc=0 | total=1118 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1130 zero_bytes=8 curta=0 crc=0 | total=1138 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1150 zero_bytes=8 curta=0 crc=0 | total=1158 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1170 zero_bytes=8 curta=0 crc=0 | total=1178 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1190 zero_bytes=8 curta=0 crc=0 | total=1198 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1210 zero_bytes=8 curta=0 crc=0 | total=1218 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1230 zero_bytes=8 curta=0 crc=0 | total=1238 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1250 zero_bytes=8 curta=0 crc=0 | total=1258 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1270 zero_bytes=8 curta=0 crc=0 | total=1278 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1290 zero_bytes=8 curta=0 crc=0 | total=1298 (99% ok) | mov=0 giro=0 home=5
+[RS485] ok=1310 zero_bytes=8 curta=0 crc=0 | total=1318 (99% ok) | mov=0 giro=0 home=5
