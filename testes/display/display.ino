@@ -45,11 +45,11 @@ static void on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int le
 }
 
 // Sem confirmacao no ESP-NOW: comandos criticos (PARAR) saem repetidos.
-static void enviar(uint8_t acao, uint8_t repeticoes = 1) {
+static void enviar(uint8_t acao, uint8_t repeticoes = 1, uint8_t arg = 0) {
     MsgTesteCmd m;
     m.cab.tipo = MSG_TESTE_CMD; m.cab.id_maquina = ID_MAQUINA;
     m.cab.origem = ORIGEM_DISPLAY; m.cab.seq = g_seq++;
-    m.acao = acao;
+    m.acao = acao; m.arg = arg;
     for (uint8_t i = 0; i < repeticoes; i++) {
         esp_now_send((uint8_t*)MAC_WAVE1, (uint8_t*)&m, sizeof(m));
         if (i + 1 < repeticoes) delay(25);
@@ -77,7 +77,10 @@ static void radio_init() {
 // ------------------------------------------------------------------ UI -----
 static lv_obj_t *lbl_estado, *lbl_etapa, *lbl_msg, *lbl_cont, *lbl_link, *lbl_sens, *lbl_giro, *lbl_cmd, *lbl_w1;
 static lv_obj_t *btn_bomba, *lbl_bomba;
-static lv_obj_t *scr_principal = nullptr, *scr_manual = nullptr;      // as duas telas
+static lv_obj_t *scr_principal = nullptr, *scr_manual = nullptr, *scr_auto = nullptr;      // as telas
+static lv_obj_t *lbl_a_estado, *lbl_a_etapa, *lbl_a_msg, *lbl_a_sens, *lbl_a_cont, *lbl_a_pausa;   // textos da tela AUTOMATICO
+static lv_obj_t *btn_modelo[4];
+static uint8_t   g_modelo_sel = 1;                                   // modelo escolhido na tela (1..4)
 static lv_obj_t *lbl_m_estado = nullptr, *lbl_m_info = nullptr, *lbl_m_sens = nullptr;   // textos da tela manual
 
 static const char* NOMES_ETAPA_AP[] = {
@@ -176,6 +179,57 @@ static void ui_manual_criar() {
     lbl_m_sens   = novo_label(scr_manual, &lv_font_montserrat_16, COR_FRACO,    16, 364, 780);
 }
 
+static void cb_ir_auto(lv_event_t*) { if (scr_auto) lv_scr_load(scr_auto); }
+
+static void marca_modelo() {
+    for (int i = 0; i < 4; i++)
+        if (btn_modelo[i]) lv_obj_set_style_bg_color(btn_modelo[i], (i + 1 == g_modelo_sel) ? COR_VERDE : COR_CINZA, 0);
+}
+static void cb_modelo(lv_event_t* e) { g_modelo_sel = (uint8_t)(intptr_t)lv_event_get_user_data(e); marca_modelo(); }
+static void cb_auto_iniciar(lv_event_t*)  { enviar(20, 1, g_modelo_sel); }
+static void cb_auto_pausa(lv_event_t*)    { enviar((g_st_ok && g_st.estado_auto == 8) ? 22 : 21, 2); }   // alterna pausar/continuar
+static void cb_auto_cancelar(lv_event_t*) { enviar(23, 3); }
+
+static lv_obj_t* novo_botao_cb(lv_obj_t* pai, const char* texto, lv_color_t cor, int x, int y, int w, int h,
+                               lv_event_cb_t cb, intptr_t dado, lv_obj_t** lbl_out = nullptr) {
+    lv_obj_t* b = lv_btn_create(pai);
+    lv_obj_set_size(b, w, h); lv_obj_set_pos(b, x, y);
+    lv_obj_set_style_bg_color(b, cor, 0);
+    lv_obj_t* l = lv_label_create(b);
+    lv_obj_set_style_text_font(l, &lv_font_montserrat_20, 0);
+    lv_label_set_text(l, texto); lv_obj_center(l);
+    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, (void*)dado);
+    if (lbl_out) *lbl_out = l;
+    return b;
+}
+
+static void ui_auto_criar() {
+    scr_auto = lv_obj_create(nullptr);
+    lv_obj_set_style_bg_color(scr_auto, COR_FUNDO, 0);
+    lv_obj_clear_flag(scr_auto, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Faixa de cima (o canto inferior esquerdo da tela nao responde ao toque)
+    novo_botao(scr_auto, "PARAR TUDO", COR_VERMELHO, 8, 8, 300, 56, cb_parar);
+    lv_obj_t* t = novo_label(scr_auto, &lv_font_montserrat_20, COR_AMARELO, 330, 22, 300);
+    lv_label_set_text(t, "AUTOMATICO");
+    novo_botao(scr_auto, "VOLTAR", COR_AZUL, 640, 8, 150, 56, cb_ir_principal);
+
+    static const char* NM[4] = { "MODELO 1", "MODELO 2", "MODELO 3", "MODELO 4" };
+    for (int i = 0; i < 4; i++)
+        btn_modelo[i] = novo_botao_cb(scr_auto, NM[i], COR_CINZA, 16 + i * 195, 76, 185, 60, cb_modelo, i + 1);
+    marca_modelo();
+
+    novo_botao_cb(scr_auto, "INICIAR AUTOMATICO", COR_VERDE,    16, 148, 380, 90, cb_auto_iniciar, 0);
+    novo_botao_cb(scr_auto, "PAUSAR",             COR_AMARELO, 404, 148, 380, 90, cb_auto_pausa, 0, &lbl_a_pausa);
+    novo_botao_cb(scr_auto, "CANCELAR CICLO",     COR_VERMELHO, 404, 248, 380, 56, cb_auto_cancelar, 0);
+
+    lbl_a_estado = novo_label(scr_auto, &lv_font_montserrat_20, COR_TEXTO,    16, 316, 770);
+    lbl_a_etapa  = novo_label(scr_auto, &lv_font_montserrat_18, COR_FRACO,    16, 346, 770);
+    lbl_a_msg    = novo_label(scr_auto, &lv_font_montserrat_18, COR_VERMELHO, 16, 374, 770);
+    lbl_a_cont   = novo_label(scr_auto, &lv_font_montserrat_16, COR_AMARELO,  16, 402, 780);
+    lbl_a_sens   = novo_label(scr_auto, &lv_font_montserrat_16, COR_FRACO,    16, 426, 780);
+}
+
 static void ui_criar() {
     lv_obj_t* scr = lv_obj_create(nullptr);
     scr_principal = scr;
@@ -184,9 +238,8 @@ static void ui_criar() {
 
     // Barra de cima: botao da BOMBA no canto superior esquerdo + titulo ao lado
     btn_bomba = novo_botao(scr, "BOMBA: OFF (a seco)", COR_CINZA, 8, 8, 320, 56, cb_bomba, &lbl_bomba);
-    lv_obj_t* t = novo_label(scr, &lv_font_montserrat_20, COR_AMARELO, 344, 22, 280);
-    lv_label_set_text(t, "ALTA PRESSAO (bancada)");
-    novo_botao(scr, "MANUAL", COR_AZUL, 640, 8, 150, 56, cb_ir_manual);
+    novo_botao(scr, "AUTOMATICO", COR_VERDE, 340, 8, 210, 56, cb_ir_auto);
+    novo_botao(scr, "MANUAL", COR_AZUL, 560, 8, 230, 56, cb_ir_manual);
 
     lbl_estado = novo_label(scr, &lv_font_montserrat_20, COR_TEXTO,    16, 80,  770);
     lbl_etapa  = novo_label(scr, &lv_font_montserrat_18, COR_FRACO,    16, 118, 770);
@@ -203,6 +256,7 @@ static void ui_criar() {
     novo_botao(scr, "PARAR",         COR_VERMELHO, 484, 352, 300, 100, cb_parar);
 
     ui_manual_criar();
+    ui_auto_criar();
     lv_scr_load(scr);
 }
 
@@ -241,11 +295,63 @@ static void ui_atualizar_manual(bool contato, const MsgTesteStatus& s) {
     lv_label_set_text(lbl_m_sens, buf);
 }
 
+static void ui_atualizar_auto(bool contato, const MsgTesteStatus& s) {
+    char buf[220];
+    if (!g_st_ok || !contato) {
+        lv_label_set_text(lbl_a_estado, "SEM CONTATO COM A WAVESHARE 1 (os botoes nao funcionam)");
+        lv_obj_set_style_text_color(lbl_a_estado, COR_VERMELHO, 0);
+        lv_label_set_text(lbl_a_etapa, ""); lv_label_set_text(lbl_a_msg, "");
+        lv_label_set_text(lbl_a_cont, ""); lv_label_set_text(lbl_a_sens, "");
+        return;
+    }
+    static const char* PROC[11] = { "-", "Pre-lavagem", "Spray", "Espuma A", "Espuma B", "Cor Magica",
+                                    "Cera de agua", "Alta Pressao", "Secagem", "Enxague", "Fim" };
+    lv_color_t cor = COR_TEXTO;
+    switch (s.estado_auto) {
+        case 0: snprintf(buf, sizeof(buf), "Parado. Escolha o modelo e toque INICIAR AUTOMATICO."); cor = COR_FRACO; break;
+        case 1: snprintf(buf, sizeof(buf), "Aguardando carro (X14)...");            cor = COR_AMARELO; break;
+        case 2: snprintf(buf, sizeof(buf), "Carro entrando...");                    cor = COR_AMARELO; break;
+        case 3: snprintf(buf, sizeof(buf), "Aguardando posicao do carro (X15)...");  cor = COR_AMARELO; break;
+        case 4: snprintf(buf, sizeof(buf), "Iniciando ciclo (luz vermelha, confere o HOME)..."); cor = COR_AMARELO; break;
+        case 5: snprintf(buf, sizeof(buf), "EXECUTANDO: %s", s.proc_ativo < 11 ? PROC[s.proc_ativo] : "?"); cor = COR_VERDE; break;
+        case 6: snprintf(buf, sizeof(buf), "Ciclo concluido");                      cor = COR_VERDE; break;
+        case 7: snprintf(buf, sizeof(buf), "ERRO - o ciclo parou");                 cor = COR_VERMELHO; break;
+        case 8: snprintf(buf, sizeof(buf), "PAUSADO");                              cor = COR_AMARELO; break;
+        default: snprintf(buf, sizeof(buf), "estado interno %d", (int)s.estado_auto); cor = COR_AMARELO; break;
+    }
+    lv_label_set_text(lbl_a_estado, buf);
+    lv_obj_set_style_text_color(lbl_a_estado, cor, 0);
+
+    if ((s.estado_auto == 5 || s.estado_auto == 8) && s.proc_ativo == 7 &&
+        s.sub_estado < (sizeof(NOMES_ETAPA_AP) / sizeof(NOMES_ETAPA_AP[0]))) {
+        snprintf(buf, sizeof(buf), "Modelo %d | Etapa: %s   (giro %d/3)", (int)s.programa_sel, NOMES_ETAPA_AP[s.sub_estado], (int)s.giro_n + 1);
+    } else {
+        snprintf(buf, sizeof(buf), "Modelo escolhido: %d  (nesta etapa todos os modelos rodam so a Alta Pressao)", (int)g_modelo_sel);
+    }
+    lv_label_set_text(lbl_a_etapa, buf);
+
+    char msg[56];
+    strncpy(msg, s.msg, sizeof(msg) - 1); msg[sizeof(msg) - 1] = '\0';
+    lv_label_set_text(lbl_a_msg, msg);
+
+    snprintf(buf, sizeof(buf), "Ciclos OK: %u   Erros: %u   Falhas de escrita no inversor: %u   Bomba: %s",
+             (unsigned)s.ciclos_ok, (unsigned)s.ciclos_erro, (unsigned)s.vfd_falhas, s.bomba_on ? "ON" : "OFF (a seco)");
+    lv_label_set_text(lbl_a_cont, buf);
+
+    snprintf(buf, sizeof(buf), "X14:%d X15:%d | X16:%d X17:%d X12:%d | luz verde:%d vermelha:%d",
+             (s.io2_di >> 4) & 1, (s.io2_di >> 5) & 1, (s.io2_di >> 7) & 1, (s.io2_di >> 6) & 1, (s.io2_di >> 2) & 1,
+             (s.w1_do >> 7) & 1, (s.w2_do_real >> 1) & 1);
+    lv_label_set_text(lbl_a_sens, buf);
+
+    lv_label_set_text(lbl_a_pausa, s.estado_auto == 8 ? "CONTINUAR" : "PAUSAR");
+}
+
 static void ui_atualizar() {
     bool contato = g_st_ok && (millis() - g_st_ms) < 2000;
     MsgTesteStatus s = g_st;   // copia local (o callback pode atualizar a qualquer momento)
 
     if (scr_manual && lv_scr_act() == scr_manual) { ui_atualizar_manual(contato, s); return; }
+    if (scr_auto && lv_scr_act() == scr_auto)     { ui_atualizar_auto(contato, s);   return; }
 
     if (!g_st_ok) {
         lv_label_set_text(lbl_estado, "SEM CONTATO COM A WAVESHARE 1 (nunca recebeu status)");

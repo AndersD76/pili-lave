@@ -29,6 +29,12 @@ uint8_t    g_processo_atual_idx = 0;
 static uint32_t t_estado         = 0;
 static uint32_t t_x14_desligou   = 0;
 static bool     x14_estava_ativo = false;
+// CONTINUAR apos pausa: religa bombas/espumas/secador e ESPERA 2 s (restabelece a pressao) antes de
+// retomar o movimento. Espera sem bloquear o loop; PARAR/CANCELAR a interrompem (teste_parar zera).
+#define RETOMAR_PRESSAO_MS 2000
+static bool     _retomando = false;
+static uint32_t _ret_t0    = 0;
+static void auto_retomar_efetivo();
 
 // -----------------------------------------------------------------------
 // Leitura de sensores (nomes X* do CLP original)
@@ -78,6 +84,7 @@ static bool     x14_estava_ativo = false;
 bool     g_teste_bomba   = false;
 bool     g_teste_seco    = true;
 bool     g_teste_rodando = false;
+bool     g_ciclo_auto    = false;   // ciclo AUTOMATICO iniciado pela tela (conta nos ciclos ok/erro)
 uint16_t g_teste_ok      = 0;
 uint16_t g_teste_erro    = 0;
 
@@ -108,7 +115,7 @@ static void auto_erro(const char* msg) {
     g_estado.msg_alarme = msg;
     g_estado.alarme     = true;
     g_estado_auto       = AUTO_ERRO;
-    if (g_teste_rodando) { g_teste_erro++; g_teste_rodando = false; }
+    if (g_teste_rodando || g_ciclo_auto) { g_teste_erro++; g_teste_rodando = false; g_ciclo_auto = false; }
     backend_evt_fault(msg);
     DBG_PRINTF("[AUTO] ERRO: %s\n", msg);
 }
@@ -288,7 +295,7 @@ void auto_tick() {
                 else              nvs_inc_prog_pres(g_estado.programa_sel);
             }
             nvs_inc_prog(g_estado.programa_sel);
-            if (g_teste_rodando) { g_teste_ok++; g_teste_rodando = false; }
+            if (g_teste_rodando || g_ciclo_auto) { g_teste_ok++; g_teste_rodando = false; g_ciclo_auto = false; }
             g_estado.processo_ativo = PROC_NENHUM;
             g_estado.programa_sel   = 0;  // limpa modelo — proximo carro deve escolher
             g_estado_auto           = AUTO_IDLE;
@@ -306,6 +313,11 @@ void auto_tick() {
         }
 
         case AUTO_PAUSADO: {
+            if (_retomando && (agora - _ret_t0) >= RETOMAR_PRESSAO_MS) {   // pressao restabelecida
+                _retomando = false;
+                auto_retomar_efetivo();
+                break;
+            }
             // Reforca a parada periodicamente (garante motor parado mesmo se
             // um comando de stop tiver colidido no barramento).
             static uint32_t t_ps = 0;
@@ -368,6 +380,8 @@ void teste_parar() {
     g_vfd_falhas_seguidas = 0;
     processos_reset();
     g_teste_rodando         = false;
+    g_ciclo_auto            = false;
+    _retomando              = false;
     g_estado.processo_ativo = PROC_NENHUM;
     g_estado.alarme         = false;
     g_estado_auto           = AUTO_IDLE;
@@ -397,22 +411,51 @@ void auto_limpar_erro() {
 static uint8_t  _pausa_mov  = 0;   // movimento que estava rodando ao pausar
 static uint16_t _pausa_freq = 0;
 static uint32_t _pausa_ini  = 0;   // millis() do instante em que pausou
+// Saidas DE PROCESSO ligadas no instante da pausa (a pausa as desliga; CONTINUAR religa na ordem certa).
+// io1: Y1(b0) Y2(b1) Y3(b2) Y5(b4) Y7(b6) | io2: Y10(b0) Y13(b2) Y0(b5). Ficam de fora: luzes (Y11/Y12),
+// Y6 (entrada pneumatica) e os contatores de movimento (Y4/Y14).
+#define PAUSA_MASK_IO1 0x57
+#define PAUSA_MASK_IO2 0x25
+static uint8_t  _pausa_do1 = 0, _pausa_do2 = 0;
 
 void auto_pausar() {
     _pausa_mov  = g_vfd_mov;        // guarda o que estava rodando
     _pausa_freq = g_vfd_mov_freq;
     _pausa_ini  = millis();         // marca o inicio da pausa (p/ deslocar os cronometros ao retomar)
     vfd_stop();                     // para o motor JA
+    // Desliga as bombas/solenoides do processo (antes a pausa so parava o motor e a agua continuava saindo).
+    _pausa_do1 = g_io1.do_ & PAUSA_MASK_IO1;
+    _pausa_do2 = (uint8_t)g_io2.do_ & PAUSA_MASK_IO2;
+    SET_Y7(false);  SET_Y13(false); SET_Y0(false);               // bombas primeiro
+    SET_Y1(false);  SET_Y2(false);  SET_Y3(false); SET_Y10(false); SET_Y5(false);
     g_estado_auto     = AUTO_PAUSADO;
     g_estado.em_pausa = true;
-    DBG_PRINTLN("[AUTO] PAUSADO (motor parado)");
+    DBG_PRINTF("[AUTO] PAUSADO (motor parado; saidas desligadas: io1=0x%02X io2=0x%02X)\n", _pausa_do1, _pausa_do2);
 }
 
+// CONTINUAR: religa as saidas de processo e comeca a espera de pressao. O movimento so retoma depois
+// (auto_retomar_efetivo, chamada pelo auto_tick quando os 2 s passam).
 void auto_retomar() {
-    // desloca TODOS os cronometros dos processos pelo tempo que ficou pausado, pra
-    // o giro/carrinho continuarem como se o tempo nao tivesse passado.
+    if (_retomando) return;
+    // Solenoides ANTES da bomba de espuma (Y7 so liga com um solenoide ativo).
+    if (_pausa_do1 & 0x01) SET_Y1(true);
+    if (_pausa_do1 & 0x02) SET_Y2(true);
+    if (_pausa_do1 & 0x04) SET_Y3(true);
+    if (_pausa_do1 & 0x10) SET_Y5(true);
+    if (_pausa_do2 & 0x01) SET_Y10(true);
+    if (_pausa_do1 & 0x40) SET_Y7(true);
+    if (_pausa_do2 & 0x04) SET_Y13(true);
+    if (_pausa_do2 & 0x20) SET_Y0(true);
+    _retomando = true; _ret_t0 = millis();
+    g_manual_msg = "Restabelecendo a pressao (2 s) antes de retomar..."; g_manual_msg_ms = millis();
+}
+
+static void auto_retomar_efetivo() {
+    // desloca TODOS os cronometros dos processos pelo tempo que ficou pausado (inclui a espera de
+    // pressao), pra o giro/carrinho continuarem como se o tempo nao tivesse passado.
     uint32_t delta = millis() - _pausa_ini;
     processos_shift_timers(delta);
+    _pausa_do1 = 0; _pausa_do2 = 0;
     if (_pausa_mov == 1)      vfd_run_fwd(_pausa_freq);   // re-emite o movimento
     else if (_pausa_mov == 2) vfd_run_rev(_pausa_freq);
     g_estado_auto     = AUTO_PROCESSO;

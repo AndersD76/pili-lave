@@ -243,7 +243,7 @@ void nvs_inc_prog(uint8_t p) { (void)p; }
 // que chama processa_comandos() no topo de cada volta e dentro das esperas longas (HOME,
 // parada do motor). PARAR e uma flag a parte (g_parar_pedido), checada tambem DENTRO das
 // esperas bloqueantes para o motor nao ser religado depois de um PARAR.
-static QueueHandle_t   g_fila_cmd = nullptr;
+static QueueHandle_t   g_fila_cmd = nullptr;   // elementos uint16_t: acao | (arg << 8)
 void processa_comandos();   // definida mais abaixo
 
 // ---- Movimento MANUAL segurando o botao (homem morto) ----
@@ -458,7 +458,7 @@ void    teste_iniciar();        // fwd — definidos em maquina_estados.h
 void    teste_parar();
 typedef struct { uint8_t tipo, como, fh, pulsos; uint16_t dt_ms, x16_ms, x17_ms; } UltGiro;
 extern UltGiro g_ult_giro;   // definido em processos.h
-extern bool     g_teste_bomba, g_teste_rodando;
+extern bool     g_teste_bomba, g_teste_rodando, g_ciclo_auto;
 extern uint16_t g_teste_ok, g_teste_erro;
 
 uint16_t g_loop_max_ms = 0;   // atualizado no loop() (waveshare1.ino); zerado a cada status
@@ -484,6 +484,7 @@ static void status_enviar() {
     s.ug_pulsos = g_ult_giro.pulsos; s.ug_dt_ms = g_ult_giro.dt_ms;
     s.ug_x16_ms = g_ult_giro.x16_ms; s.ug_x17_ms = g_ult_giro.x17_ms;
     s.manual_mov = g_manual_ativo;
+    s.proc_ativo = (uint8_t)g_estado.processo_ativo; s.programa_sel = g_estado.programa_sel;
     s.up_s = millis() / 1000; s.loop_max_ms = g_loop_max_ms; g_loop_max_ms = 0; s.rst_motivo = g_rst_motivo;
     s.w1_do = do_estado1; s.w2_do_cmd = (uint8_t)g_io2.do_; s.w2_do_real = g_w2_do_real;
     s.vfd_mov = g_vfd_mov; s.vfd_mov_freq = g_vfd_mov_freq;
@@ -524,15 +525,16 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* 
         if (m->acao == 2) g_parar_pedido = true;                       // PARAR: prioridade maxima
         else if (m->acao >= 10 && m->acao <= 13) { g_manual_cmd = m->acao; g_manual_ms = millis(); }   // segurando
         else if (m->acao == 14) g_manual_cmd = 0;                       // soltou
-        else if (g_fila_cmd) { uint8_t a = m->acao; xQueueSend(g_fila_cmd, &a, 0); }
+        else if (g_fila_cmd) { uint16_t a = (uint16_t)m->acao | ((uint16_t)m->arg << 8); xQueueSend(g_fila_cmd, &a, 0); }
     }
 }
 
 // Executa o que o display pediu. Chamar SO do loop()/das esperas do loop — nunca do callback.
 void processa_comandos() {
     if (g_parar_pedido) { g_parar_pedido = false; teste_parar(); }
-    uint8_t a;
-    while (g_fila_cmd && xQueueReceive(g_fila_cmd, &a, 0) == pdTRUE) {
+    uint16_t pacote;
+    while (g_fila_cmd && xQueueReceive(g_fila_cmd, &pacote, 0) == pdTRUE) {
+        uint8_t a = (uint8_t)(pacote & 0xFF), arg = (uint8_t)(pacote >> 8);
         switch (a) {
             case 0:                                          // HOME: alterna iniciar/cancelar
                 if (home_rodando()) home_iniciar();         // cancelar sempre pode
@@ -542,6 +544,18 @@ void processa_comandos() {
             case 1: teste_iniciar();       break;
             case 3: g_teste_bomba = false; break;
             case 4: g_teste_bomba = true;  break;
+            // ---- AUTOMATICO (fluxo completo: carro X14 -> posicao X15 -> 6 s -> home -> processo) ----
+            case 20:                                         // iniciar, arg = modelo 1..4
+                if (arg < 1 || arg > 4) { g_manual_msg = "AUTO: modelo invalido"; g_manual_msg_ms = millis(); break; }
+                if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_manual_ativo) {
+                    g_manual_msg = "AUTO bloqueado: maquina ocupada"; g_manual_msg_ms = millis(); break;
+                }
+                g_ciclo_auto = true;
+                auto_iniciar(arg);
+                break;
+            case 21: if (g_estado_auto == AUTO_PROCESSO) auto_pausar();  break;
+            case 22: if (g_estado_auto == AUTO_PAUSADO)  auto_retomar(); break;
+            case 23: teste_parar(); break;                   // cancelar = parada total
         }
     }
 }
@@ -607,7 +621,7 @@ void manual_tick() {
 }
 
 void controle_init() {
-    g_fila_cmd = xQueueCreate(8, sizeof(uint8_t));
+    g_fila_cmd = xQueueCreate(8, sizeof(uint16_t));
     pca_init();
     for (uint8_t i=0;i<8;i++) {
         pinMode(DI_PINS[i], INPUT_PULLUP);

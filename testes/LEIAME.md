@@ -49,6 +49,12 @@ Causa: o SAJ no barramento. Filtro de RS-485 comprado, ainda não instalado.
 W2, envios entregues/falhos, reconciliações), `[HOME]` (estados e sensores), `[MANUAL]` (início/parada
 com motivo), `[GIRO]` (sensores e decisões). Análise: `testes_ruido_rs485/ferramentas/analisar_ciclos.py`.
 
+## Tela AUTOMATICO (validada)
+Fluxo completo: modelo 1..4 -> INICIAR -> luz verde, espera X14 -> X15 -> 6 s (luz vermelha) -> confere
+HOME (X16) -> processo -> concluido. **PAUSAR** para o motor e desliga as saidas de processo (Y13, Y7,
+solenoides, compressor, Y0); **CONTINUAR** religa e espera 2 s para restabelecer a pressao antes de
+retomar o movimento. CANCELAR = parada total. Nesta etapa todos os modelos rodam so a Alta Pressao.
+
 ## Plano
 1. ~~Segurança e estado confiável~~ (feito, acima). Item 2 (homem morto) feito junto com a tela manual.
 2. Display <-> W1: fim de ciclo não perdido, painel físico com toque curto, canal ESP-NOW.
