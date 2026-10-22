@@ -75,6 +75,9 @@ void setup() {
 
     controle_init();   // registra o callback de recepcao + peers (display, W2)
     modbus_init();     // RS-485: sobe o barramento, reseta o inversor
+    giro_cfg_carregar();        // tempo do giro por processo (NVS)
+    lav_carregar();             // planilha de lavagens (NVS)
+    cfg_carregar();             // velocidades, esperas por slot e atrasos (NVS)
     comm_hard_reset_saidas();   // item 5: desliga as saidas locais E manda a W2 desligar as dela (apos um reset da W1 ela
                                 // ficaria com Y13/Y14/solenoides como estavam, sem a W1 saber); o reconciliador corrige se perder
 
@@ -97,6 +100,8 @@ void loop() {
 
     processa_comandos();   // executa o que o display pediu (o callback so enfileira)
     manual_tick();         // movimento manual segurando o botao (homem morto)
+    man_sai_tick();        // saidas manuais: teto de 60 s
+    painel_tick();         // botoes X1..X6 do painel / controle remoto (modelo 1..4, pausar)
 
     static uint32_t t_modbus = 0;
     if (millis() - t_modbus >= 500) { t_modbus = millis(); modbus_tick(); }

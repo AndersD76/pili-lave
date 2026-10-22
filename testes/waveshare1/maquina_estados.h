@@ -63,14 +63,14 @@ static void auto_retomar_efetivo();
 #define SET_Y2(v)  io1_set_do(2, v)   // solenoide Espuma A
 #define SET_Y3(v)  io1_set_do(3, v)   // solenoide Espuma B
 #define SET_Y4(v)  io1_set_do(4, v)   // contator giro braco   (trava Y4<->Y14)
-#define SET_Y5(v)  io1_set_do(5, v)   // compressor secagem
+#define SET_Y5(v)  io1_set_do(5, (v) && g_bomba_ciclo)   // compressor secagem (so com a bomba ON)
 #define SET_Y6(v)  io1_set_do(6, v)   // solenoide entrada pneumatica
-#define SET_Y7(v)  io1_set_do(7, v)   // bomba espuma (cima)
+#define SET_Y7(v)  io1_set_do(7, (v) && g_bomba_ciclo)   // bomba espuma (cima) (so com a bomba ON)
 #define SET_Y11(v) io1_set_do(8, v)   // lampada verde
 //   Waveshare #2 (io2_set_do canal 1-8)
 #define SET_Y10(v) io2_set_do(1, v)   // bomba espuma (baixo)
 #define SET_Y12(v) io2_set_do(2, v)   // luz vermelha
-#define SET_Y13(v) io2_set_do(3, v)   // bomba alta pressao
+#define SET_Y13(v) io2_set_do(3, (v) && g_bomba_ciclo)   // bomba alta pressao (so com a bomba ON)
 #define SET_Y14(v) io2_set_do(4, v)   // contator deslocamento (trava Y4<->Y14)
 //   (DO5 = Y15 BLOQUEADO no firmware da waveshare2 — nao usar)
 #define SET_Y0(v)  io2_set_do(6, v)   // Y0 (DO6 waveshare2) — aciona JUNTO com a Cor Magica
@@ -82,8 +82,12 @@ static void auto_retomar_efetivo();
 //   g_teste_seco  : sempre true aqui = carrinho por TEMPO (sem X10/carro)
 // -----------------------------------------------------------------------
 bool     g_teste_bomba   = false;
+bool     g_bomba_ciclo   = false;   // g_teste_bomba TRAVADO no inicio do ciclo (nao muda no meio dele)
 bool     g_teste_seco    = true;
 bool     g_teste_rodando = false;
+uint8_t  g_ev_seq = 0, g_ev_tipo = 0, g_ev_modelo = 0;   // ultimo evento de fim de ciclo (vai no status pro display)
+uint8_t  g_tipo_prox     = 0;       // tipo do proximo ciclo: 0 presencial, 1 aplicativo, 2 socio, 3 bonus — escolhido na tela
+uint8_t  g_tipo_ciclo    = 0;       // g_tipo_prox TRAVADO no inicio do ciclo
 bool     g_ciclo_auto    = false;   // ciclo AUTOMATICO iniciado pela tela (conta nos ciclos ok/erro)
 uint16_t g_teste_ok      = 0;
 uint16_t g_teste_erro    = 0;
@@ -115,7 +119,7 @@ static void auto_erro(const char* msg) {
     g_estado.msg_alarme = msg;
     g_estado.alarme     = true;
     g_estado_auto       = AUTO_ERRO;
-    if (g_teste_rodando || g_ciclo_auto) { g_teste_erro++; g_teste_rodando = false; g_ciclo_auto = false; }
+    if (g_teste_rodando || g_ciclo_auto) { g_teste_erro++; g_teste_rodando = false; g_ciclo_auto = false; g_ev_tipo = 2; g_ev_modelo = g_estado.programa_sel; g_ev_seq++; }
     backend_evt_fault(msg);
     DBG_PRINTF("[AUTO] ERRO: %s\n", msg);
 }
@@ -173,7 +177,7 @@ void auto_tick() {
             // Y11 (verde) e Y6 (entrada pneumatica) ja foram ligados em auto_iniciar
             if (X14 && !x14_estava_ativo) {
                 x14_estava_ativo = true;
-                if (g_teste_bomba) {      // projeto de testes: so liga a bomba se habilitada
+                if (g_bomba_ciclo) {      // projeto de testes: so liga a bomba se habilitada
                     SET_Y13(true);            // liga bomba alta pressao
                     saj_set_freq(30.0f);      // pedido do operador: 30Hz nesse pulso de entrada (antes nao mandava frequencia nenhuma, ficava com o valor que o SAJ tinha de antes)
                 }
@@ -295,7 +299,8 @@ void auto_tick() {
                 else              nvs_inc_prog_pres(g_estado.programa_sel);
             }
             nvs_inc_prog(g_estado.programa_sel);
-            if (g_teste_rodando || g_ciclo_auto) { g_teste_ok++; g_teste_rodando = false; g_ciclo_auto = false; }
+            if (g_ciclo_auto) { lav_contar_ciclo(g_estado.programa_sel, g_tipo_ciclo); g_tipo_prox = 0; }   // planilha de lavagens (so ciclo automatico concluido); o flag de socio vale p/ UM ciclo
+            if (g_teste_rodando || g_ciclo_auto) { g_teste_ok++; g_teste_rodando = false; g_ciclo_auto = false; g_ev_tipo = 1; g_ev_modelo = g_estado.programa_sel; g_ev_seq++; }
             g_estado.processo_ativo = PROC_NENHUM;
             g_estado.programa_sel   = 0;  // limpa modelo — proximo carro deve escolher
             g_estado_auto           = AUTO_IDLE;
@@ -335,6 +340,8 @@ void auto_iniciar(uint8_t modelo) {
         DBG_PRINTLN("[AUTO] bloqueado por licenca");
         return;
     }
+    g_bomba_ciclo           = g_teste_bomba;   // trava a chave da bomba durante este ciclo
+    g_tipo_ciclo            = g_tipo_prox;     // idem para o TIPO do ciclo (presencial/app/socio/bonus)
     g_estado.programa_sel   = modelo;
     g_estado.modo_auto      = true;
     g_estado.alarme         = false;
@@ -361,6 +368,7 @@ void teste_iniciar() {
         DBG_PRINTF("[TESTE] INICIAR recusado: X16=%d X12=%d (faca o HOME)\n", (int)HOME_GIRO, (int)X12);
         return;
     }
+    g_bomba_ciclo         = g_teste_bomba;   // trava a chave da bomba durante este ciclo
     g_estado.programa_sel = 1;
     g_estado.alarme       = false;
     g_estado.msg_alarme   = "";
@@ -381,6 +389,8 @@ void teste_parar() {
     processos_reset();
     g_teste_rodando         = false;
     g_ciclo_auto            = false;
+    g_tipo_prox             = 0;       // cancelar/parar volta o tipo para presencial
+    man_sai_zera();                    // saidas manuais: desligar_tudo() ja desligou; zera o marcador
     _retomando              = false;
     g_estado.processo_ativo = PROC_NENHUM;
     g_estado.alarme         = false;

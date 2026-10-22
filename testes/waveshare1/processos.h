@@ -70,11 +70,10 @@ bool               g_giro_ativo = false;
 #define VFD_SETTLE_MS         1000  // regra do inversor: parar -> esperar -> comandar (era 500ms — aumentado pra dar mais folga ao tempo real de desaceleracao do motor antes de reverter)
 #define GIRO_X17_CONST_MS     300  // X17 (NIVEL ao vivo) precisa ficar constante por esse tempo pra valer o fim do giro — ignora os pulsos de travessia que davam parada na hora errada
 #define GIRO_HOME_CONST_MS    200  // HOME_GIRO precisa ficar constante por esse tempo — SO nos giros que terminam na posicao 1 (home). Filtra repique de X17 sem o HOME acompanhando.
-#define GIRO_DUR_DEFAULT_MS  7500  // valor inicial do tempo de giro (usado quando a NVS ainda nao tem valor)
 // TEMPORARIO (tuning): tempo de parada do giro, ajustavel AO VIVO pelo botao na tela
 // AUTO e persistido na NVS. No lado 1->2 (pos 2) e a parada principal; no lado 2->1
 // (home) e apenas a REDE DE SEGURANCA (a parada principal la e X17+HOME) — ver giro_tick.
-uint32_t g_giro_dur_ms = GIRO_DUR_DEFAULT_MS;
+static uint32_t _giro_dur_cur = GIRO_DUR_DEFAULT_MS;     // valor travado no INICIO de cada giro
 // TEMPORARIO (tuning): timeout do giro, ajustavel por botao na tela e persistido.
 // No lado 2->1 o timeout dispara o FINE-HOMING (busca por pulsos), NAO erro.
 // No lado 1->2 (posicao 2) o timeout e erro de seguranca (braco travado).
@@ -175,6 +174,7 @@ static void giro_iniciar(bool fwd, uint16_t freq_hz10, bool dest_home) {
         return;
     }
 
+    _giro_dur_cur    = giro_dur_do_proc((uint8_t)g_estado.processo_ativo);   // tempo do processo atual
     _giro_t0         = millis();    // T=0 deste giro — base dos DOIS cronometros independentes
     _giro_fwd        = fwd;
     _giro_freq       = freq_hz10;
@@ -406,10 +406,10 @@ static int giro_tick() {
         }
     } else {
         // ---- lado 1->2 (posicao 2, so X17): para por TEMPO (parada principal).
-        if (dt >= g_giro_dur_ms) {
+        if (dt >= _giro_dur_cur) {
             vfd_stop(); SET_Y4(false);
             g_ult_giro = { 0, 0, 0, 0, _u16(dt), 0, 0 };
-            DBG_PRINTF("[GIRO] 1->2 tempo %ums -> confirmando parada\n", (unsigned)g_giro_dur_ms);
+            DBG_PRINTF("[GIRO] 1->2 tempo %ums -> confirmando parada\n", (unsigned)_giro_dur_cur);
             return giro_parar_e_confirmar(SUB_DONE);
         }
     }
@@ -428,7 +428,7 @@ static int giro_tick() {
     // cheia. Antes a rampa era fixa em 6s e o tempo so mudava o instante do
     // STOP. O giro 2->1 (home) continua com a rampa fixa em 6s.
     uint32_t inicio_rampa = GIRO_INICIO_RAMPA_MS;
-    if (!_giro_dest_home) inicio_rampa = (g_giro_dur_ms > GIRO_DESAC_MS) ? (g_giro_dur_ms - GIRO_DESAC_MS) : 0;
+    if (!_giro_dest_home) inicio_rampa = (_giro_dur_cur > GIRO_DESAC_MS) ? (_giro_dur_cur - GIRO_DESAC_MS) : 0;
     uint32_t dt_rampa = dt;
     if (!_giro_desac && dt_rampa >= inicio_rampa) {
         _giro_desac   = true;
@@ -489,6 +489,21 @@ static inline bool x12_estavel() {
 //   Watchdog: se X0 (indutivo) nao pulsar por 2s -> "CARRO TRAVADO".
 // -----------------------------------------------------------------------
 #define CARRO_WD_MS  4000   // watchdog do X0: se nao pulsar por esse tempo -> CARRO TRAVADO (era 2000)
+// BANCADA (g_teste_seco): sem carro nao existe o X10 (sensor "carro sob a mesa"). Simula o sensor por
+// TEMPO pra a logica REAL do carrinho (rampa, dwell, watchdog do X0) rodar inteira sem ninguem mexer em
+// sensor: no avanco ele "ve o carro" por X10_SIM_FWD_MS e depois perde; no retorno parcial ele volta a
+// aparecer depois de X10_SIM_REV_MS. Com g_teste_seco = false (carro de verdade) le o X10 real.
+#define X10_SIM_FWD_MS 3000   // avanca 3 s com o X10 "visto"; depois a rampa de saida do X10 (como a Alta Pressao)
+#define X10_SIM_REV_MS 1000   // no retorno parcial o X10 "reaparece" apos 1 s
+static uint8_t  _x10sim_modo = 0;      // 1 = avanco, 2 = retorno parcial
+static uint32_t _x10sim_t0   = 0;
+static inline bool x10_efetivo() {
+    if (!g_teste_seco) return X10;
+    if (_x10sim_modo == 1) return (millis() - _x10sim_t0) < X10_SIM_FWD_MS;
+    if (_x10sim_modo == 2) return (millis() - _x10sim_t0) >= X10_SIM_REV_MS;
+    return false;
+}
+
 #define X10_FWD_LOST_MS  150   // no avanco, o X10 precisa ficar em 0 por esse tempo p/ valer "perdeu X10" (anti-fantasma)
 #define CARR_RAMPA_MS       350   // duracao da rampa de desaceleracao (avanco apos X10 e retorno no X12) — era 500ms, padronizado com o HOME
 #define CARR_RAMPA_STEP_MS  100   // recalcula a rampa a cada 100ms (mesmo espirito da rampa do giro)
@@ -535,9 +550,15 @@ static void carr_fwd_iniciar(uint16_t freq_antes_x10, uint16_t freq_apos_x10, ui
     _cf_t_pulso = millis();
     _cf_x0_ant  = X0;
     _cf_t_x10_lost = 0;                   // reinicia o debounce da perda do X10
+    _x10sim_modo = 1; _x10sim_t0 = millis();   // bancada: X10 simulado (avanco)
 }
 
 static int carr_fwd_tick() {
+    if (g_teste_seco && X13) {                // bancada: fim de curso frente — nao deixa o carrinho bater
+        vfd_stop(); SET_Y14(false);
+        DBG_PRINTLN("[CARRINHO] X13 (fim de curso frente) -> avanco encerrado");
+        return SUB_DONE;
+    }
     // REVERTIDO (achado em campo): essa confirmacao usava vfd_lendo_rodando(),
     // leitura BLOQUEANTE (ate 3x ~100ms) dentro do loop de controle — gerou
     // falha falsa num teste real ("INVERSOR NAO CONFIRMOU RUN" no retorno do
@@ -566,7 +587,7 @@ static int carr_fwd_tick() {
                  //           exatamente na posicao esperada (ex.: trocou o carro entre um
                  //           teste e outro e o X10 ja comeca lendo 0, sem o carrinho ter
                  //           avancado de verdade).
-                 if (!X10 && X15) {
+                 if (!x10_efetivo() && X15) {
                      if (_cf_t_x10_lost == 0) _cf_t_x10_lost = millis();          // X10 caiu a 0 agora
                      if (millis() - _cf_t_x10_lost >= X10_FWD_LOST_MS) {          // ficou 0 por 150ms -> perdeu de verdade
                          DBG_PRINTF("[CARRINHO] perdeu X10 -> inicia rampa %.1fHz -> %.1fHz em %ums\n",
@@ -630,7 +651,8 @@ static void carr_rev_x10_iniciar(uint16_t freq_hz10) {
         return;
     }
     _cr_st       = 0;
-    _cr_saiu     = !X10;   // se ja comeca com X10 falso, ok de cara; senao so libera
+    _x10sim_modo = 2; _x10sim_t0 = millis();   // bancada: X10 simulado (retorno parcial)
+    _cr_saiu     = !x10_efetivo();   // se ja comeca com X10 falso, ok de cara; senao so libera
                            // apos ver o carrinho realmente sair da zona (evita
                            // aceitar de primeira uma leitura residual/fantasma)
     _cr_t_x10_on = 0;
@@ -645,6 +667,11 @@ static void carr_rev_x10_iniciar(uint16_t freq_hz10) {
 // duas sub-máquinas parecidas (carr_fwd_tick/carr_rev_x12_tick) já tinham
 // esse watchdog de X0; faltava só nesta.
 static int carr_rev_x10_tick() {
+    if (g_teste_seco && x12_estavel()) {      // bancada: fim de curso de TRAS — nao deixa o carrinho bater
+        vfd_stop(); SET_Y14(false);
+        DBG_PRINTLN("[CARRINHO] X12 (fim de curso tras) no retorno parcial -> encerrado");
+        return SUB_DONE;
+    }
     // REVERTIDO — ver nota em carr_fwd_tick()/giro_tick() (leitura bloqueante
     // causou essa exata mensagem de erro falso num teste real).
     for (uint8_t k = 0; k < 5; k++) {
@@ -657,10 +684,10 @@ static int carr_rev_x10_tick() {
         _cf_msg = "CARRO TRAVADO (retorno X10)";
         return SUB_ERR;
     }
-    if (!X10) { _cr_saiu = true; _cr_t_x10_on = 0; }  // confirma saida + reseta constancia
+    if (!x10_efetivo()) { _cr_saiu = true; _cr_t_x10_on = 0; }  // confirma saida + reseta constancia
     switch (_cr_st) {
         case 0:
-            if (_cr_saiu && X10) {
+            if (_cr_saiu && x10_efetivo()) {
                 if (_cr_t_x10_on == 0) _cr_t_x10_on = millis();    // comecou a ler ativo agora
                 if (millis() - _cr_t_x10_on >= X10_CONST_MS) {     // ficou 300ms constante
                     _cr_st = 1; _cr_t = millis();
@@ -880,7 +907,7 @@ static bool tick_alta_pressao() {
             // if (!braco_em_home()) { auto_erro("braco fora de posicao"); return false; }
             _pst = AP_BOMBA; break;
         case AP_BOMBA:
-            if (g_teste_bomba) {   // projeto de testes: bomba so se habilitada, SAJ fixo em 25Hz
+            if (g_bomba_ciclo) {   // projeto de testes: bomba so se habilitada, SAJ fixo em 25Hz
                 SET_Y13(true);
                 saj_set_freq(TESTE_SAJ_HZ);
             }
@@ -998,6 +1025,15 @@ enum {
 //   fwd_dwell: ms apos perder X10 no FWD (1500 normal, 2500 secagem)
 //   etapa_desl / etapa_giro: indices de velocidade
 //   desliga():  callback pra desligar as saidas no fim
+// Espera configurada para o slot atual do modelo (so em CARRO REAL; 0xFFFF = padrao do processo).
+static uint32_t espera_slot_ms(uint32_t padrao_ms) {
+    if (g_teste_seco || g_teste_rodando) return padrao_ms;
+    uint8_t m = g_estado.programa_sel;
+    if (m < 1 || m > 4 || g_processo_atual_idx >= NUM_SLOTS) return padrao_ms;
+    uint16_t w = g_modelos_espera[m - 1][g_processo_atual_idx];
+    return (w == 0xFFFF) ? padrao_ms : (uint32_t)w * 1000UL;
+}
+
 static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
                           uint8_t etapa_desl, uint8_t etapa_giro,
                           void (*desliga)(), uint32_t liga_wait_ms = 2000,
@@ -1095,7 +1131,7 @@ static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
 static void _off_espa() { SET_Y7(false); SET_Y2(false); }
 static bool tick_espuma_a() {
     if (_pst == SP_HOME) { SET_Y2(true); SET_Y7(true); saj_set_freq(35.0f); }   // solenoide ANTES do Y7 (intertravamento)
-    return _proc_simples(true, 1000, 2, 3, _off_espa, 2000, (uint32_t)g_config.atraso_espuma_a * 1000);
+    return _proc_simples(true, 1000, 2, 3, _off_espa, 2000, espera_slot_ms((uint32_t)g_config.atraso_espuma_a * 1000));
 }
 
 // ---- Espuma B: Y7 + Y3, SEM giro (etapa desl=4) ----
@@ -1104,7 +1140,7 @@ static bool tick_espuma_a() {
 static void _off_espb() { SET_Y7(false); SET_Y3(false); }
 static bool tick_espuma_b() {
     if (_pst == SP_HOME) { SET_Y3(true); SET_Y7(true); saj_set_freq(35.0f); }   // solenoide ANTES do Y7 (intertravamento)
-    return _proc_simples(false, 2000, 4, 5, _off_espb, 2000, (uint32_t)g_config.atraso_espuma_b * 1000);
+    return _proc_simples(false, 2000, 4, 5, _off_espb, 2000, espera_slot_ms((uint32_t)g_config.atraso_espuma_b * 1000));
 }
 
 // ---- Cor Magica: Y1 + Y7, SEM giro (etapa desl=6) ----
@@ -1113,7 +1149,7 @@ static bool tick_espuma_b() {
 static void _off_cm() { SET_Y1(false); SET_Y7(false); SET_Y0(false); }
 static bool tick_cor_magica() {
     if (_pst == SP_HOME) { SET_Y1(true); SET_Y7(true); SET_Y0(true); saj_set_freq(35.0f); }   // Y0 junto com a Cor Magica
-    return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, (uint32_t)g_config.atraso_cor_magica * 1000);
+    return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, espera_slot_ms((uint32_t)g_config.atraso_cor_magica * 1000));
 }
 
 // ---- Cera de agua: Y7 + Y10, SEM giro (usa etapa 0 como default) ----
@@ -1124,7 +1160,7 @@ static void _liga_y0_cera()  { SET_Y0(true); }
 static void _desliga_y0_cera() { SET_Y0(false); }
 static bool tick_cera_agua() {
     if (_pst == SP_HOME) { SET_Y10(true); SET_Y7(true); saj_set_freq(35.0f); }   // solenoide ANTES do Y7 (intertravamento)
-    return _proc_simples(false, 1000, 0, 0, _off_cera, 2000, 2000,
+    return _proc_simples(false, 1000, 0, 0, _off_cera, 2000, espera_slot_ms(2000),
                           _liga_y0_cera, _desliga_y0_cera);
 }
 
@@ -1147,7 +1183,7 @@ static bool tick_secagem() {
         // Y5, no primeiro SP_LIGA_WAIT) — so conta o tempo e sai.
         if (_sec_t_pausa == 0) _sec_t_pausa = millis();
         uint32_t decorrido  = millis() - _sec_t_pausa;
-        uint32_t pausa_ms   = (uint32_t)g_config.atraso_secagem * 1000;
+        uint32_t pausa_ms   = espera_slot_ms((uint32_t)g_config.atraso_secagem * 1000);
         if (decorrido < pausa_ms) return false;        // minimo configurado, sempre
         // Depois dos 10s minimos, so libera quando CONFIRMAR que o motor da
         // bomba parou de verdade (mesmo motor SAJ usado por Enxague/Alta
@@ -1176,7 +1212,12 @@ static bool tick_secagem() {
 // Avanco de processo dentro do modelo selecionado
 // =======================================================================
 void executar_processo_tick() {
-    uint8_t proc = g_modelos[g_estado.programa_sel - 1][g_processo_atual_idx];
+    // "INICIAR TESTE" (principal) roda SO a Alta Pressao; o automatico segue o modelo escolhido.
+    // Modelo fora de 1..4 ou slot alem do fim da lista = fim do ciclo (nunca le fora do array).
+    uint8_t proc;
+    if (g_teste_rodando)                                                        proc = (g_processo_atual_idx == 0) ? PROC_ALTA_PRESSAO : PROC_FIM;
+    else if (g_estado.programa_sel < 1 || g_estado.programa_sel > 4 || g_processo_atual_idx >= NUM_SLOTS) proc = PROC_FIM;
+    else                                                                        proc = g_modelos[g_estado.programa_sel - 1][g_processo_atual_idx];
 
     if (proc == PROC_FIM) {
         g_estado_auto = AUTO_CONCLUIDO;

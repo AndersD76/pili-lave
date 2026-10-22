@@ -98,7 +98,7 @@ void modbus_refresh_io1_di() {
     g_pulso1 = g_lat1;
     g_viv1 = le_entradas_vivo_local();
     g_io1.di = g_viv1 | g_lat1;
-    g_lat1 = 0;
+    g_lat1 &= ~PULSO_W1_MASK;   // so zera os pulsos de X0/X7; os bits do painel (X1..X6) ficam pro painel_tick consumir
     interrupts();
 }
 bool io1_pulso(uint8_t canal) { return (g_pulso1 >> (canal-1)) & 0x01; }
@@ -243,6 +243,11 @@ void nvs_inc_prog(uint8_t p) { (void)p; }
 // que chama processa_comandos() no topo de cada volta e dentro das esperas longas (HOME,
 // parada do motor). PARAR e uma flag a parte (g_parar_pedido), checada tambem DENTRO das
 // esperas bloqueantes para o motor nao ser religado depois de um PARAR.
+typedef struct { uint8_t op, tabela, i1, i2; uint16_t valor; } CfgItem;     // op 0 = gravar, 1 = pedir tabela
+static uint8_t  g_data_dia = 0, g_data_mes = 0;  static uint16_t g_data_ano = 0;   // data de hoje (0 = desconhecida; vem de MSG_TESTE_DATA)
+static uint8_t  g_man_sai = 0;          // saidas MANUAIS ligadas (ver bloco SAIDAS MANUAIS)
+static uint32_t g_man_sai_t0 = 0;
+static QueueHandle_t   g_fila_cfg = nullptr;   // elementos CfgItem (o callback so enfileira; NVS/envio no loop)
 static QueueHandle_t   g_fila_cmd = nullptr;   // elementos uint16_t: acao | (arg << 8)
 void processa_comandos();   // definida mais abaixo
 
@@ -416,6 +421,25 @@ void modbus_tick() {
 }
 void modbus_init() { vfd_rs485_init(); }
 
+// ---- Tempo de giro por processo na NVS (namespace "giro", chaves g0..g2, ms; ausente = padrao) ----
+void giro_cfg_carregar() {
+    Preferences p;
+    if (!p.begin("giro", true)) return;
+    for (int i = 0; i < GIRO_PROC_N; i++) {
+        char k[4] = { 'g', (char)('0' + i), 0, 0 };
+        uint16_t v = p.getUShort(k, 0);
+        if (v >= 3000 && v <= 15000) g_giro_dur_proc[i] = v;
+    }
+    p.end();
+}
+static void giro_cfg_salvar(int i) {
+    Preferences p;
+    if (!p.begin("giro", false)) return;
+    char k[4] = { 'g', (char)('0' + i), 0, 0 };
+    p.putUShort(k, g_giro_dur_proc[i]);
+    p.end();
+}
+
 void comm_hard_reset_saidas() {
     for (uint8_t canal = 0; canal < 8; canal++) {
         escreve_do_local(canal, false);
@@ -458,8 +482,10 @@ void    teste_iniciar();        // fwd — definidos em maquina_estados.h
 void    teste_parar();
 typedef struct { uint8_t tipo, como, fh, pulsos; uint16_t dt_ms, x16_ms, x17_ms; } UltGiro;
 extern UltGiro g_ult_giro;   // definido em processos.h
-extern bool     g_teste_bomba, g_teste_rodando, g_ciclo_auto;
+extern bool     g_teste_bomba, g_teste_seco, g_teste_rodando, g_ciclo_auto;
+extern uint8_t  g_tipo_prox;
 extern uint16_t g_teste_ok, g_teste_erro;
+extern uint8_t  g_ev_seq, g_ev_tipo, g_ev_modelo;
 
 uint16_t g_loop_max_ms = 0;   // atualizado no loop() (waveshare1.ino); zerado a cada status
 uint8_t  g_rst_motivo  = 0;   // preenchido no setup()
@@ -473,7 +499,7 @@ static void status_enviar() {
     s.sub_estado   = (uint8_t)proc_estado();
     s.giro_n       = teste_giro_n();
     s.home_estado  = (uint8_t)home_estado();
-    s.bomba_on     = g_teste_bomba ? 1 : 0;
+    s.bomba_on     = (g_teste_bomba ? 1 : 0) | (g_teste_seco ? 0 : 2);   // bit0 = bomba ON, bit1 = CARRO REAL
     s.rodando      = g_teste_rodando ? 1 : 0;
     s.w2_ok        = ((millis() - g_hb2) <= COMM_TIMEOUT_MS) ? 1 : 0;
     s.io1_di = g_io1.di; s.io2_di = g_io2.di;
@@ -483,7 +509,13 @@ static void status_enviar() {
     s.ug_tipo = g_ult_giro.tipo; s.ug_como = g_ult_giro.como; s.ug_fh = g_ult_giro.fh;
     s.ug_pulsos = g_ult_giro.pulsos; s.ug_dt_ms = g_ult_giro.dt_ms;
     s.ug_x16_ms = g_ult_giro.x16_ms; s.ug_x17_ms = g_ult_giro.x17_ms;
+    s.ev_seq = g_ev_seq; s.ev_tipo = g_ev_tipo; s.ev_modelo = g_ev_modelo;
+    s.tipo_prox = g_tipo_prox;
+    s.man_saidas = g_man_sai;
     s.manual_mov = g_manual_ativo;
+    s.giro_ms[0] = (uint16_t)giro_dur_do_proc(PROC_PRE_LAVAGEM);
+    s.giro_ms[1] = (uint16_t)giro_dur_do_proc(PROC_ESPUMA_A);
+    s.giro_ms[2] = (uint16_t)giro_dur_do_proc(PROC_ALTA_PRESSAO);
     s.proc_ativo = (uint8_t)g_estado.processo_ativo; s.programa_sel = g_estado.programa_sel;
     s.up_s = millis() / 1000; s.loop_max_ms = g_loop_max_ms; g_loop_max_ms = 0; s.rst_motivo = g_rst_motivo;
     s.w1_do = do_estado1; s.w2_do_cmd = (uint8_t)g_io2.do_; s.w2_do_real = g_w2_do_real;
@@ -519,22 +551,216 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* 
     }
 
     // ---- do Display: so o comando do teste (NADA e executado aqui: fila / flag) ----
-    if (cab->origem != ORIGEM_DISPLAY) return;
+    if (cab->origem != ORIGEM_DISPLAY && !(cab->origem == ORIGEM_CAMERA && cab->tipo == MSG_TESTE_DATA)) return;
     if (cab->tipo == MSG_TESTE_CMD && len >= (int)sizeof(MsgTesteCmd)) {
         const MsgTesteCmd* m = (const MsgTesteCmd*)data;
         if (m->acao == 2) g_parar_pedido = true;                       // PARAR: prioridade maxima
         else if (m->acao >= 10 && m->acao <= 13) { g_manual_cmd = m->acao; g_manual_ms = millis(); }   // segurando
         else if (m->acao == 14) g_manual_cmd = 0;                       // soltou
         else if (g_fila_cmd) { uint16_t a = (uint16_t)m->acao | ((uint16_t)m->arg << 8); xQueueSend(g_fila_cmd, &a, 0); }
+    } else if (cab->tipo == MSG_TESTE_DATA && len >= (int)sizeof(MsgTesteData)) {
+        const MsgTesteData* m = (const MsgTesteData*)data;
+        if (m->dia >= 1 && m->dia <= 31 && m->mes >= 1 && m->mes <= 12 && m->ano >= 2024 && m->ano <= 2099) {
+            g_data_dia = m->dia; g_data_mes = m->mes; g_data_ano = m->ano;
+        }
+    } else if (cab->tipo == MSG_TESTE_CFG_SET && len >= (int)sizeof(MsgTesteCfgSet) && g_fila_cfg) {
+        const MsgTesteCfgSet* m = (const MsgTesteCfgSet*)data;
+        CfgItem it = { 0, m->tabela, m->i1, m->i2, m->valor };
+        xQueueSend(g_fila_cfg, &it, 0);
+    } else if (cab->tipo == MSG_TESTE_CFG_REQ && len >= (int)sizeof(MsgTesteCfgReq) && g_fila_cfg) {
+        const MsgTesteCfgReq* m = (const MsgTesteCfgReq*)data;
+        CfgItem it = { 1, m->tabela, m->i1, 0, 0 };
+        xQueueSend(g_fila_cfg, &it, 0);
+    }
+}
+
+// ---- SAIDAS MANUAIS (toggles da tela MANUAL): so com a maquina parada; desligam sozinhas em 60 s ----
+//   bit0 valvula (Y6)  bit1 espuma A (Y2+Y7)  bit2 espuma B (Y3+Y7)  bit3 cor magica (Y1+Y0+Y7)  bit4 secagem (Y5)  bit5 cera (Y10+Y7)
+// A bomba de espuma (Y7) e o compressor (Y5) so ligam com o botao BOMBA em ON (tela TECNICO), igual aos ciclos.
+// A bomba de alta pressao (Y13) NAO e manual aqui: continua so no ciclo/teste.
+#define MAN_SAI_TETO_MS 60000
+void man_sai_zera() { g_man_sai = 0; }
+static void man_sai_aplicar(uint8_t novo) {
+    bool bomba = g_teste_bomba;
+    bool y7 = (novo & 0x2E) && bomba;                  // espuma A/B, cor magica ou cera
+    if (!y7) io1_set_do(7, false);                     // desligando: bomba ANTES dos solenoides
+    io1_set_do(6, (novo & 0x01) != 0);
+    io1_set_do(2, (novo & 0x02) != 0);
+    io1_set_do(3, (novo & 0x04) != 0);
+    io1_set_do(1, (novo & 0x08) != 0);
+    io2_set_do(6, (novo & 0x08) != 0);                 // Y0 junto com a cor magica
+    io2_set_do(1, (novo & 0x20) != 0);
+    io1_set_do(5, (novo & 0x10) != 0 && bomba);
+    if (y7) io1_set_do(7, true);                       // ligando: solenoides ANTES da bomba
+    g_man_sai = novo;
+    DBG_PRINTF("[MANUAL] saidas = 0x%02X (bomba %s)\n", (unsigned)novo, bomba ? "ON" : "OFF");
+}
+static bool man_sai_livre() { return g_estado_auto == AUTO_IDLE && !g_teste_rodando && !home_rodando() && !g_manual_ativo; }
+void man_sai_tick() {
+    if (!g_man_sai) return;
+    if (!man_sai_livre()) { g_man_sai = 0; return; }   // ciclo/HOME/movimento assumiram (eles desligam as saidas no inicio)
+    if (millis() - g_man_sai_t0 > MAN_SAI_TETO_MS) {
+        man_sai_aplicar(0);
+        g_manual_msg = "Saidas manuais desligadas (limite de 60 s)"; g_manual_msg_ms = millis();
+    }
+}
+
+// ---- PLANILHA DE LAVAGENS (na NVS da W1, namespace "lav") ----
+// Por TIPO (0 presencial, 1 aplicativo, 2 socio/mensalista, 3 bonus/promocao) e por modelo, desde o ultimo acerto,
+// + saldo historico de cada tipo + data do ultimo acerto. Ciclos pedidos pelo display/painel contam como o tipo escolhido na
+// tela (padrao presencial). A maquina nao tem relogio: a data de hoje so existe quando a camera mandar MSG_TESTE_DATA.
+static uint16_t g_lav[4][4] = {};                       // [tipo][modelo-1]
+static uint32_t g_lav_saldo[4] = {0, 0, 0, 0};
+static uint8_t  g_acerto_dia = 0, g_acerto_mes = 0; static uint16_t g_acerto_ano = 0;      // data do ultimo acerto
+
+static void lav_salvar() {
+    Preferences p;
+    if (!p.begin("lav", false)) return;
+    p.putBytes("t", g_lav, sizeof(g_lav));
+    p.putBytes("s", g_lav_saldo, sizeof(g_lav_saldo));
+    p.putUShort("ad", (uint16_t)(g_acerto_dia | (g_acerto_mes << 8))); p.putUShort("aa", g_acerto_ano);
+    p.end();
+}
+void lav_carregar() {
+    Preferences p;
+    if (!p.begin("lav", true)) return;
+    if (p.getBytesLength("t") == sizeof(g_lav))         p.getBytes("t", g_lav, sizeof(g_lav));
+    if (p.getBytesLength("s") == sizeof(g_lav_saldo))   p.getBytes("s", g_lav_saldo, sizeof(g_lav_saldo));
+    uint16_t ad = p.getUShort("ad", 0); g_acerto_dia = ad & 0xFF; g_acerto_mes = ad >> 8; g_acerto_ano = p.getUShort("aa", 0);
+    p.end();
+}
+void lav_contar_ciclo(uint8_t modelo, uint8_t tipo) {
+    if (modelo < 1 || modelo > 4 || tipo > 3) return;
+    if (g_lav[tipo][modelo - 1] < 65535) g_lav[tipo][modelo - 1]++;
+    lav_salvar();
+    DBG_PRINTF("[LAV] modelo %u concluido (tipo %u) -> %u\n", (unsigned)modelo, (unsigned)tipo, (unsigned)g_lav[tipo][modelo - 1]);
+}
+// Acerto (pagamento efetuado): soma os contadores ao saldo historico, zera, grava a data de hoje (se conhecida).
+static void lav_acerto() {
+    for (int t = 0; t < 4; t++) for (int m = 0; m < 4; m++) { g_lav_saldo[t] += g_lav[t][m]; g_lav[t][m] = 0; }
+    g_acerto_dia = g_data_dia; g_acerto_mes = g_data_mes; g_acerto_ano = g_data_ano;
+    lav_salvar();
+    DBG_PRINTF("[LAV] ACERTO feito (saldos %lu/%lu/%lu/%lu, data %02u/%02u/%u)\n", (unsigned long)g_lav_saldo[0], (unsigned long)g_lav_saldo[1],
+               (unsigned long)g_lav_saldo[2], (unsigned long)g_lav_saldo[3], (unsigned)g_acerto_dia, (unsigned)g_acerto_mes, (unsigned)g_acerto_ano);
+}
+
+// ---- Configuracao persistente: velocidades (4x14), esperas por slot (4x14), atrasos reais (4), giro (3) ----
+uint16_t g_atraso_real[4] = {60, 15, 60, 10};   // espuma A, espuma B, cor magica, secagem (s) — valem em CARRO REAL
+
+static void atrasos_aplicar() {                  // SECO = tudo zerado; CARRO REAL = os valores configurados
+    g_config.atraso_espuma_a   = g_teste_seco ? 0 : g_atraso_real[0];
+    g_config.atraso_espuma_b   = g_teste_seco ? 0 : g_atraso_real[1];
+    g_config.atraso_cor_magica = g_teste_seco ? 0 : g_atraso_real[2];
+    g_config.atraso_secagem    = g_teste_seco ? 0 : g_atraso_real[3];
+}
+
+// Processos que podem aparecer numa sequencia: pre-lavagem, espumas A/B, cor magica, cera, alta pressao, secagem, enxague, FIM.
+// (Spray nao esta implementado no firmware de testes.)
+static bool seq_proc_valido(uint8_t p) { return p == PROC_PRE_LAVAGEM || p == PROC_ESPUMA_A || p == PROC_ESPUMA_B || p == PROC_COR_MAGICA || p == PROC_CERA_AGUA || p == PROC_ALTA_PRESSAO || p == PROC_SECAGEM || p == PROC_ENXAGUE || p == PROC_FIM; }
+
+void cfg_carregar() {
+    Preferences p;
+    if (!p.begin("cfg", true)) return;
+    uint16_t v[4][NUM_ETAPAS];
+    if (p.getBytesLength("vel") == sizeof(v)) {
+        p.getBytes("vel", v, sizeof(v));
+        for (int m = 0; m < 4; m++) for (int e = 0; e < NUM_ETAPAS; e++) if (v[m][e] >= 50 && v[m][e] <= 600) g_velocidades[m][e] = v[m][e];
+    }
+    uint16_t w[4][NUM_SLOTS];
+    if (p.getBytesLength("esp") == sizeof(w)) {
+        p.getBytes("esp", w, sizeof(w));
+        for (int m = 0; m < 4; m++) for (int s = 0; s < NUM_SLOTS; s++) if (w[m][s] <= 3600 || w[m][s] == 0xFFFF) g_modelos_espera[m][s] = w[m][s];
+    }
+    uint8_t q[4][NUM_SLOTS];
+    if (p.getBytesLength("seq") == sizeof(q)) {
+        p.getBytes("seq", q, sizeof(q));
+        bool ok = true;
+        for (int m = 0; m < 4 && ok; m++) for (int s2 = 0; s2 < NUM_SLOTS; s2++) if (!seq_proc_valido(q[m][s2])) { ok = false; break; }
+        if (ok) memcpy(g_modelos, q, sizeof(q));
+    }
+    uint16_t a[4];
+    if (p.getBytesLength("atr") == sizeof(a)) {
+        p.getBytes("atr", a, sizeof(a));
+        for (int i = 0; i < 4; i++) if (a[i] <= 3600) g_atraso_real[i] = a[i];
+    }
+    p.end();
+    atrasos_aplicar();
+}
+
+static void cfg_salvar(uint8_t tabela) {
+    Preferences p;
+    if (!p.begin("cfg", false)) return;
+    if (tabela == 0) p.putBytes("vel", g_velocidades, sizeof(g_velocidades));
+    if (tabela == 4) p.putBytes("seq", g_modelos, sizeof(g_modelos));
+    if (tabela == 1) p.putBytes("esp", g_modelos_espera, sizeof(g_modelos_espera));
+    if (tabela == 2) p.putBytes("atr", g_atraso_real, sizeof(g_atraso_real));
+    p.end();
+}
+
+static bool cfg_gravar(const CfgItem& it) {
+    if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_manual_ativo) {
+        g_manual_msg = "Configuracao so com a maquina parada"; g_manual_msg_ms = millis(); return false;
+    }
+    switch (it.tabela) {
+        case 0:
+            if (it.i1 > 3 || it.i2 >= NUM_ETAPAS || it.valor < 50 || it.valor > 600) return false;
+            g_velocidades[it.i1][it.i2] = it.valor; break;
+        case 4:                                              // sequencia de processos do modelo (slot -> id do processo)
+            if (it.i1 > 3 || it.i2 >= NUM_SLOTS || it.valor > 255 || !seq_proc_valido((uint8_t)it.valor)) return false;
+            g_modelos[it.i1][it.i2] = (uint8_t)it.valor; break;
+        case 1:
+            if (it.i1 > 3 || it.i2 >= NUM_SLOTS || !(it.valor <= 3600 || it.valor == 0xFFFF)) return false;
+            g_modelos_espera[it.i1][it.i2] = it.valor; break;
+        case 2:
+            if (it.i1 > 3 || it.valor > 3600) return false;
+            g_atraso_real[it.i1] = it.valor; atrasos_aplicar(); break;
+        case 3:
+            if (it.i1 >= GIRO_PROC_N || !(it.valor == 0 || (it.valor >= 3000 && it.valor <= 15000))) return false;
+            g_giro_dur_proc[it.i1] = it.valor; giro_cfg_salvar(it.i1); return true;
+        default: return false;
+    }
+    cfg_salvar(it.tabela);
+    DBG_PRINTF("[CFG] tabela %u [%u][%u] = %u (salvo)\n", (unsigned)it.tabela, (unsigned)it.i1, (unsigned)it.i2, (unsigned)it.valor);
+    return true;
+}
+
+static void cfg_enviar_tabela(uint8_t tabela, uint8_t i1) {
+    MsgTesteCfgDump d = {};
+    d.cab.tipo = MSG_TESTE_CFG_DUMP; d.cab.id_maquina = ID_MAQUINA; d.cab.origem = ORIGEM_WAVE1; d.cab.seq = g_ws_seq++;
+    d.tabela = tabela; d.i1 = i1;
+    if (tabela == 0 && i1 <= 3)      for (int e = 0; e < NUM_ETAPAS; e++) d.v[e] = g_velocidades[i1][e];
+    else if (tabela == 1 && i1 <= 3) for (int s = 0; s < NUM_SLOTS; s++)  d.v[s] = g_modelos_espera[i1][s];
+    else if (tabela == 5 && i1 == 0) {
+        for (int m = 0; m < 4; m++) { d.v[m] = g_lav[0][m]; d.v[4 + m] = g_lav[1][m]; d.v[8 + m] = g_lav[2][m]; }
+        d.v[12] = (uint16_t)(g_acerto_dia | (g_acerto_mes << 8)); d.v[13] = g_acerto_ano;
+    }
+    else if (tabela == 5 && i1 == 1) {
+        for (int m = 0; m < 4; m++) d.v[m] = g_lav[3][m];
+        for (int t = 0; t < 4; t++) { d.v[4 + 2 * t] = (uint16_t)(g_lav_saldo[t] & 0xFFFF); d.v[5 + 2 * t] = (uint16_t)(g_lav_saldo[t] >> 16); }
+    }
+    else if (tabela == 4 && i1 <= 3) for (int s = 0; s < NUM_SLOTS; s++)  d.v[s] = g_modelos[i1][s];   // so leitura: ids dos processos
+    else if (tabela == 2)            for (int i = 0; i < 4; i++)           d.v[i] = g_atraso_real[i];
+    else if (tabela == 3)            { d.v[0] = (uint16_t)giro_dur_do_proc(PROC_PRE_LAVAGEM); d.v[1] = (uint16_t)giro_dur_do_proc(PROC_ESPUMA_A); d.v[2] = (uint16_t)giro_dur_do_proc(PROC_ALTA_PRESSAO); }
+    else return;
+    esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&d, sizeof(d));
+}
+
+static void cfg_processa() {
+    CfgItem it;
+    while (g_fila_cfg && xQueueReceive(g_fila_cfg, &it, 0) == pdTRUE) {
+        if (it.op == 0) cfg_gravar(it);
+        else            cfg_enviar_tabela(it.tabela, it.i1);
     }
 }
 
 // Executa o que o display pediu. Chamar SO do loop()/das esperas do loop — nunca do callback.
 void processa_comandos() {
     if (g_parar_pedido) { g_parar_pedido = false; teste_parar(); }
+    cfg_processa();
     uint16_t pacote;
     while (g_fila_cmd && xQueueReceive(g_fila_cmd, &pacote, 0) == pdTRUE) {
         uint8_t a = (uint8_t)(pacote & 0xFF), arg = (uint8_t)(pacote >> 8);
+        if (g_man_sai && (a == 0 || a == 1 || a == 20)) man_sai_aplicar(0);   // HOME/teste/automatico: desliga as saidas manuais antes
         switch (a) {
             case 0:                                          // HOME: alterna iniciar/cancelar
                 if (home_rodando()) home_iniciar();         // cancelar sempre pode
@@ -542,11 +768,43 @@ void processa_comandos() {
                 else { g_manual_msg = "HOME bloqueado: ciclo ou manual em andamento"; g_manual_msg_ms = millis(); }
                 break;
             case 1: teste_iniciar();       break;
+            case 5: case 6:                                  // 5 = CARRO REAL (X10 real + atrasos originais) / 6 = SECO (simulado)
+                if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_manual_ativo) {
+                    g_manual_msg = "Troca SECO/CARRO REAL so com a maquina parada"; g_manual_msg_ms = millis(); break;
+                }
+                g_teste_seco = (a == 6);
+                atrasos_aplicar();                           // SECO = zerados; CARRO REAL = os atrasos configurados (padrao 60/15/60/10 s)
+                DBG_PRINTF("[TESTE] modo %s\n", g_teste_seco ? "SECO (X10 simulado)" : "CARRO REAL (X10 real)");
+                break;
+            case 40: case 41: case 42:                       // tempo do giro 1->2 por processo; arg = ms/100 (absoluto: repetir e seguro)
+                if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_manual_ativo) {
+                    g_manual_msg = "Ajuste do giro so com a maquina parada"; g_manual_msg_ms = millis(); break;
+                }
+                if (arg < 30 || arg > 150) break;            // 3,0 s a 15,0 s
+                g_giro_dur_proc[a - 40] = (uint16_t)arg * 100;
+                giro_cfg_salvar(a - 40);
+                DBG_PRINTF("[GIRO] tempo do processo %d = %u ms (salvo)\n", (int)(a - 40), (unsigned)g_giro_dur_proc[a - 40]);
+                break;
+            case 60: case 61: case 62: case 63: case 64: case 65: {   // saida manual (arg 1 liga / 0 desliga)
+                if (!man_sai_livre()) { g_manual_msg = "Saidas manuais so com a maquina parada"; g_manual_msg_ms = millis(); break; }
+                uint8_t bit = (uint8_t)(1u << (a - 60));
+                uint8_t novo = arg ? (uint8_t)(g_man_sai | bit) : (uint8_t)(g_man_sai & ~bit);
+                if (arg) g_man_sai_t0 = millis();
+                man_sai_aplicar(novo);
+                break; }
+            case 7: if (arg <= 3) g_tipo_prox = arg; break;  // tipo do proximo ciclo (0 presencial, 1 aplicativo, 2 socio, 3 bonus)
+            case 9:                                          // ACERTO (pagamento efetuado)
+                if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_manual_ativo) {
+                    g_manual_msg = "Acerto so com a maquina parada"; g_manual_msg_ms = millis(); break;
+                }
+                lav_acerto();
+                break;
             case 3: g_teste_bomba = false; break;
             case 4: g_teste_bomba = true;  break;
             // ---- AUTOMATICO (fluxo completo: carro X14 -> posicao X15 -> 6 s -> home -> processo) ----
             case 20:                                         // iniciar, arg = modelo 1..4
                 if (arg < 1 || arg > 4) { g_manual_msg = "AUTO: modelo invalido"; g_manual_msg_ms = millis(); break; }
+                if (g_estado_auto == AUTO_ERRO) teste_parar();   // INICIAR depois de um erro: limpa o erro e recomeca
                 if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_manual_ativo) {
                     g_manual_msg = "AUTO bloqueado: maquina ocupada"; g_manual_msg_ms = millis(); break;
                 }
@@ -557,6 +815,46 @@ void processa_comandos() {
             case 22: if (g_estado_auto == AUTO_PAUSADO)  auto_retomar(); break;
             case 23: teste_parar(); break;                   // cancelar = parada total
         }
+    }
+}
+
+// ---- PAINEL FISICO / CONTROLE REMOTO (X1..X6 da W1; o controle remoto e o app usam as mesmas entradas) ----
+//   X1 (DI2) = modelo 1   X2 (DI3) = modelo 2   X5 (DI6) = modelo 3   X6 (DI7) = modelo 4   (pulso curto)
+//   X4 (DI5) = pausar / continuar (precisa ficar acionado 300 ms; trava de 3 s entre acionamentos)
+//   X3 (DI4) = manual/automatico: sem funcao aqui (a maquina ja vive no automatico)
+// Um modelo pedido por aqui ARMA o ciclo (luz verde, espera o carro no X14) sem precisar abrir a tela AUTOMATICO.
+// Pode trocar de modelo enquanto o carro nao entrou (IDLE ou AGUARDA_CARRO).
+#define PAINEL_MASK 0x7E
+void painel_tick() {
+    uint8_t lat;
+    noInterrupts(); lat = g_lat1 & PAINEL_MASK; g_lat1 &= ~PAINEL_MASK; interrupts();
+    uint32_t agora = millis();
+
+    static uint32_t t_modelo = 0, t_x4_baixo = 0, t_x4_acao = 0;
+    static bool x4_armado = true;
+
+    // ---- X4: pausar / continuar (nivel, nao pulso) ----
+    if ((le_entradas_vivo_local() >> 4) & 1) {
+        if (!t_x4_baixo) t_x4_baixo = agora ? agora : 1;
+        else if (x4_armado && agora - t_x4_baixo >= 300 && (!t_x4_acao || agora - t_x4_acao >= 3000)) {
+            x4_armado = false; t_x4_acao = agora;
+            if (g_estado_auto == AUTO_PROCESSO)     { DBG_PRINTLN("[PAINEL] X4 -> PAUSAR");    auto_pausar(); }
+            else if (g_estado_auto == AUTO_PAUSADO) { DBG_PRINTLN("[PAINEL] X4 -> CONTINUAR"); auto_retomar(); }
+        }
+    } else { t_x4_baixo = 0; x4_armado = true; }
+
+    // ---- X1/X2/X5/X6: escolhe o modelo ----
+    uint8_t modelo = (lat & 0x02) ? 1 : (lat & 0x04) ? 2 : (lat & 0x20) ? 3 : (lat & 0x40) ? 4 : 0;
+    if (!modelo) return;
+    if (t_modelo && agora - t_modelo < 1500) return;          // trava anti-repique/ruido
+    t_modelo = agora ? agora : 1;
+    if ((g_estado_auto == AUTO_IDLE || g_estado_auto == AUTO_AGUARDA_CARRO) && !g_teste_rodando && !home_rodando() && !g_manual_ativo) {
+        if (g_man_sai) man_sai_aplicar(0);
+        DBG_PRINTF("[PAINEL] modelo %u pedido -> AUTO armado\n", (unsigned)modelo);
+        g_ciclo_auto = true;
+        auto_iniciar(modelo);
+    } else {
+        DBG_PRINTF("[PAINEL] modelo %u ignorado (estado=%d)\n", (unsigned)modelo, (int)g_estado_auto);
     }
 }
 
@@ -622,6 +920,7 @@ void manual_tick() {
 
 void controle_init() {
     g_fila_cmd = xQueueCreate(8, sizeof(uint16_t));
+    g_fila_cfg = xQueueCreate(8, sizeof(CfgItem));
     pca_init();
     for (uint8_t i=0;i<8;i++) {
         pinMode(DI_PINS[i], INPUT_PULLUP);

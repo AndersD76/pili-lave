@@ -42,6 +42,9 @@ void saj_set_freq(float freq_hz) {
 }
 
 bool saj_lendo_parado() {
+#if !TESTE_SAJ_POR_RS485
+    return true;   // SAJ fora do RS-485 (frequencia fixa): nao ha o que ler — considera parado
+#endif
     for (uint8_t i = 0; i < 3; i++) {
         uint16_t s[1];
         if (mb_read_regs(MB_ADDR_SAJ, SAJ_REG_FREQ_OUT, 1, s)) {

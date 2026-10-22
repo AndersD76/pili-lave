@@ -13,8 +13,10 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
+#include <Preferences.h>
 #include "lvgl_v8_port.h"
 #include "protocolo_teste.h"
+#include "logo_pili.h"   // logo Pili (220x86, RGB565, fundo preto) — a mesma do display de producao
 
 using namespace esp_panel::drivers;
 using namespace esp_panel::board;
@@ -35,13 +37,25 @@ static volatile uint32_t g_st_ms = 0;
 static volatile bool     g_st_ok = false;
 static uint8_t           g_seq = 0;
 
+// Cache da configuracao da W1: [tabela 0..4][modelo (ou 0)][14 valores]
+static uint16_t g_cfg[6][4][14];
+static bool     g_cfg_ok[6][4];
+
 static void on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
-    if (len < (int)sizeof(MsgTesteStatus)) return;
+    if (len < (int)sizeof(CabEspNow)) return;
     const CabEspNow* c = (const CabEspNow*)data;
-    if (c->id_maquina != ID_MAQUINA || c->origem != ORIGEM_WAVE1 || c->tipo != MSG_TESTE_STATUS) return;
-    memcpy(&g_st, data, sizeof(g_st));
-    g_st_ms = millis();
-    g_st_ok = true;
+    if (c->id_maquina != ID_MAQUINA || c->origem != ORIGEM_WAVE1) return;
+    if (c->tipo == MSG_TESTE_STATUS && len >= (int)sizeof(MsgTesteStatus)) {
+        memcpy(&g_st, data, sizeof(g_st));
+        g_st_ms = millis();
+        g_st_ok = true;
+    } else if (c->tipo == MSG_TESTE_CFG_DUMP && len >= (int)sizeof(MsgTesteCfgDump)) {
+        const MsgTesteCfgDump* d = (const MsgTesteCfgDump*)data;
+        if (d->tabela <= 5 && d->i1 < 4) {
+            memcpy(g_cfg[d->tabela][d->i1], d->v, sizeof(d->v));
+            g_cfg_ok[d->tabela][d->i1] = true;
+        }
+    }
 }
 
 // Sem confirmacao no ESP-NOW: comandos criticos (PARAR) saem repetidos.
@@ -54,6 +68,20 @@ static void enviar(uint8_t acao, uint8_t repeticoes = 1, uint8_t arg = 0) {
         esp_now_send((uint8_t*)MAC_WAVE1, (uint8_t*)&m, sizeof(m));
         if (i + 1 < repeticoes) delay(25);
     }
+}
+
+static void cfg_pedir(uint8_t tabela, uint8_t i1) {
+    MsgTesteCfgReq r;
+    r.cab.tipo = MSG_TESTE_CFG_REQ; r.cab.id_maquina = ID_MAQUINA; r.cab.origem = ORIGEM_DISPLAY; r.cab.seq = g_seq++;
+    r.tabela = tabela; r.i1 = i1;
+    esp_now_send((uint8_t*)MAC_WAVE1, (uint8_t*)&r, sizeof(r));
+}
+// Valor ABSOLUTO (repetir e seguro). Sai 2x porque o ESP-NOW broadcast/unicast nao tem confirmacao aqui.
+static void cfg_set(uint8_t tabela, uint8_t i1, uint8_t i2, uint16_t valor) {
+    MsgTesteCfgSet m;
+    m.cab.tipo = MSG_TESTE_CFG_SET; m.cab.id_maquina = ID_MAQUINA; m.cab.origem = ORIGEM_DISPLAY; m.cab.seq = g_seq++;
+    m.tabela = tabela; m.i1 = i1; m.i2 = i2; m.valor = valor;
+    for (int k = 0; k < 2; k++) { esp_now_send((uint8_t*)MAC_WAVE1, (uint8_t*)&m, sizeof(m)); if (k == 0) delay(25); }
 }
 
 static void radio_init() {
@@ -121,15 +149,18 @@ static lv_obj_t* novo_botao(lv_obj_t* pai, const char* texto, lv_color_t cor, in
     return b;
 }
 
+static char     g_aviso[64] = "";          // aviso temporario mostrado na tela AUTOMATICO (ex.: CONFIG bloqueado)
+static uint32_t g_aviso_ms = 0;
 static void cb_home(lv_event_t*)    { enviar(0); }
 static void cb_iniciar(lv_event_t*) { enviar(1); }
 static void cb_parar(lv_event_t*)   { enviar(2, 3); }
 static void cb_bomba(lv_event_t*)   {
-    bool ligada = g_st_ok && g_st.bomba_on;
+    bool ligada = g_st_ok && (g_st.bomba_on & 1);
     enviar(ligada ? 3 : 4, 2);   // alterna (a fonte da verdade e a W1, no status)
 }
 
 static void cb_ir_manual(lv_event_t*)    { if (scr_manual) lv_scr_load(scr_manual); }
+static void cb_manual_para_auto(lv_event_t*) { enviar(14, 3); if (scr_auto) lv_scr_load(scr_auto); }   // sai do manual: solta qualquer movimento
 static void cb_ir_principal(lv_event_t*) { enviar(14, 3); if (scr_principal) lv_scr_load(scr_principal); }
 
 // Botao de SEGURAR: manda o comando ao tocar e repete a cada ~150 ms enquanto pressionado (e o sinal de
@@ -164,19 +195,20 @@ static void ui_manual_criar() {
 
     // Faixa de CIMA: o canto inferior esquerdo da tela nao responde ao toque (defeito do painel),
     // entao PARAR TUDO e VOLTAR ficam aqui em cima, onde funciona.
-    novo_botao(scr_manual, "PARAR TUDO", COR_VERMELHO, 8, 8, 300, 56, cb_parar);
-    lv_obj_t* t = novo_label(scr_manual, &lv_font_montserrat_20, COR_AMARELO, 330, 22, 300);
+    novo_botao(scr_manual, "PARAR TUDO", COR_VERMELHO, 8, 8, 230, 56, cb_parar);
+    novo_botao(scr_manual, "HOME", COR_AZUL, 246, 8, 130, 56, cb_home);
+    lv_obj_t* t = novo_label(scr_manual, &lv_font_montserrat_20, COR_AMARELO, 396, 22, 220);
     lv_label_set_text(t, "MANUAL (segure)");
-    novo_botao(scr_manual, "VOLTAR", COR_AZUL, 640, 8, 150, 56, cb_ir_principal);
+    novo_botao(scr_manual, "AUTOMATICO", COR_VERDE, 620, 8, 172, 56, cb_manual_para_auto);
 
-    novo_botao_hold(scr_manual, "GIRO  <  (anti-horario)", COR_AZUL,  16,  76, 380, 100, 11);
-    novo_botao_hold(scr_manual, "GIRO  >  (horario)",      COR_AZUL,  404, 76, 380, 100, 10);
-    novo_botao_hold(scr_manual, "CARRINHO  TRAS",          COR_CINZA, 16,  186, 380, 100, 13);
-    novo_botao_hold(scr_manual, "CARRINHO  FRENTE",        COR_CINZA, 404, 186, 380, 100, 12);
+    novo_botao_hold(scr_manual, "GIRO  <  (anti-horario)", COR_AZUL,  16,  76, 380, 90, 11);
+    novo_botao_hold(scr_manual, "GIRO  >  (horario)",      COR_AZUL,  404, 76, 380, 90, 10);
+    novo_botao_hold(scr_manual, "CARRINHO  TRAS",          COR_CINZA, 16,  176, 380, 90, 13);
+    novo_botao_hold(scr_manual, "CARRINHO  FRENTE",        COR_CINZA, 404, 176, 380, 90, 12);
 
-    lbl_m_estado = novo_label(scr_manual, &lv_font_montserrat_20, COR_TEXTO,    16, 300, 770);
-    lbl_m_info   = novo_label(scr_manual, &lv_font_montserrat_18, COR_VERMELHO, 16, 332, 770);
-    lbl_m_sens   = novo_label(scr_manual, &lv_font_montserrat_16, COR_FRACO,    16, 364, 780);
+    lbl_m_estado = novo_label(scr_manual, &lv_font_montserrat_20, COR_TEXTO,    16, 392, 770);
+    lbl_m_info   = novo_label(scr_manual, &lv_font_montserrat_18, COR_VERMELHO, 16, 418, 770);
+    lbl_m_sens   = novo_label(scr_manual, &lv_font_montserrat_16, COR_FRACO,    16, 446, 780);
 }
 
 static void cb_ir_auto(lv_event_t*) { if (scr_auto) lv_scr_load(scr_auto); }
@@ -189,6 +221,8 @@ static void cb_modelo(lv_event_t* e) { g_modelo_sel = (uint8_t)(intptr_t)lv_even
 static void cb_auto_iniciar(lv_event_t*)  { enviar(20, 1, g_modelo_sel); }
 static void cb_auto_pausa(lv_event_t*)    { enviar((g_st_ok && g_st.estado_auto == 8) ? 22 : 21, 2); }   // alterna pausar/continuar
 static void cb_auto_cancelar(lv_event_t*) { enviar(23, 3); }
+static lv_obj_t* lbl_t_carro; static lv_obj_t* btn_t_carro;
+static void cb_carro(lv_event_t*) { enviar((g_st_ok && (g_st.bomba_on & 2)) ? 6 : 5, 2); }   // alterna SECO / CARRO REAL
 
 static lv_obj_t* novo_botao_cb(lv_obj_t* pai, const char* texto, lv_color_t cor, int x, int y, int w, int h,
                                lv_event_cb_t cb, intptr_t dado, lv_obj_t** lbl_out = nullptr) {
@@ -203,40 +237,405 @@ static lv_obj_t* novo_botao_cb(lv_obj_t* pai, const char* texto, lv_color_t cor,
     return b;
 }
 
+// ---- CONFIGURACAO: hub + editor generico (velocidades, esperas dos modelos, atrasos, tempo do giro) ----
+// Os valores moram na W1 (NVS). O display pede a tabela, mostra, e manda o valor ABSOLUTO a cada toque.
+static lv_obj_t *scr_hub = nullptr, *scr_ed = nullptr;
+static lv_obj_t *lbl_ed_titulo, *lbl_ed_msg, *btn_ed_mod[4];
+static lv_obj_t *ed_nome[14], *ed_val[14], *ed_bm[14], *ed_bp[14];
+static uint8_t   ed_slot[14];      // indice real (etapa / slot / item) de cada linha visivel
+static uint8_t   ed_n = 0;
+static uint8_t   g_ed_tab = 0, g_ed_mod = 0;
+static uint32_t  g_cfg_req_ms = 0, g_ed_refetch_ms = 0;
+
+static const char* NOMES_ETAPA_V[11] = { "Pre-lavagem", "Spray agua", "Espuma A desloc.", "Espuma A giro", "Espuma B desloc.",
+    "Espuma B giro", "Cor Magica desloc.", "Cor Magica giro", "Alta pressao", "Secagem", "Retorno" };
+static const char* NOME_PROC_C[11] = { "-", "Pre-lavagem", "Spray", "Espuma A", "Espuma B", "Cor Magica", "Cera d'agua", "Alta Pressao",
+    "Secagem", "Enxague", "Fim" };
+static const char* NOMES_ATRASO[4] = { "Espuma A: espera depois", "Espuma B: espera depois", "Cor Magica: espera depois", "Secagem: pausa antes" };
+static const char* NOMES_GIRO[3]   = { "Pre-lavagem", "Espuma A", "Alta Pressao" };
+static const char* TITULO_ED[5]    = { "VELOCIDADES (Hz)", "ESPERAS DOS MODELOS", "ATRASOS EM CARRO REAL", "TEMPO DO GIRO 1->2", "SEQUENCIA DOS MODELOS" };
+#define ED_COM_MODELO (g_ed_tab <= 1 || g_ed_tab == 4)      // abas que dependem do modelo escolhido
+static const uint8_t SEQ_ORDEM[9] = { 10, 1, 3, 4, 5, 6, 7, 8, 9 };   // ciclo do botao +/-: FIM, pre-lavagem, espuma A/B, cor magica, cera, alta pressao, secagem, enxague
+static const char* NOME_SEQ[11] = { "-", "Pre-lavagem", "Spray", "Espuma A", "Espuma B", "Cor Magica", "Cera d'agua", "Alta Pressao", "Secagem", "Enxague", "(fim)" };
+
+static void ed_pedir() {
+    uint8_t m = (ED_COM_MODELO) ? g_ed_mod : 0;
+    if (g_ed_tab == 1) cfg_pedir(4, m);
+    cfg_pedir(g_ed_tab, m);
+    g_cfg_req_ms = millis();
+}
+static void cb_ir_hub(lv_event_t*)    { if (scr_hub) lv_scr_load(scr_hub); }
+static void cb_hub_volta(lv_event_t*) { if (scr_auto) lv_scr_load(scr_auto); }
+static void cb_hub_abre(lv_event_t* e) {
+    g_ed_tab = (uint8_t)(intptr_t)lv_event_get_user_data(e);
+    if (scr_ed) lv_scr_load(scr_ed);
+    ed_pedir();
+}
+static void cb_ed_modelo(lv_event_t* e) { g_ed_mod = (uint8_t)(intptr_t)lv_event_get_user_data(e); ed_pedir(); }
+
+static int ed_clamp(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
+static void cb_ed_ajusta(lv_event_t* e) {
+    int ud = (int)(intptr_t)lv_event_get_user_data(e);
+    int r = ud / 2; bool mais = (ud % 2) != 0;
+    if (r >= ed_n || !g_st_ok) return;
+    uint8_t i = ed_slot[r], m = (ED_COM_MODELO) ? g_ed_mod : 0;
+    uint16_t cur = g_cfg[g_ed_tab][m][i], nv = cur;
+    switch (g_ed_tab) {
+        case 0: nv = (uint16_t)ed_clamp((int)cur + (mais ? 5 : -5), 50, 600); break;                     // 0,5 Hz
+        case 1:                                                                                          // 5 s; 0xFFFF = padrao
+            if (cur == 0xFFFF)          nv = mais ? 0 : 0xFFFF;
+            else if (cur == 0 && !mais) nv = 0xFFFF;
+            else                        nv = (uint16_t)ed_clamp((int)cur + (mais ? 5 : -5), 0, 3600);
+            break;
+        case 2: nv = (uint16_t)ed_clamp((int)cur + (mais ? 5 : -5), 0, 3600); break;                     // 5 s
+        case 3: nv = (uint16_t)ed_clamp((int)cur + (mais ? 100 : -100), 3000, 15000); break;             // 0,1 s
+        case 4: {                                                                                        // proximo/anterior processo da lista
+            int pos = 0; for (int q = 0; q < 9; q++) if (SEQ_ORDEM[q] == cur) { pos = q; break; }
+            nv = SEQ_ORDEM[ed_clamp(pos + (mais ? 1 : -1), 0, 8)]; break; }
+    }
+    g_cfg[g_ed_tab][m][i] = nv;
+    cfg_set(g_ed_tab, (ED_COM_MODELO) ? m : i, (ED_COM_MODELO) ? i : 0, nv);
+    g_ed_refetch_ms = millis() + 500;     // confere com o que a W1 realmente gravou
+}
+
+static lv_obj_t* scr_alt = nullptr;
+static void cb_hub_senhas(lv_event_t*) { if (scr_alt) lv_scr_load(scr_alt); }
+static void cb_hub_volta_cfg(lv_event_t*) { if (scr_hub) lv_scr_load(scr_hub); }
+
+static void ui_cfg_criar() {
+    // ---- hub ----
+    scr_hub = lv_obj_create(nullptr);
+    lv_obj_set_style_bg_color(scr_hub, COR_FUNDO, 0);
+    lv_obj_clear_flag(scr_hub, LV_OBJ_FLAG_SCROLLABLE);
+    novo_botao(scr_hub, "PARAR TUDO", COR_VERMELHO, 8, 8, 300, 56, cb_parar);
+    lv_obj_t* t = novo_label(scr_hub, &lv_font_montserrat_20, COR_AMARELO, 330, 22, 300);
+    lv_label_set_text(t, "CONFIGURACAO");
+    novo_botao(scr_hub, "VOLTAR", COR_AZUL, 640, 8, 150, 56, cb_hub_volta);
+    for (int k = 0; k < 5; k++)
+        novo_botao_cb(scr_hub, TITULO_ED[k], COR_AZUL, 16 + (k % 2) * 392, 90 + (k / 2) * 118, 376, 104, cb_hub_abre, k);
+    novo_botao_cb(scr_hub, "ALTERAR SENHAS", COR_AZUL, 408, 326, 376, 104, cb_hub_senhas, 0);
+    lv_obj_t* h = novo_label(scr_hub, &lv_font_montserrat_16, COR_FRACO, 16, 448, 770);
+    lv_label_set_text(h, "Os valores ficam salvos na Waveshare 1. So da pra alterar com a maquina parada.");
+
+    // ---- editor generico ----
+    scr_ed = lv_obj_create(nullptr);
+    lv_obj_set_style_bg_color(scr_ed, COR_FUNDO, 0);
+    lv_obj_clear_flag(scr_ed, LV_OBJ_FLAG_SCROLLABLE);
+    novo_botao(scr_ed, "PARAR TUDO", COR_VERMELHO, 8, 8, 230, 50, cb_parar);
+    lbl_ed_titulo = novo_label(scr_ed, &lv_font_montserrat_20, COR_AMARELO, 256, 20, 380);
+    novo_botao(scr_ed, "VOLTAR", COR_AZUL, 650, 8, 140, 50, cb_ir_hub);
+    for (int k = 0; k < 4; k++) {
+        char nm[12]; snprintf(nm, sizeof(nm), "MODELO %d", k + 1);
+        btn_ed_mod[k] = novo_botao_cb(scr_ed, nm, COR_CINZA, 8 + k * 100, 64, 94, 36, cb_ed_modelo, k);
+    }
+    for (int r = 0; r < 14; r++) {
+        int x0 = 8 + (r / 7) * 398, y = 108 + (r % 7) * 46;
+        ed_nome[r] = novo_label(scr_ed, &lv_font_montserrat_16, COR_TEXTO, x0, y + 10, 190);
+        ed_val[r]  = novo_label(scr_ed, &lv_font_montserrat_16, COR_AMARELO, x0 + 190, y + 10, 90);
+        ed_bm[r]   = novo_botao_cb(scr_ed, "-", COR_CINZA, x0 + 282, y, 50, 42, cb_ed_ajusta, r * 2 + 0);
+        ed_bp[r]   = novo_botao_cb(scr_ed, "+", COR_VERDE, x0 + 338, y, 50, 42, cb_ed_ajusta, r * 2 + 1);
+    }
+    lbl_ed_msg = novo_label(scr_ed, &lv_font_montserrat_16, COR_VERMELHO, 8, 436, 780);
+}
+
+static void ui_atualizar_ed(bool contato, const MsgTesteStatus& st) {
+    uint8_t m = (ED_COM_MODELO) ? g_ed_mod : 0;
+    bool ok = g_cfg_ok[g_ed_tab][m] && (g_ed_tab != 1 || g_cfg_ok[4][m]);
+    if ((!ok || (g_ed_refetch_ms && (int32_t)(millis() - g_ed_refetch_ms) >= 0)) && contato && (millis() - g_cfg_req_ms) > 1200) {
+        g_ed_refetch_ms = 0; ed_pedir();
+    }
+    char b[64];
+    snprintf(b, sizeof(b), "%s", TITULO_ED[g_ed_tab]);
+    lv_label_set_text(lbl_ed_titulo, b);
+    for (int k = 0; k < 4; k++) {
+        if (ED_COM_MODELO) lv_obj_clear_flag(btn_ed_mod[k], LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(btn_ed_mod[k], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_bg_color(btn_ed_mod[k], (k == g_ed_mod) ? COR_VERDE : COR_CINZA, 0);
+    }
+    // linhas visiveis
+    ed_n = 0;
+    if (ok && contato) {
+        const uint16_t* v = g_cfg[g_ed_tab][m];
+        switch (g_ed_tab) {
+            case 0: for (int e = 0; e < 11; e++) ed_slot[ed_n++] = e; break;
+            case 1: for (int sl = 0; sl < 14; sl++) { uint16_t p = g_cfg[4][m][sl]; if (p == 3 || p == 4 || p == 5 || p == 6 || p == 8) ed_slot[ed_n++] = sl; } break;
+            case 2: for (int i = 0; i < 4; i++) ed_slot[ed_n++] = i; break;
+            case 3: for (int i = 0; i < 3; i++) ed_slot[ed_n++] = i; break;
+            case 4: for (int i = 0; i < 14; i++) ed_slot[ed_n++] = i; break;
+        }
+        for (int r = 0; r < 14; r++) {
+            if (r >= ed_n) continue;
+            uint8_t i = ed_slot[r]; char t1[40], t2[24];
+            switch (g_ed_tab) {
+                case 0: snprintf(t1, sizeof(t1), "%s", NOMES_ETAPA_V[i]); snprintf(t2, sizeof(t2), "%u,%u", (unsigned)(v[i] / 10), (unsigned)(v[i] % 10)); break;
+                case 1: { uint16_t p = g_cfg[4][m][i]; snprintf(t1, sizeof(t1), "%d. %s", (int)i + 1, p < 11 ? NOME_PROC_C[p] : "?");
+                          if (v[i] == 0xFFFF) snprintf(t2, sizeof(t2), "padrao"); else snprintf(t2, sizeof(t2), "%u s", (unsigned)v[i]); break; }
+                case 2: snprintf(t1, sizeof(t1), "%s", NOMES_ATRASO[i]); snprintf(t2, sizeof(t2), "%u s", (unsigned)v[i]); break;
+                case 4: snprintf(t1, sizeof(t1), "Etapa %d", (int)i + 1); snprintf(t2, sizeof(t2), "%s", v[i] < 11 ? NOME_SEQ[v[i]] : "?"); break;
+                default: snprintf(t1, sizeof(t1), "%s", NOMES_GIRO[i]); snprintf(t2, sizeof(t2), "%u,%u s", (unsigned)(v[i] / 1000), (unsigned)((v[i] % 1000) / 100)); break;
+            }
+            lv_label_set_text(ed_nome[r], t1); lv_label_set_text(ed_val[r], t2);
+        }
+    }
+    for (int r = 0; r < 14; r++) {
+        bool vis = r < ed_n;
+        lv_obj_t* o[4] = { ed_nome[r], ed_val[r], ed_bm[r], ed_bp[r] };
+        for (int k = 0; k < 4; k++) { if (vis) lv_obj_clear_flag(o[k], LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(o[k], LV_OBJ_FLAG_HIDDEN); }
+    }
+    if (!contato) lv_label_set_text(lbl_ed_msg, "SEM CONTATO COM A WAVESHARE 1");
+    else if (!ok) lv_label_set_text(lbl_ed_msg, "Carregando a configuracao da Waveshare 1...");
+    else { char mm[56]; strncpy(mm, st.msg, sizeof(mm) - 1); mm[sizeof(mm) - 1] = 0; lv_label_set_text(lbl_ed_msg, mm); }
+}
+
+// ---- SENHA (teclado numerico): CONFIG = 1111, TECNICO = 2828. Bloqueado com ciclo/HOME em andamento. ----
+// Senhas (padrao de fabrica; podem ser trocadas em CONFIG > ALTERAR SENHAS e ficam na memoria do display):
+// indice 0 = configuracao (1111), 1 = tecnico (2828), 2 = pagamento/acerto (3462)
+static char g_pw[3][9] = { "1111", "2828", "3462" };
+static void pw_carregar() {
+    Preferences p; if (!p.begin("senhas", true)) return;
+    static const char* K[3] = { "c", "t", "p" };
+    for (int i = 0; i < 3; i++) { String v = p.getString(K[i], ""); if (v.length() >= 4 && v.length() <= 8) strcpy(g_pw[i], v.c_str()); }
+    p.end();
+}
+static void pw_salvar(int i) {
+    Preferences p; if (!p.begin("senhas", false)) return;
+    static const char* K[3] = { "c", "t", "p" };
+    p.putString(K[i], g_pw[i]); p.end();
+}
+static lv_obj_t* scr_senha = nullptr;
+static lv_obj_t* lbl_senha_pontos; static lv_obj_t* lbl_senha_titulo; static lv_obj_t* lbl_senha_msg;
+static char      g_senha[9] = "";
+static uint8_t   g_senha_len = 0;
+static uint8_t   g_senha_alvo = 0;       // 0 = CONFIG, 1 = TECNICO
+
+static void senha_mostra() {
+    char b[12]; int n = g_senha_len; for (int i = 0; i < n; i++) b[i] = '*'; b[n] = 0;
+    lv_label_set_text(lbl_senha_pontos, n ? b : "----");
+}
+static bool maquina_ocupada() {
+    return g_st_ok && ((g_st.estado_auto >= 1 && g_st.estado_auto <= 5) || g_st.estado_auto == 8 || g_st.home_estado >= 1 || g_st.rodando);
+}
+// ---- ALTERAR SENHA: alvo 10+k (k = 0 config, 1 tecnico, 2 pagamento); fase 0 = senha atual, 1 = nova, 2 = repetir ----
+static uint8_t g_alt_fase = 0; static char g_alt_nova[9] = "";
+static const char* NOME_PW[3] = { "CONFIGURACAO", "TECNICO", "PAGAMENTO" };
+static void senha_alterar_titulo() {
+    char b[48]; int k = g_senha_alvo - 10;
+    if (g_alt_fase == 0)      snprintf(b, sizeof(b), "SENHA ATUAL (%s)", NOME_PW[k]);
+    else if (g_alt_fase == 1) snprintf(b, sizeof(b), "NOVA SENHA (%s)", NOME_PW[k]);
+    else                      snprintf(b, sizeof(b), "REPITA A NOVA SENHA");
+    lv_label_set_text(lbl_senha_titulo, b);
+}
+static void senha_alterar_ok() {
+    int k = g_senha_alvo - 10;
+    if (g_alt_fase == 0) {
+        if (strcmp(g_senha, g_pw[k]) == 0) { g_alt_fase = 1; lv_label_set_text(lbl_senha_msg, "Digite a nova senha (4 a 8 digitos)"); }
+        else lv_label_set_text(lbl_senha_msg, "Senha incorreta");
+    } else if (g_alt_fase == 1) {
+        if (g_senha_len < 4) { lv_label_set_text(lbl_senha_msg, "Minimo 4 digitos"); }
+        else { strcpy(g_alt_nova, g_senha); g_alt_fase = 2; lv_label_set_text(lbl_senha_msg, ""); }
+    } else {
+        if (strcmp(g_senha, g_alt_nova) == 0) {
+            strcpy(g_pw[k], g_alt_nova); pw_salvar(k);
+            g_senha_len = 0; g_senha[0] = 0; g_alt_fase = 0; g_alt_nova[0] = 0;
+            snprintf(g_aviso, sizeof(g_aviso), "Senha de %s alterada", NOME_PW[k]); g_aviso_ms = millis();
+            if (scr_hub) lv_scr_load(scr_hub);
+            return;
+        }
+        g_alt_fase = 1; lv_label_set_text(lbl_senha_msg, "Nao confere. Digite a nova senha de novo");
+    }
+    g_senha_len = 0; g_senha[0] = 0;
+    senha_alterar_titulo();
+}
+static void cb_alt_escolhe(lv_event_t* e) {
+    g_senha_alvo = (uint8_t)(10 + (int)(intptr_t)lv_event_get_user_data(e));
+    g_alt_fase = 0; g_senha_len = 0; g_senha[0] = 0;
+    senha_alterar_titulo(); lv_label_set_text(lbl_senha_msg, "");
+    senha_mostra();
+    lv_scr_load(scr_senha);
+}
+static void cb_pede_senha(lv_event_t* e) {
+    uint8_t alvo = (uint8_t)(intptr_t)lv_event_get_user_data(e);
+    if (maquina_ocupada()) {
+        snprintf(g_aviso, sizeof(g_aviso), "%s bloqueado: ciclo ou HOME em andamento", alvo == 2 ? "PAGAMENTO" : (alvo ? "TECNICO" : "CONFIG"));
+        g_aviso_ms = millis();
+        return;
+    }
+    g_senha_alvo = alvo; g_senha_len = 0; g_senha[0] = 0;
+    lv_label_set_text(lbl_senha_titulo, alvo == 2 ? "SENHA DE PAGAMENTO" : (alvo ? "SENHA DO TECNICO" : "SENHA DE CONFIGURACAO"));
+    lv_label_set_text(lbl_senha_msg, "");
+    senha_mostra();
+    lv_scr_load(scr_senha);
+}
+static void cb_senha_tecla(lv_event_t* e) {
+    int k = (int)(intptr_t)lv_event_get_user_data(e);
+    if (k >= 0 && k <= 9) { if (g_senha_len < 8) { g_senha[g_senha_len++] = (char)('0' + k); g_senha[g_senha_len] = 0; } lv_label_set_text(lbl_senha_msg, ""); }
+    else if (k == 10) { if (g_senha_len) g_senha[--g_senha_len] = 0; }                  // APAGAR
+    else if (k == 11) {                                                                  // OK
+        if (g_senha_alvo >= 10) { senha_alterar_ok(); senha_mostra(); return; }          // fluxo de ALTERAR SENHA
+        const char* certa = g_pw[g_senha_alvo];
+        if (strcmp(g_senha, certa) == 0) {
+            g_senha_len = 0; g_senha[0] = 0;
+            if (g_senha_alvo == 2)      { enviar(9, 2); if (scr_auto) lv_scr_load(scr_auto); }   // ACERTO: a W1 soma ao saldo e zera
+            else if (g_senha_alvo)      { if (scr_principal) lv_scr_load(scr_principal); }
+            else                        { if (scr_hub)       lv_scr_load(scr_hub); }
+            return;
+        }
+        g_senha_len = 0; g_senha[0] = 0;
+        lv_label_set_text(lbl_senha_msg, "Senha incorreta");
+    }
+    senha_mostra();
+}
+static void cb_senha_cancela(lv_event_t*) { g_senha_len = 0; g_senha[0] = 0; if (scr_auto) lv_scr_load(scr_auto); }
+
+static void ui_alt_criar() {
+    scr_alt = lv_obj_create(nullptr);
+    lv_obj_set_style_bg_color(scr_alt, COR_FUNDO, 0);
+    lv_obj_clear_flag(scr_alt, LV_OBJ_FLAG_SCROLLABLE);
+    novo_botao(scr_alt, "VOLTAR", COR_AZUL, 640, 8, 150, 56, cb_hub_volta_cfg);
+    lv_obj_t* t = novo_label(scr_alt, &lv_font_montserrat_20, COR_AMARELO, 16, 22, 500);
+    lv_label_set_text(t, "ALTERAR SENHAS - qual?");
+    for (int k = 0; k < 3; k++) novo_botao_cb(scr_alt, NOME_PW[k], COR_AZUL, 16 + k * 262, 120, 250, 100, cb_alt_escolhe, k);
+}
+
+static void ui_senha_criar() {
+    ui_alt_criar();
+    scr_senha = lv_obj_create(nullptr);
+    lv_obj_set_style_bg_color(scr_senha, COR_FUNDO, 0);
+    lv_obj_clear_flag(scr_senha, LV_OBJ_FLAG_SCROLLABLE);
+    novo_botao(scr_senha, "CANCELAR", COR_VERMELHO, 8, 8, 200, 56, cb_senha_cancela);
+    lbl_senha_titulo = novo_label(scr_senha, &lv_font_montserrat_20, COR_AMARELO, 300, 22, 400);
+    lbl_senha_pontos = novo_label(scr_senha, &lv_font_montserrat_20, COR_TEXTO, 330, 76, 200);
+    lbl_senha_msg    = novo_label(scr_senha, &lv_font_montserrat_18, COR_VERMELHO, 300, 104, 300);
+    static const char* TX[12] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "APAGAR", "0", "OK" };
+    static const int   KV[12] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 11 };
+    for (int i = 0; i < 12; i++) {
+        int c = i % 3, r = i / 3;
+        lv_color_t cor = (KV[i] == 11) ? COR_VERDE : (KV[i] == 10) ? COR_CINZA : COR_AZUL;
+        novo_botao_cb(scr_senha, TX[i], cor, 250 + c * 112, 136 + r * 70, 104, 62, cb_senha_tecla, KV[i]);
+    }
+}
+
+static lv_obj_t *btn_socio, *lbl_socio;
+static lv_obj_t *pl_cel[5][6], *pl_data;
+static uint32_t  pl_req_ms = 0;
+static void cb_socio(lv_event_t*) { enviar(7, 2, (uint8_t)(((g_st_ok ? g_st.tipo_prox : 0) + 1) & 3)); }   // gira o TIPO do proximo ciclo: presencial > aplicativo > socio > bonus
+
+// ---- Saidas MANUAIS (liga/desliga; so com a maquina parada; a W1 desliga sozinha em 60 s) ----
+static lv_obj_t *btn_m_sai[6], *lbl_m_sai[6];
+static void cb_man_sai(lv_event_t* e) {
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    bool ligada = g_st_ok && ((g_st.man_saidas >> idx) & 1);
+    enviar((uint8_t)(60 + idx), 2, ligada ? 0 : 1);      // valor ABSOLUTO (repetir e seguro)
+}
+static void ui_manual_toggles_criar() {
+    static const char* NM[6] = { "VALVULA", "ESPUMA A", "ESPUMA B", "COR MAGICA", "SECAGEM", "CERA D'AGUA" };
+    for (int i = 0; i < 6; i++)
+        btn_m_sai[i] = novo_botao_cb(scr_manual, NM[i], COR_CINZA, 16 + (i % 3) * 260, 276 + (i / 3) * 56, 248, 50, cb_man_sai, i, &lbl_m_sai[i]);
+}
+
+// ---- AVISO DE FIM DE CICLO: aparece sobre QUALQUER tela e fica ate tocar OK (ou comecar outro ciclo) ----
+static lv_obj_t *pop_ev = nullptr, *lbl_pop_ev = nullptr;
+static uint8_t   ev_visto = 0; static bool ev_init = false;
+static void cb_pop_ok(lv_event_t*) { if (pop_ev) lv_obj_add_flag(pop_ev, LV_OBJ_FLAG_HIDDEN); }
+static void ui_evento_criar() {
+    pop_ev = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(pop_ev, 640, 230); lv_obj_set_pos(pop_ev, 80, 120);
+    lv_obj_set_style_bg_color(pop_ev, lv_color_hex(0x10151C), 0);
+    lv_obj_set_style_border_width(pop_ev, 4, 0); lv_obj_set_style_radius(pop_ev, 12, 0);
+    lv_obj_clear_flag(pop_ev, LV_OBJ_FLAG_SCROLLABLE);
+    lbl_pop_ev = lv_label_create(pop_ev);
+    lv_obj_set_width(lbl_pop_ev, 600);
+    lv_label_set_long_mode(lbl_pop_ev, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(lbl_pop_ev, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_align(lbl_pop_ev, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(lbl_pop_ev, LV_ALIGN_TOP_MID, 0, 18);
+    lv_obj_t* b = lv_btn_create(pop_ev);
+    lv_obj_set_size(b, 200, 60); lv_obj_align(b, LV_ALIGN_BOTTOM_MID, 0, -6);
+    lv_obj_set_style_bg_color(b, COR_AZUL, 0);
+    lv_obj_t* l = lv_label_create(b); lv_label_set_text(l, "OK"); lv_obj_center(l);
+    lv_obj_add_event_cb(b, cb_pop_ok, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_flag(pop_ev, LV_OBJ_FLAG_HIDDEN);
+}
+static void ui_evento_atualiza(bool contato, const MsgTesteStatus& s) {
+    if (!contato) return;
+    if (!ev_init) { ev_init = true; ev_visto = s.ev_seq; return; }            // 1o status depois de ligar: nao mostra evento antigo
+    if (s.estado_auto >= 1 && s.estado_auto <= 5) { if (pop_ev) lv_obj_add_flag(pop_ev, LV_OBJ_FLAG_HIDDEN); }   // novo ciclo em andamento
+    if (s.ev_seq == ev_visto) return;
+    ev_visto = s.ev_seq;
+    char b[120];
+    if (s.ev_tipo == 1) {
+        snprintf(b, sizeof(b), "CICLO CONCLUIDO\n(modelo %u)", (unsigned)s.ev_modelo);
+        lv_obj_set_style_border_color(pop_ev, COR_VERDE, 0);
+    } else {
+        char m[56]; strncpy(m, s.msg, sizeof(m) - 1); m[sizeof(m) - 1] = 0;
+        snprintf(b, sizeof(b), "ERRO NO CICLO (modelo %u)\n%s", (unsigned)s.ev_modelo, m);
+        lv_obj_set_style_border_color(pop_ev, COR_VERMELHO, 0);
+    }
+    lv_label_set_text(lbl_pop_ev, b);
+    lv_obj_clear_flag(pop_ev, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void ui_auto_criar() {
     scr_auto = lv_obj_create(nullptr);
     lv_obj_set_style_bg_color(scr_auto, COR_FUNDO, 0);
     lv_obj_clear_flag(scr_auto, LV_OBJ_FLAG_SCROLLABLE);
 
     // Faixa de cima (o canto inferior esquerdo da tela nao responde ao toque)
-    novo_botao(scr_auto, "PARAR TUDO", COR_VERMELHO, 8, 8, 300, 56, cb_parar);
-    lv_obj_t* t = novo_label(scr_auto, &lv_font_montserrat_20, COR_AMARELO, 330, 22, 300);
-    lv_label_set_text(t, "AUTOMATICO");
-    novo_botao(scr_auto, "VOLTAR", COR_AZUL, 640, 8, 150, 56, cb_ir_principal);
+    novo_botao(scr_auto, "PARAR TUDO", COR_VERMELHO, 8, 8, 200, 56, cb_parar);
+    novo_botao(scr_auto, "HOME", COR_AZUL, 216, 8, 120, 56, cb_home);
+    novo_botao_cb(scr_auto, "CONFIG", COR_AZUL, 344, 8, 200, 56, cb_pede_senha, 0);
+    novo_botao(scr_auto, "MANUAL", COR_AZUL, 552, 8, 240, 56, cb_ir_manual);
 
     static const char* NM[4] = { "MODELO 1", "MODELO 2", "MODELO 3", "MODELO 4" };
     for (int i = 0; i < 4; i++)
         btn_modelo[i] = novo_botao_cb(scr_auto, NM[i], COR_CINZA, 16 + i * 195, 76, 185, 60, cb_modelo, i + 1);
     marca_modelo();
 
-    novo_botao_cb(scr_auto, "INICIAR AUTOMATICO", COR_VERDE,    16, 148, 380, 90, cb_auto_iniciar, 0);
-    novo_botao_cb(scr_auto, "PAUSAR",             COR_AMARELO, 404, 148, 380, 90, cb_auto_pausa, 0, &lbl_a_pausa);
-    novo_botao_cb(scr_auto, "CANCELAR CICLO",     COR_VERMELHO, 404, 248, 380, 56, cb_auto_cancelar, 0);
+    novo_botao_cb(scr_auto, "INICIAR AUTOMATICO", COR_VERDE,    16, 148, 380, 80, cb_auto_iniciar, 0);
+    novo_botao_cb(scr_auto, "PAUSAR",             COR_AMARELO, 404, 148, 380, 80, cb_auto_pausa, 0, &lbl_a_pausa);
+    novo_botao_cb(scr_auto, "TECNICO", COR_CINZA, 16, 238, 260, 56, cb_pede_senha, 1);
+    btn_socio = novo_botao_cb(scr_auto, "TIPO: PRESENCIAL", COR_CINZA, 284, 238, 270, 56, cb_socio, 0, &lbl_socio);
 
-    lbl_a_estado = novo_label(scr_auto, &lv_font_montserrat_20, COR_TEXTO,    16, 316, 770);
-    lbl_a_etapa  = novo_label(scr_auto, &lv_font_montserrat_18, COR_FRACO,    16, 346, 770);
-    lbl_a_msg    = novo_label(scr_auto, &lv_font_montserrat_18, COR_VERMELHO, 16, 374, 770);
-    lbl_a_cont   = novo_label(scr_auto, &lv_font_montserrat_16, COR_AMARELO,  16, 402, 780);
-    lbl_a_sens   = novo_label(scr_auto, &lv_font_montserrat_16, COR_FRACO,    16, 426, 780);
+    // Logo Pili (fundo preto proprio da imagem)
+    lv_obj_t* caixa = lv_obj_create(scr_auto);
+    lv_obj_set_size(caixa, 220, 86); lv_obj_set_pos(caixa, 564, 232);
+    lv_obj_set_style_bg_color(caixa, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_width(caixa, 0, 0); lv_obj_set_style_pad_all(caixa, 0, 0); lv_obj_set_style_radius(caixa, 6, 0);
+    lv_obj_clear_flag(caixa, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t* img = lv_img_create(caixa);
+    lv_img_set_src(img, &logo_pili);
+
+    lbl_a_estado = novo_label(scr_auto, &lv_font_montserrat_20, COR_TEXTO,    16, 302, 770);
+    lbl_a_etapa  = novo_label(scr_auto, &lv_font_montserrat_18, COR_FRACO,    16, 326, 770);
+    lbl_a_msg    = novo_label(scr_auto, &lv_font_montserrat_18, COR_VERMELHO, 16, 348, 770);
+    lbl_a_cont   = novo_label(scr_auto, &lv_font_montserrat_16, COR_AMARELO,  16, 348, 10);
+    lv_obj_add_flag(lbl_a_cont, LV_OBJ_FLAG_HIDDEN);     // ciclos/erros/falhas: ficam na tela TECNICO
+    lbl_a_sens   = novo_label(scr_auto, &lv_font_montserrat_16, COR_FRACO,    16, 348, 10);
+    lv_obj_add_flag(lbl_a_sens, LV_OBJ_FLAG_HIDDEN);     // diagnostico de sensores: tela TECNICO
+
+    // ---- PLANILHA DE LAVAGENS desde o ultimo acerto: presencial, aplicativo, socios (mensalistas) e bonus (promocao), por modelo ----
+    static const char* CAB[5] = { "M1", "M2", "M3", "M4", "TOTAL" };
+    static const char* LIN[5] = { "", "Presencial", "Aplicativo", "Socios", "Bonus" };
+    for (int r = 0; r < 5; r++) {
+        for (int c = 0; c < 6; c++) {
+            int x = (c == 5) ? 16 : 130 + c * 90;                      // coluna 5 = rotulo da linha (a esquerda)
+            lv_color_t cor = (r == 0) ? COR_FRACO : (r == 1 ? COR_TEXTO : (r == 2 ? lv_color_hex(0x6EC1FF) : (r == 3 ? COR_AMARELO : lv_color_hex(0xC792EA))));
+            pl_cel[r][c] = novo_label(scr_auto, &lv_font_montserrat_16, cor, x, 372 + r * 20, 88);
+        }
+        lv_label_set_text(pl_cel[r][5], LIN[r]);
+    }
+    for (int c = 0; c < 5; c++) lv_label_set_text(pl_cel[0][c], CAB[c]);
+    pl_data = novo_label(scr_auto, &lv_font_montserrat_16, COR_FRACO, 588, 372, 200);
+    lv_label_set_text(pl_data, "Desde --/--/----");
+    novo_botao_cb(scr_auto, "PAGAMENTO\nEFETUADO", COR_AZUL, 588, 396, 200, 76, cb_pede_senha, 2);
 }
 
 static void ui_criar() {
     lv_obj_t* scr = lv_obj_create(nullptr);
-    scr_principal = scr;
+    scr_principal = scr;    // = tela TECNICO (atras da senha 2828)
     lv_obj_set_style_bg_color(scr, COR_FUNDO, 0);
     lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Barra de cima: botao da BOMBA no canto superior esquerdo + titulo ao lado
+    // Barra de cima: botao da BOMBA no canto superior esquerdo + navegacao
     btn_bomba = novo_botao(scr, "BOMBA: OFF (a seco)", COR_CINZA, 8, 8, 320, 56, cb_bomba, &lbl_bomba);
     novo_botao(scr, "AUTOMATICO", COR_VERDE, 340, 8, 210, 56, cb_ir_auto);
     novo_botao(scr, "MANUAL", COR_AZUL, 560, 8, 230, 56, cb_ir_manual);
@@ -251,13 +650,19 @@ static void ui_criar() {
     lbl_giro   = novo_label(scr, &lv_font_montserrat_16, COR_AMARELO,  16, 298, 780);
     lbl_cmd    = novo_label(scr, &lv_font_montserrat_16, COR_AZUL,     16, 320, 780);
 
-    novo_botao(scr, "HOME",          COR_AZUL,     16,  352, 170, 100, cb_home);
-    novo_botao(scr, "INICIAR TESTE", COR_VERDE,   200,  352, 270, 100, cb_iniciar);
-    novo_botao(scr, "PARAR",         COR_VERMELHO, 484, 352, 300, 100, cb_parar);
+    novo_botao(scr, "HOME",          COR_AZUL,      16, 352, 150, 100, cb_home);
+    novo_botao(scr, "INICIAR TESTE", COR_VERDE,    174, 352, 230, 100, cb_iniciar);
+    novo_botao(scr, "PARAR",         COR_VERMELHO, 412, 352, 180, 100, cb_parar);
+    btn_t_carro = novo_botao(scr, "CARRO SECO", COR_CINZA, 600, 352, 190, 100, cb_carro, &lbl_t_carro);
 
+    pw_carregar();
     ui_manual_criar();
+    ui_manual_toggles_criar();
     ui_auto_criar();
-    lv_scr_load(scr);
+    ui_cfg_criar();
+    ui_senha_criar();
+    ui_evento_criar();
+    lv_scr_load(scr_auto);   // a maquina vive no AUTOMATICO: e a tela inicial
 }
 
 // Atualiza os textos da tela MANUAL (estado, aviso do firmware e sensores/saidas relevantes).
@@ -282,9 +687,10 @@ static void ui_atualizar_manual(bool contato, const MsgTesteStatus& s) {
     }
     lv_label_set_text(lbl_m_estado, buf);
     lv_obj_set_style_text_color(lbl_m_estado, cor, 0);
+    for (int i = 0; i < 6; i++) lv_obj_set_style_bg_color(btn_m_sai[i], ((s.man_saidas >> i) & 1) ? lv_color_hex(0xE08A00) : COR_CINZA, 0);
 
     char msg[56];
-    strncpy(msg, s.msg, sizeof(msg) - 1); msg[sizeof(msg) - 1] = ' ';
+    strncpy(msg, s.msg, sizeof(msg) - 1); msg[sizeof(msg) - 1] = '\0';
     lv_label_set_text(lbl_m_info, msg);
 
     static const char* CMD[] = { "PARADO", "FRENTE", "REVERSO" };
@@ -325,17 +731,22 @@ static void ui_atualizar_auto(bool contato, const MsgTesteStatus& s) {
     if ((s.estado_auto == 5 || s.estado_auto == 8) && s.proc_ativo == 7 &&
         s.sub_estado < (sizeof(NOMES_ETAPA_AP) / sizeof(NOMES_ETAPA_AP[0]))) {
         snprintf(buf, sizeof(buf), "Modelo %d | Etapa: %s   (giro %d/3)", (int)s.programa_sel, NOMES_ETAPA_AP[s.sub_estado], (int)s.giro_n + 1);
+    } else if (s.estado_auto == 5 || s.estado_auto == 8) {
+        snprintf(buf, sizeof(buf), "Modelo %d | %s  (etapa interna %d)", (int)s.programa_sel,
+                 s.proc_ativo < 11 ? PROC[s.proc_ativo] : "?", (int)s.sub_estado);
     } else {
-        snprintf(buf, sizeof(buf), "Modelo escolhido: %d  (nesta etapa todos os modelos rodam so a Alta Pressao)", (int)g_modelo_sel);
+        snprintf(buf, sizeof(buf), "Modelo escolhido: %d", (int)g_modelo_sel);
     }
     lv_label_set_text(lbl_a_etapa, buf);
 
-    char msg[56];
-    strncpy(msg, s.msg, sizeof(msg) - 1); msg[sizeof(msg) - 1] = '\0';
+    char msg[60];
+    if (g_aviso[0] && (millis() - g_aviso_ms) < 3500) { strncpy(msg, g_aviso, sizeof(msg) - 1); }
+    else                                              { strncpy(msg, s.msg, sizeof(msg) - 1); }
+    msg[sizeof(msg) - 1] = '\0';
     lv_label_set_text(lbl_a_msg, msg);
 
     snprintf(buf, sizeof(buf), "Ciclos OK: %u   Erros: %u   Falhas de escrita no inversor: %u   Bomba: %s",
-             (unsigned)s.ciclos_ok, (unsigned)s.ciclos_erro, (unsigned)s.vfd_falhas, s.bomba_on ? "ON" : "OFF (a seco)");
+             (unsigned)s.ciclos_ok, (unsigned)s.ciclos_erro, (unsigned)s.vfd_falhas, (s.bomba_on & 1) ? "ON" : "OFF (a seco)");
     lv_label_set_text(lbl_a_cont, buf);
 
     snprintf(buf, sizeof(buf), "X14:%d X15:%d | X16:%d X17:%d X12:%d | luz verde:%d vermelha:%d",
@@ -344,14 +755,54 @@ static void ui_atualizar_auto(bool contato, const MsgTesteStatus& s) {
     lv_label_set_text(lbl_a_sens, buf);
 
     lv_label_set_text(lbl_a_pausa, s.estado_auto == 8 ? "CONTINUAR" : "PAUSAR");
+
+    static const char* TP[4] = { "TIPO: PRESENCIAL", "TIPO: APLICATIVO", "TIPO: SOCIO", "TIPO: BONUS" };
+    static const uint32_t TCOR[4] = { 0x444C56, 0x1E5FA8, 0xE08A00, 0x7B3FA0 };
+    uint8_t tp = s.tipo_prox & 3;
+    lv_label_set_text(lbl_socio, TP[tp]);
+    lv_obj_set_style_bg_color(btn_socio, lv_color_hex(TCOR[tp]), 0);
+
+    // planilha: pede as tabelas 5/0 e 5/1 a cada 3 s e mostra o ultimo valor recebido
+    if ((millis() - pl_req_ms) > 3000) { pl_req_ms = millis(); cfg_pedir(5, 0); cfg_pedir(5, 1); }
+    if (g_cfg_ok[5][0] && g_cfg_ok[5][1]) {
+        const uint16_t* v0 = g_cfg[5][0]; const uint16_t* v1 = g_cfg[5][1];
+        char t[24];
+        for (int r = 1; r <= 4; r++) {
+            unsigned tot = 0;
+            for (int c = 0; c < 4; c++) {
+                unsigned q = (r == 1) ? v0[c] : (r == 2) ? v0[4 + c] : (r == 3) ? v0[8 + c] : v1[c];
+                snprintf(t, sizeof(t), "%u", q); lv_label_set_text(pl_cel[r][c], t); tot += q;
+            }
+            snprintf(t, sizeof(t), "%u", tot); lv_label_set_text(pl_cel[r][4], t);
+        }
+        unsigned dia = v0[12] & 0xFF, mes = v0[12] >> 8, ano = v0[13];
+        char d[40];
+        if (ano) snprintf(d, sizeof(d), "Desde %02u/%02u/%04u", dia, mes, ano); else snprintf(d, sizeof(d), "Desde --/--/----");
+        lv_label_set_text(pl_data, d);
+    }
+
 }
 
 static void ui_atualizar() {
     bool contato = g_st_ok && (millis() - g_st_ms) < 2000;
     MsgTesteStatus s = g_st;   // copia local (o callback pode atualizar a qualquer momento)
 
+    ui_evento_atualiza(contato, s);
+
+    // Ciclo armado/iniciado de fora (painel fisico, controle remoto): mostra a tela AUTOMATICO e o modelo pedido.
+    static uint8_t estado_ant = 0;
+    if (contato) {
+        if (estado_ant == 0 && s.estado_auto >= 1 && s.estado_auto <= 5 && scr_auto && lv_scr_act() != scr_auto) lv_scr_load(scr_auto);
+        estado_ant = s.estado_auto;
+        if (((s.estado_auto >= 1 && s.estado_auto <= 5) || s.estado_auto == 8) && s.programa_sel >= 1 && s.programa_sel <= 4 && g_modelo_sel != s.programa_sel) {
+            g_modelo_sel = s.programa_sel; marca_modelo();
+        }
+    }
+
     if (scr_manual && lv_scr_act() == scr_manual) { ui_atualizar_manual(contato, s); return; }
     if (scr_auto && lv_scr_act() == scr_auto)     { ui_atualizar_auto(contato, s);   return; }
+    if (scr_hub && lv_scr_act() == scr_hub)       { return; }
+    if (scr_ed && lv_scr_act() == scr_ed)         { ui_atualizar_ed(contato, s);     return; }
 
     if (!g_st_ok) {
         lv_label_set_text(lbl_estado, "SEM CONTATO COM A WAVESHARE 1 (nunca recebeu status)");
@@ -380,7 +831,7 @@ static void ui_atualizar() {
         snprintf(buf, sizeof(buf), "Etapa: %s   (giro %d/3)", NOMES_ETAPA_AP[s.sub_estado], (int)s.giro_n + 1);
         lv_label_set_text(lbl_etapa, buf);
     } else {
-        lv_label_set_text(lbl_etapa, s.bomba_on ? "Bomba habilitada no proximo teste (Y13; SAJ em frequencia fixa)"
+        lv_label_set_text(lbl_etapa, (s.bomba_on & 1) ? "Bomba habilitada no proximo teste (Y13; SAJ em frequencia fixa)"
                                                 : "Teste a seco: sem Y13 (bomba nao liga)");
     }
 
@@ -437,8 +888,11 @@ static void ui_atualizar() {
         lv_label_set_text(lbl_cmd, buf);
     }
 
-    lv_label_set_text(lbl_bomba, s.bomba_on ? "BOMBA: ON (Y13)" : "BOMBA: OFF (a seco)");
-    lv_obj_set_style_bg_color(btn_bomba, s.bomba_on ? lv_color_hex(0xE08A00) : COR_CINZA, 0);
+    lv_label_set_text(lbl_bomba, (s.bomba_on & 1) ? "BOMBA: ON (Y13)" : "BOMBA: OFF (a seco)");
+    lv_obj_set_style_bg_color(btn_bomba, (s.bomba_on & 1) ? lv_color_hex(0xE08A00) : COR_CINZA, 0);
+    bool real = (s.bomba_on & 2) != 0;
+    lv_label_set_text(lbl_t_carro, real ? "CARRO REAL" : "CARRO SECO");
+    lv_obj_set_style_bg_color(btn_t_carro, real ? lv_color_hex(0xE08A00) : COR_CINZA, 0);
 }
 
 // ----------------------------------------------------------- setup/loop ----
