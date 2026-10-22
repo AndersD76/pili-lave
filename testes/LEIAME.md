@@ -53,7 +53,9 @@ com motivo), `[GIRO]` (sensores e decisões). Análise: `testes_ruido_rs485/ferr
 Fluxo completo: modelo 1..4 -> INICIAR -> luz verde, espera X14 -> X15 -> 6 s (luz vermelha) -> confere
 HOME (X16) -> processo -> concluido. **PAUSAR** para o motor e desliga as saidas de processo (Y13, Y7,
 solenoides, compressor, Y0); **CONTINUAR** religa e espera 2 s para restabelecer a pressao antes de
-retomar o movimento. CANCELAR = parada total. Nesta etapa todos os modelos rodam so a Alta Pressao.
+retomar o movimento. CANCELAR = parada total. Os 4 modelos rodam completos (sequencias do cliente, com
+esperas por etapa em `g_modelos_espera`; as esperas so valem no modo CARRO REAL). Botao SECO/CARRO REAL
+na tela AUTOMATICO (so com a maquina parada).
 
 ## Plano
 1. ~~Segurança e estado confiável~~ (feito, acima). Item 2 (homem morto) feito junto com a tela manual.
@@ -61,3 +63,22 @@ retomar o movimento. CANCELAR = parada total. Nesta etapa todos os modelos rodam
 3. Telas e automático completo (modelos, velocidades, configuração com NVS), nuvem; só então avaliar
    promover no lugar da `lava_car_485/`. Cada tela entra uma por vez, testada na bancada.
 Ideia em aberto: testar a `lava_car_485/` com o SAJ fora do RS-485.
+
+## Display e W1 — telas e funções (compiladas em 2026-10-22; NADA disso foi gravado na W1 nem testado na máquina)
+Display (`testes/display/`, 800x480, abre no **AUTOMATICO**):
+- **AUTOMATICO:** PARAR TUDO, HOME, CONFIG (senha), MANUAL; 4 modelos, INICIAR AUTOMATICO, PAUSAR; **TECNICO** (senha 2828);
+  **TIPO** do próximo ciclo (presencial > aplicativo > sócio > bônus; volta a presencial a cada ciclo); logo Pili;
+  **planilha de lavagens** (por modelo e por tipo, desde o último acerto) e **PAGAMENTO EFETUADO** (senha 3462 -> acerto).
+- **MANUAL:** HOME, AUTOMATICO, giro e carrinho (segurando), e liga/desliga de válvula, espuma A/B, cor mágica, secagem e cera
+  (só parado, desligam sozinhas em 60 s; bomba de espuma e compressor só com BOMBA em ON). Y13 (alta pressão) só no TECNICO.
+- **TECNICO:** BOMBA ON/OFF, HOME, INICIAR TESTE, PARAR e **CARRO SECO/REAL**.
+- **CONFIG** (senha 1111): velocidades, esperas dos modelos por etapa, atrasos em carro real, tempo do giro 1->2 por processo,
+  **sequência dos modelos** e **alterar senhas** (ficam na memória do display). Valores de processo na NVS da W1, só alteram parado.
+- **Aviso de fim de ciclo** (concluído/erro) sobre qualquer tela até tocar OK. **Painel físico/controle remoto** (X1,X2,X5,X6 =
+  modelo 1..4; X4 = pausar/continuar) arma o ciclo sem abrir tela, e o display salta para o AUTOMATICO.
+W1: tabelas e NVS (`cfg`, `giro`, `lav`), mensagens ESP-NOW 32..35 (config set/req/dump e data) em `protocolo_teste.h`.
+Planilha: tipos presencial/aplicativo/sócio/bônus; a **data** só existe quando a câmera mandar `MSG_TESTE_DATA` (câmera ainda não envia).
+Ver `PENDENCIAS_NA_MAQUINA.md` (seções A–E) e `docs/TROCA_DE_DISPLAY.md` (displays novos sem flat de toque).
+
+## Pendências para testar NA MÁQUINA
+Lista completa e atualizada em **[PENDENCIAS_NA_MAQUINA.md](PENDENCIAS_NA_MAQUINA.md)**.

@@ -154,6 +154,12 @@ Código de porting oficial da Espressif (não é nosso, CC0/Apache) — ponte en
 
 ---
 
+### 3.13 Base de testes `testes/` (em reconstrução; NÃO é a produção)
+Projeto paralelo em `testes/` onde o firmware está sendo refeito passo a passo com validação em bancada: W1 como controlador
+(máquina de estados + RS-485 só do Delta + ESP-NOW com a W2) e display como cliente fino (ESP-NOW, `protocolo_teste.h`). A produção
+(`lava_car_485/`) continua intacta. Estado, telas, protocolo e pendências: `testes/LEIAME.md` e `testes/PENDENCIAS_NA_MAQUINA.md`.
+Displays novos sem flat do toque (GT911): `docs/TROCA_DE_DISPLAY.md`.
+
 ## 4. Firmware das Waveshares — `lava_car_485/waveshare1/` e `waveshare2/`
 
 Dois firmwares quase idênticos (endereço Modbus 1 e 2), rodando na placa Waveshare ESP32-S3-POE-ETH-8DI-8DO. Cada uma:
