@@ -23,6 +23,7 @@ static uint32_t g_scan_ult_ms = 0;                   // ultimo MSG_SCAN_RESP rec
 static volatile uint32_t g_cam_vista_ms = 0;         // ultimo frame QUALQUER da camera
 static volatile uint32_t g_cam_hello_ms = 0;         // ultimo MsgCanal ("oi") vindo da camera
 static volatile uint32_t g_w1_hello_ms = 0;          // ultimo MsgCanal ("oi") vindo da W1
+static volatile uint8_t  g_resync_pedido = 0;        // MSG_RESYNC_REQ da camera: canal novo do roteador (re-sync automatico)
 static bool     g_manual_ssid = false;               // digitando o nome da rede (+ canal) a mao
 
 enum WsEstado : uint8_t { WS_IDLE = 0, WS_SCAN_ESPERA, WS_CACA, WS_CAM_ENVIA, WS_CAM_ESPERA, WS_W1_ENVIA, WS_W1_ESPERA,
@@ -45,6 +46,10 @@ static void wifi_on_recv(const uint8_t* data, int len) {
     if (c->origem == ORIGEM_CAMERA) {
         g_cam_vista_ms = agora;
         if (c->tipo == MSG_CANAL) g_cam_hello_ms = agora;
+        else if (c->tipo == MSG_RESYNC_REQ && len >= (int)sizeof(MsgResyncReq)) {
+            uint8_t n = ((const MsgResyncReq*)data)->canal;
+            if (n >= 1 && n <= 13) g_resync_pedido = n;
+        }
         else if (c->tipo == MSG_SCAN_RESP && len >= (int)sizeof(MsgScanResp)) {
             const MsgScanResp* r = (const MsgScanResp*)data;
             g_scan_ult_ms = agora;
@@ -139,6 +144,11 @@ static void wifi_falhou(const char* motivo) {
 // Chamado a cada volta do loop() (fora do LVGL). Maquina de estados NAO bloqueante.
 static void wifi_tick() {
     uint32_t agora = millis();
+    // RE-SYNC AUTOMATICO: a camera avisou que o roteador mudou de canal. Migra camera, W1 e W2 sem senha de tecnico, so com a maquina parada.
+    if (g_resync_pedido && (g_ws == WS_IDLE || g_ws == WS_FIM) && g_st_ok && !maquina_ocupada()) {
+        uint8_t n = g_resync_pedido; g_resync_pedido = 0;
+        if (n != g_canal_disp) wifi_migrar("", "", n);
+    }
     switch (g_ws) {
     case WS_SCAN_ESPERA: {
         if (g_redes_n > 0 && g_scan_ult_ms && agora - g_scan_ult_ms > 1500) {            // paginas pararam de chegar
@@ -209,12 +219,14 @@ static void wifi_tick() {
 
     // ---- passo 3: credenciais (todos ja no canal da rede) ----
     case WS_CFG_ENVIA:
-        if (g_ws_n < 3) {
+        if (g_ws_ssid[0] && g_ws_n < 3) {                     // (re-sync automatico: sem rede nova para entregar — a camera ja tem a rede)
             if (g_ws_tl == 0 || agora - g_ws_tl >= 300) { wifi_envia_cfg(); g_ws_n++; g_ws_tl = agora ? agora : 1; }
         } else {
             wifi_mig_nvs(0, 0);
-            char b[100]; snprintf(b, sizeof(b), "Rede '%s' entregue. Todos no canal %u; a camera esta conectando na internet.",
-                                  g_ws_ssid, (unsigned)g_canal_disp); ws_msg(b);
+            char b[100];
+            if (g_ws_ssid[0]) snprintf(b, sizeof(b), "Rede '%s' entregue. Todos no canal %u; a camera esta conectando na internet.", g_ws_ssid, (unsigned)g_canal_disp);
+            else              snprintf(b, sizeof(b), "Re-sync concluido: camera, W1 e W2 no canal %u (o roteador mudou).", (unsigned)g_canal_disp);
+            ws_msg(b);
             g_ws = WS_FIM;
         }
         break;

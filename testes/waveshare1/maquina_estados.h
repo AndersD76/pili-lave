@@ -302,6 +302,7 @@ void auto_tick() {
                 else              nvs_inc_prog_pres(g_estado.programa_sel);
             }
             nvs_inc_prog(g_estado.programa_sel);
+            nuvem_res_limpar();            // (os eventos acima ja guardaram a reserva)
             if (g_ciclo_auto) { lav_contar_ciclo(g_estado.programa_sel, g_tipo_ciclo); g_tipo_prox = 0; }   // planilha de lavagens (so ciclo automatico concluido); o flag de socio vale p/ UM ciclo
             if (g_teste_rodando || g_ciclo_auto) { g_teste_ok++; g_teste_rodando = false; g_ciclo_auto = false; g_ev_tipo = 1; g_ev_modelo = g_estado.programa_sel; g_ev_seq++; }
             g_estado.processo_ativo = PROC_NENHUM;
@@ -343,6 +344,7 @@ void auto_iniciar(uint8_t modelo) {
         DBG_PRINTLN("[AUTO] bloqueado por licenca");
         return;
     }
+    nuvem_res_limpar();                // ciclo local: sem reserva (o inicio pelo app preenche depois)
     g_bomba_ciclo           = g_teste_bomba;   // trava a chave da bomba durante este ciclo
     g_tipo_ciclo            = g_tipo_prox;     // idem para o TIPO do ciclo (presencial/app/socio/bonus)
     g_estado.programa_sel   = modelo;

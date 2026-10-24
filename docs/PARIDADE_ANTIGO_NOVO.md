@@ -27,6 +27,8 @@ de 71–80% para 0–9%.
 
 ## 3. O antigo fazia e o novo AINDA NÃO faz
 
+> **Atualização de 2026-10-24 (tarde):** os itens 1 a 7 e 10 abaixo agora estão **escritos e compilados** (W1 `nuvem_w1.h`, câmera v5, display), **mas nada foi gravado nem testado**. Falta o item 8 (cadastro da máquina). Ver `testes/PENDENCIAS_NA_MAQUINA.md`.
+
 ### 3.1 Para o novo substituir o antigo (bloqueantes)
 | # | Função do antigo | No novo | O que falta |
 |---|---|---|---|
@@ -38,7 +40,7 @@ de 71–80% para 0–9%.
 | 6 | **Lâmpada do app** (`lightState`, prioridades) e **vermelho piscando em erro** | ⚠️ verde/vermelho só nos estados do ciclo; sem erro piscando; sem estado do app | Portar `lampada_app.h` |
 | 7 | **Aspirador (DO8) pelo app** (`vacuum_seg`) | ⚠️ só existe o macro `SET_ASPIRADOR` | Ligar ao heartbeat |
 | 8 | **Cadastro da máquina** (NOVA, trocou display, trocou câmera, `deviceKey`) | ❌ | Portar `tela_boot.h` e a identidade |
-| 9 | **Recuperação no boot** (HOME automático depois de queda de energia, com lâmpadas) | ⚠️ **o código existe na W1, mas `recuperacao_tick()` nunca é chamada** | Ligar e **testar na máquina** (a queda de energia de 2026-10-23 mostrou que importa) |
+| 9 | **Recuperação no boot** (HOME automático depois de queda de energia, com lâmpadas) | ⚠️ **ligada em 2026-10-24 (compilada, não gravada)**; antes `recuperacao_tick()` nunca era chamada | **Gravar e testar na máquina** (a queda de energia de 2026-10-23 mostrou que importa) |
 | 10 | **Câmera**: aceitar "vai para o canal N", responder "oi", re-sync automático | ❌ | Firmware da câmera (em andamento) |
 
 ### 3.2 Importantes, mas não bloqueantes

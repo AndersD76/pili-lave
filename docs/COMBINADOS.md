@@ -69,3 +69,10 @@ Detalhes técnicos: `testes/LEIAME.md`, `testes/PENDENCIAS_NA_MAQUINA.md`, `docs
 - Câmera: data, acerto vindo do app, busca de redes com canal, migração de canal e re-sync automático.
 - Display **com toque**: os dois displays novos vieram **sem o flat do toque** (pedir a versão com toque); por ora o COM5 é o que funciona.
 - RS-485 do display (TX16/RX15) só validado no display antigo. Confirmar F0.10 do SAJ (55 ou 50 Hz) e terminador do Delta.
+
+## 8. Decisão de 2026-10-24: migrar tudo para o firmware novo
+- **Ainda não há clientes usando o app**, então não há problema em operar só com o firmware novo enquanto a parte da nuvem é portada.
+- **Antes de migrar, o que funciona ficou guardado:** tag git `backup-w1-mestre-funcionando-2026-10-24` (no GitHub) e o antigo intacto em `lava_car_485/` + `firmware_camera/`.
+  Como restaurar e como ler a memória exata das placas: `docs/BACKUP_E_RESTAURACAO.md` (a leitura das placas depende delas conectadas).
+- **A migração segue a ordem de `docs/PARIDADE_ANTIGO_NOVO.md`:** (1) recuperação de boot, luz de erro, hard reset do display; (2) câmera + nuvem (canal, heartbeat, início pelo app,
+  eventos com fila e ACK, licença, lâmpada, aspirador); (3) cadastro da máquina. **Decidido em 2026-10-24: a W1 conversa DIRETO com a câmera** (heartbeat, início pelo app, eventos com fila e ACK, licença, lâmpada, aspirador); o display fica só com tela e a configuração de Wi-Fi.

@@ -107,6 +107,14 @@ extern uint8_t    g_processo_atual_idx;  // idem
 
 void auto_tick();
 void luzes_tick();
+// nuvem_w1.h (a W1 conversa direto com a camera)
+void nuvem_carregar();
+void nuvem_tick();
+void nuvem_on_recv(const uint8_t* data, int len);
+void nuvem_res_limpar();
+bool nuvem_res_ativa();
+String nvs_get_last_res_id();
+bool licenca_bloqueada();
 void auto_iniciar(uint8_t modelo);
 void lav_contar_ciclo(uint8_t modelo, uint8_t tipo);
 void man_sai_zera();
@@ -114,6 +122,8 @@ void auto_cancelar();
 void auto_pausar();
 void auto_retomar();
 int  proc_estado();
+void recuperacao_tick();
+bool recuperacao_ativa();
 
 // ---- Tempo do giro 1->2 (movido de processos.h: o controle.h precisa dele antes) ----
 #define GIRO_DUR_DEFAULT_MS  7900  // tempo padrao do giro 1->2 (ms), quando nao ha valor proprio do processo

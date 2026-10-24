@@ -225,11 +225,7 @@ static void wave2_alarme_tick() {
 
 // ---- Stubs: nuvem/licenca/contadores agora vivem no DISPLAY (ve-los pela
 // transicao de estado em MsgStatus) — esta placa so cuida do ciclo fisico. ----
-void backend_evt_car_entered() {}
-void backend_evt_wash_complete(uint8_t programId, const String& source) { (void)programId; (void)source; }
-void backend_evt_fault(const char* errorCode) { (void)errorCode; }
-bool licenca_bloqueada() { return false; }   // gate ja acontece no display antes de mandar "iniciar"
-String nvs_get_last_res_id() { return String(""); }
+// backend_evt_*, licenca_bloqueada() e nvs_get_last_res_id() agora estao em nuvem_w1.h (a W1 conversa direto com a camera).
 void nvs_inc_prog_app(uint8_t p) { (void)p; }
 void nvs_inc_prog_pres(uint8_t p) { (void)p; }
 void nvs_inc_prog(uint8_t p) { (void)p; }
@@ -539,6 +535,9 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* 
     const CabEspNow* cab = (const CabEspNow*)data;
     if (cab->id_maquina != ID_MAQUINA) return;
 
+    // ---- da CAMERA (heartbeat/respostas/eventos): o callback so copia; nuvem_tick() processa no loop ----
+    if (cab->origem == ORIGEM_CAMERA && cab->tipo != MSG_TESTE_DATA) { nuvem_on_recv(data, len); return; }
+
     // ---- da Waveshare 2 ----
     if (cab->origem == ORIGEM_WAVE2) {
         if (cab->tipo == MSG_EVENTO && len >= (int)sizeof(MsgEvento)) {
@@ -773,6 +772,9 @@ void processa_comandos() {
     uint16_t pacote;
     while (g_fila_cmd && xQueueReceive(g_fila_cmd, &pacote, 0) == pdTRUE) {
         uint8_t a = (uint8_t)(pacote & 0xFF), arg = (uint8_t)(pacote >> 8);
+        if (recuperacao_ativa() && (a == 0 || a == 1 || a == 20 || (a >= 60 && a <= 66))) {   // recuperacao de boot em andamento: ela comanda a maquina
+            g_manual_msg = "Recuperacao de boot em andamento: aguarde"; g_manual_msg_ms = millis(); continue;
+        }
         if (g_man_sai && (a == 0 || a == 1 || a == 20)) man_sai_aplicar(0);   // HOME/teste/automatico: desliga as saidas manuais antes
         switch (a) {
             case 0:                                          // HOME: alterna iniciar/cancelar
@@ -819,6 +821,7 @@ void processa_comandos() {
             // ---- AUTOMATICO (fluxo completo: carro X14 -> posicao X15 -> 6 s -> home -> processo) ----
             case 20:                                         // iniciar, arg = modelo 1..4
                 if (arg < 1 || arg > 4) { g_manual_msg = "AUTO: modelo invalido"; g_manual_msg_ms = millis(); break; }
+                if (licenca_bloqueada()) { g_manual_msg = "Maquina BLOQUEADA por licenca (pagamento ou comunicacao)"; g_manual_msg_ms = millis(); break; }
                 if (g_estado_auto == AUTO_ERRO) teste_parar();   // INICIAR depois de um erro: limpa o erro e recomeca
                 if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_manual_ativo) {
                     g_manual_msg = "AUTO bloqueado: maquina ocupada"; g_manual_msg_ms = millis(); break;
@@ -863,7 +866,8 @@ void painel_tick() {
     if (!modelo) return;
     if (t_modelo && agora - t_modelo < 1500) return;          // trava anti-repique/ruido
     t_modelo = agora ? agora : 1;
-    if ((g_estado_auto == AUTO_IDLE || g_estado_auto == AUTO_AGUARDA_CARRO) && !g_teste_rodando && !home_rodando() && !g_manual_ativo) {
+    if ((g_estado_auto == AUTO_IDLE || g_estado_auto == AUTO_AGUARDA_CARRO) && !g_teste_rodando && !home_rodando() && !g_manual_ativo && !recuperacao_ativa() &&
+        !licenca_bloqueada() && !(g_estado_auto == AUTO_AGUARDA_CARRO && nuvem_res_ativa())) {   // (ciclo armado pelo app nao e trocado pelo painel)
         if (g_man_sai) man_sai_aplicar(0);
         DBG_PRINTF("[PAINEL] modelo %u pedido -> AUTO armado\n", (unsigned)modelo);
         g_ciclo_auto = true;
@@ -955,9 +959,9 @@ void manual_tick() {
     if (!vivo) return;                          // nada pedido
 
     // Quer comecar um movimento: so com a maquina parada (sem ciclo, sem HOME, sem PARAR pendente)
-    if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_parar_pedido) {
+    if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_parar_pedido || recuperacao_ativa()) {
         g_manual_cmd = 0;
-        manual_aviso("MANUAL bloqueado: ciclo ou HOME em andamento");
+        manual_aviso("MANUAL bloqueado: ciclo, HOME ou recuperacao em andamento");
         return;
     }
     if (cmd == 10 || cmd == 11) {
@@ -989,6 +993,8 @@ void controle_init() {
     memcpy(p.lmk, ESPNOW_LMK, 16);
     memcpy(p.peer_addr, MAC_DISPLAY, 6); esp_now_add_peer(&p);
     memcpy(p.peer_addr, MAC_WAVE2, 6);   esp_now_add_peer(&p);
+    esp_now_peer_info_t pc = {}; pc.channel = 0; pc.ifidx = WIFI_IF_STA; pc.encrypt = false;      // camera: SEM criptografia (como ela espera)
+    memcpy(pc.peer_addr, MAC_CAMERA, 6); esp_now_add_peer(&pc);
 }
 
 // Chamar no loop(): manda status periodico e cuida do alarme da W2.

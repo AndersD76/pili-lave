@@ -82,6 +82,18 @@ reinicia em **COM X10 + BOMBA ON**, então não precisa reconfigurar a tela).
 - [x] (obsoleto desde 2026-10-24) A W1 passou a reiniciar em COM X10 + BOMBA ON; ver seção G.
 
 ## G. Mudanças de processo — estado em 2026-10-24
+- [ ] **NUVEM direto na W1 (decisão de 2026-10-24) — W1, câmera v5 e display COMPILADOS, NADA GRAVADO.** `testes/waveshare1/nuvem_w1.h` porta do antigo: heartbeat para a câmera a cada 5 s,
+  **início de lavagem pelo app** (reserva paga, tipo "aplicativo", com dedup), **eventos** car-entered/wash-complete/fault com **fila na NVS e ACK**, **licença** (pagamento 40/50 dias; 15 dias LIGADA sem
+  comunicação), **lâmpada** do app + **vermelho piscando em erro**, **aspirador (DO8)**. Câmera: `firmware_camera/release/camera_v5.bin` (obedece "vai para o canal N", sobe no canal combinado,
+  pede **re-sync** ao display quando o roteador muda de canal, responde HB_RESP/EVT_ACK também para a W1). Display: aceita o re-sync da câmera e migra sem senha com a máquina parada.
+  **Ordem para gravar (com o Giovani na máquina):** (1) backup exato das placas (`docs/BACKUP_E_RESTAURACAO.md`); (2) W1 + display + W2; (3) câmera v5 pelo OTA (ver `firmware_camera/release/LEIAME.md`; é deploy de PRODUÇÃO).
+  **Testar:** heartbeat (`[HB] OK` no log da W1), lâmpada seguindo o app, iniciar uma lavagem pelo app com a máquina parada (e com ela ocupada: não deve iniciar; mesma reserva 2x: não repete),
+  concluir uma lavagem e conferir `[EVT] ACK` e o registro no backend, desligar a câmera no meio (evento deve ficar na fila e sair depois), reiniciar a W1 com evento na fila, licença (simular `blocked`), aspirador pelo app,
+  e a troca de canal: TECNICO > WI-FI com uma rede nova, mudar o canal do roteador e ver o re-sync automático. **Ainda sem cadastro da máquina (deviceKey):** a câmera segue com o que já tem salvo.
+- [ ] **Recuperação de boot LIGADA na W1 (compilada, NÃO gravada).** Antes o código existia mas `recuperacao_tick()` nunca era chamada. Agora, ao ligar fora do zero (HOME_GIRO e X12 não ok), a W1 zera as saídas e:
+  com carro na posição (X15) pisca o vermelho e espera tirarem o carro; sem carro, faz o **HOME sozinho** e acompanha até concluir. Enquanto isso o auto, os botões do painel, o manual e o INICIAR ficam bloqueados.
+  **Testar na máquina (mão no PARAR TUDO):** (1) desligar a energia com o braço/carrinho fora do lugar, sem carro, religar: deve fazer o HOME sozinho; (2) o mesmo com carro na posição: só pisca vermelho;
+  (3) religar com tudo no zero: não deve fazer nada. Atenção: a máquina **se mexe sozinha ao ligar**, como no firmware antigo.
 - [ ] **Luzes da máquina no DO7 da W2** (lógica nova): ligam quando há lavagem em andamento ou ciclo armado esperando o carro; ao acabar e não haver mais nada,
   ficam acesas **mais 10 min** e apagam. Começam apagadas ao ligar a W1. PARAR TUDO não apaga (só o tempo). **COMPILADO, NÃO GRAVADO.** Falta: ligar a lâmpada/relé
   no DO7 da W2 (confirmar o fio) e testar. **A "fila esperando" do app ainda não existe** na máquina (variável `g_fila_app` preparada; a câmera/app precisam avisar).

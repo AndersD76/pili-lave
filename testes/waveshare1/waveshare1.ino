@@ -22,6 +22,7 @@
 
 #include "controle.h"
 #include "maquina_estados.h"   // inclui processos.h no fim
+#include "nuvem_w1.h"          // heartbeat/eventos/licenca/lampada/aspirador direto com a camera
 
 // ===================== HARD RESET no boot (via firmware) =====================
 #define HARD_RESET_APAGA_NVS 0
@@ -76,6 +77,7 @@ void setup() {
     controle_init();   // registra o callback de recepcao + peers (display, W2)
     modbus_init();     // RS-485: sobe o barramento, reseta o inversor
     giro_cfg_carregar();        // tempo do giro por processo (NVS)
+    nuvem_carregar();           // fila de eventos, licenca e tempo ligada (NVS)
     lav_carregar();             // planilha de lavagens (NVS)
     cfg_carregar();             // velocidades, esperas por slot e atrasos (NVS)
     comm_hard_reset_saidas();   // item 5: desliga as saidas locais E manda a W2 desligar as dela (apos um reset da W1 ela
@@ -111,11 +113,13 @@ void loop() {
     desloc_tick();
     controle_tick();   // status periodico pro display + alarme da W2
 
+    recuperacao_tick();    // recuperacao de boot: se religou fora do zero, faz o HOME sozinho (lampadas avisam); bloqueia o auto enquanto isso
     static unsigned long t_auto = 0;
     if (!recuperacao_ativa() && millis() - t_auto >= 50) {   // sempre ticka (nao depende de "modo_auto", conceito de tela do display)
         t_auto = millis();
         auto_tick();
     }
+    nuvem_tick();          // camera: heartbeat, inicio pelo app, eventos com ACK, licenca, lampada, aspirador
     luzes_tick();          // luzes da maquina (DO7): ligam com lavagem/fila, apagam 10 min depois
 
     led_tick();

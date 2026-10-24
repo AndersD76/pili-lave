@@ -41,7 +41,8 @@ typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal; } MsgCana
 
 // ---- CAMERA (ESP32-S3-CAM): mensagens que o firmware dela JA entende (iguais a lava_car_485/display/tipos.h e firmware_camera/) ----
 static const uint8_t MAC_CAMERA[6] = {0x02,0x00,0x00,ID_MAQUINA,0x01,0x04};
-enum : uint8_t { MSG_WIFI_REQ = 5, MSG_WIFI_CFG = 6, MSG_SCAN_REQ = 11, MSG_SCAN_RESP = 12 };
+enum : uint8_t { MSG_WIFI_REQ = 5, MSG_WIFI_CFG = 6, MSG_SCAN_REQ = 11, MSG_SCAN_RESP = 12, MSG_RESYNC_REQ = 21 };
+typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal; } MsgResyncReq;   // Camera -> Display: "o roteador mudou para o canal N; migre todos" (sem senha de tecnico)
 typedef struct __attribute__((packed)) {      // Display -> Camera: credenciais (a camera e quem conecta no Wi-Fi). 231 bytes
     CabEspNow cab; char ssid[33]; char pass[65]; uint8_t canal; char api_url[96]; char dev_key[32];
 } MsgWifiCfg;
@@ -76,6 +77,22 @@ enum : uint8_t {
 //   i1 = 1: v[0..3] bonus por modelo, v[4..5] saldo historico presencial (lo,hi), v[6..7] aplicativo, v[8..9] socios, v[10..11] bonus
 // So com a maquina parada. DUMP: tabela 0/1 -> v[0..13] do modelo i1; tabela 2 -> v[0..3]; tabela 3 -> v[0..2] (efetivo).
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t dia, mes; uint16_t ano; } MsgTesteData;
+// ---- NUVEM via CAMERA (a W1 conversa DIRETO com a camera — decisao de 2026-10-24). Mesmas mensagens/ids do firmware antigo e da camera ----
+enum : uint8_t { MSG_HB_STATE = 7, MSG_HB_RESP = 8, MSG_EVT = 9, MSG_EVT_ACK = 10 };
+typedef struct __attribute__((packed)) {      // W1 -> Camera (a cada 5 s): estado para o heartbeat
+    CabEspNow cab; char state[12]; uint32_t restanteSeg;   // state = "FREE" / "WASHING"
+} MsgHbState;
+typedef struct __attribute__((packed)) {      // Camera -> W1: resposta do backend
+    CabEspNow cab; uint8_t ok; uint8_t lightState; uint16_t lic_days; uint8_t lic_blocked;
+    uint8_t start_valido; uint8_t start_prog; uint32_t start_dur; char start_res[40]; int16_t vacuum_seg;
+} MsgHbResp;
+typedef struct __attribute__((packed)) {      // W1 -> Camera: evento p/ a nuvem (a fila fica na NVS da W1 ate o ACK)
+    CabEspNow cab; uint8_t evt_tipo; uint8_t prog; char res[40]; char source[8]; char errcode[64];   // tipo 1=car-entered 2=wash-complete 3=fault
+} MsgEvt;
+typedef struct __attribute__((packed)) {      // Camera -> W1: backend aceitou (200)
+    CabEspNow cab; uint8_t evt_tipo; uint8_t ok; char res[40];
+} MsgEvtAck;
+
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t tabela, i1, i2; uint16_t valor; } MsgTesteCfgSet;
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t tabela, i1; } MsgTesteCfgReq;
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t tabela, i1; uint16_t v[14]; } MsgTesteCfgDump;
@@ -141,3 +158,4 @@ static_assert(sizeof(MsgTesteStatus) <= 250, "MsgTesteStatus passou de 250 bytes
 static_assert(sizeof(MsgTesteCfgDump) <= 250, "MsgTesteCfgDump passou de 250 bytes");
 static_assert(sizeof(MsgWifiCfg) <= 250, "MsgWifiCfg passou de 250 bytes");
 static_assert(sizeof(MsgScanResp) <= 250, "MsgScanResp passou de 250 bytes");
+static_assert(sizeof(MsgHbResp) <= 250 && sizeof(MsgEvt) <= 250 && sizeof(MsgEvtAck) <= 250 && sizeof(MsgHbState) <= 250, "mensagem da nuvem passou de 250 bytes");
