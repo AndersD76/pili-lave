@@ -101,6 +101,7 @@ void loop() {
     processa_comandos();   // executa o que o display pediu (o callback so enfileira)
     manual_tick();         // movimento manual segurando o botao (homem morto)
     man_sai_tick();        // saidas manuais: teto de 60 s
+    canal_tick();          // migracao de canal pedida pelo display
     painel_tick();         // botoes X1..X6 do painel / controle remoto (modelo 1..4, pausar)
 
     static uint32_t t_modbus = 0;
@@ -115,6 +116,7 @@ void loop() {
         t_auto = millis();
         auto_tick();
     }
+    luzes_tick();          // luzes da maquina (DO7): ligam com lavagem/fila, apagam 10 min depois
 
     led_tick();
 }

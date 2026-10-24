@@ -12,7 +12,7 @@
 typedef enum {
     PROC_NENHUM       = 0,
     PROC_PRE_LAVAGEM  = 1,
-    PROC_SPRAY        = 2,
+    // 2 = livre (era "Spray", que e a mesma coisa que a Cera d'agua = 6; foi removido)
     PROC_ESPUMA_A     = 3,
     PROC_ESPUMA_B     = 4,
     PROC_COR_MAGICA   = 5,
@@ -76,11 +76,14 @@ ConfigSistema g_config = {0};
 // Projeto de testes: tabelas FIXAS, iguais aos padroes do display. Nao ha
 // registro de velocidades nem de modelos. Sequencias dos 4 modelos = as originais do display.
 // Etapas: 8 = Alta Pressao (Delta); a bomba SAJ do teste e fixa em 25Hz (processos.h).
+// Etapas 0..10 = velocidades do CARRINHO/GIRO (Delta). Etapas 11..13 = PRESSAO DA AGUA (frequencia da bomba SAJ, em 0,1 Hz):
+//   11 = Pre-lavagem, 12 = Enxague, 13 = Alta Pressao (padrao 25,0 Hz). Hoje o SAJ esta FORA do RS-485 (frequencia fixa no proprio SAJ), entao
+//   estes tres valores so passam a valer quando o controle do SAJ voltar (filtro do RS-485: TESTE_SAJ_POR_RS485 = 1 em saj_rs485_w1.h).
 uint16_t      g_velocidades[4][NUM_ETAPAS] = {
-    { 200, 200, 200, 150, 200, 150, 200, 150, 350, 300, 200, 240, 240, 320 },
-    { 200, 200, 200, 150, 200, 150, 200, 150, 350, 300, 200, 240, 240, 320 },
-    { 200, 200, 200, 150, 200, 150, 200, 150, 350, 300, 200, 240, 240, 320 },
-    { 200, 200, 200, 150, 200, 150, 200, 150, 350, 300, 200, 240, 240, 320 },
+    { 200, 200, 200, 150, 200, 150, 200, 150, 350, 300, 200, 240, 240, 250 },
+    { 200, 200, 200, 150, 200, 150, 200, 150, 350, 300, 200, 240, 240, 250 },
+    { 200, 200, 200, 150, 200, 150, 200, 150, 350, 300, 200, 240, 240, 250 },
+    { 200, 200, 200, 150, 200, 150, 200, 150, 350, 300, 200, 240, 240, 250 },
 };
 uint8_t       g_modelos[4][NUM_SLOTS] = {
     { PROC_COR_MAGICA, PROC_ALTA_PRESSAO, PROC_FIM, PROC_FIM, PROC_FIM, PROC_FIM, PROC_FIM, PROC_FIM, PROC_FIM, PROC_FIM, PROC_FIM, PROC_FIM, PROC_FIM, PROC_FIM },
@@ -103,6 +106,7 @@ extern EstadoAuto g_estado_auto;         // definido em maquina_estados.h
 extern uint8_t    g_processo_atual_idx;  // idem
 
 void auto_tick();
+void luzes_tick();
 void auto_iniciar(uint8_t modelo);
 void lav_contar_ciclo(uint8_t modelo, uint8_t tipo);
 void man_sai_zera();

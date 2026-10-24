@@ -245,6 +245,8 @@ void nvs_inc_prog(uint8_t p) { (void)p; }
 // esperas bloqueantes para o motor nao ser religado depois de um PARAR.
 typedef struct { uint8_t op, tabela, i1, i2; uint16_t valor; } CfgItem;     // op 0 = gravar, 1 = pedir tabela
 static uint8_t  g_data_dia = 0, g_data_mes = 0;  static uint16_t g_data_ano = 0;   // data de hoje (0 = desconhecida; vem de MSG_TESTE_DATA)
+static volatile uint8_t g_canal_pedido = 0;   // canal pedido pelo display (MSG_CANAL); o loop executa (canal_tick)
+static uint32_t g_tec_ping_ms = 0;      // ultimo "tecnico presente" enviado pelo display (acao 70): luzes da maquina
 static uint8_t  g_man_sai = 0;          // saidas MANUAIS ligadas (ver bloco SAIDAS MANUAIS)
 static uint32_t g_man_sai_t0 = 0;
 static QueueHandle_t   g_fila_cfg = nullptr;   // elementos CfgItem (o callback so enfileira; NVS/envio no loop)
@@ -469,8 +471,11 @@ static void aplica_canal(uint8_t ch) {
 uint8_t controle_canal_boot() {
     // Projeto de testes: canal FIXO em ESPNOW_CANAL (nao le nem grava NVS) —
     // display e W1 sempre no mesmo canal, sem depender de camera/pareamento.
-    g_canal_atual = ESPNOW_CANAL;
-    return ESPNOW_CANAL;
+    Preferences p; uint8_t c = ESPNOW_CANAL;
+    if (p.begin("rede", true)) { c = p.getUChar("canal", ESPNOW_CANAL); p.end(); }
+    if (c < 1 || c > 13) c = ESPNOW_CANAL;
+    g_canal_atual = c;
+    return c;
 }
 
 // =======================================================================
@@ -558,6 +563,9 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* 
         else if (m->acao >= 10 && m->acao <= 13) { g_manual_cmd = m->acao; g_manual_ms = millis(); }   // segurando
         else if (m->acao == 14) g_manual_cmd = 0;                       // soltou
         else if (g_fila_cmd) { uint16_t a = (uint16_t)m->acao | ((uint16_t)m->arg << 8); xQueueSend(g_fila_cmd, &a, 0); }
+    } else if (cab->tipo == MSG_CANAL && len >= (int)sizeof(MsgCanal)) {          // display: "vai para o canal N"
+        const MsgCanal* m = (const MsgCanal*)data;
+        if (m->canal >= 1 && m->canal <= 13) g_canal_pedido = m->canal;
     } else if (cab->tipo == MSG_TESTE_DATA && len >= (int)sizeof(MsgTesteData)) {
         const MsgTesteData* m = (const MsgTesteData*)data;
         if (m->dia >= 1 && m->dia <= 31 && m->mes >= 1 && m->mes <= 12 && m->ano >= 2024 && m->ano <= 2099) {
@@ -583,6 +591,8 @@ void man_sai_zera() { g_man_sai = 0; }
 static void man_sai_aplicar(uint8_t novo) {
     bool bomba = g_teste_bomba;
     bool y7 = (novo & 0x2E) && bomba;                  // espuma A/B, cor magica ou cera
+    bool y13 = (novo & 0x40) && bomba;                 // TESTE da bomba de alta pressao (so com BOMBA em ON; teto de 20 s)
+    if (!y13) io2_set_do(Y13_CANAL_W2, false);         // desligando: a bomba de alta pressao primeiro
     if (!y7) io1_set_do(7, false);                     // desligando: bomba ANTES dos solenoides
     io1_set_do(6, (novo & 0x01) != 0);
     io1_set_do(2, (novo & 0x02) != 0);
@@ -592,6 +602,7 @@ static void man_sai_aplicar(uint8_t novo) {
     io2_set_do(1, (novo & 0x20) != 0);
     io1_set_do(5, (novo & 0x10) != 0 && bomba);
     if (y7) io1_set_do(7, true);                       // ligando: solenoides ANTES da bomba
+    if (y13) io2_set_do(Y13_CANAL_W2, true);           // Y13 (alta pressao): o contator aciona o SAJ em frequencia fixa
     g_man_sai = novo;
     DBG_PRINTF("[MANUAL] saidas = 0x%02X (bomba %s)\n", (unsigned)novo, bomba ? "ON" : "OFF");
 }
@@ -599,9 +610,10 @@ static bool man_sai_livre() { return g_estado_auto == AUTO_IDLE && !g_teste_roda
 void man_sai_tick() {
     if (!g_man_sai) return;
     if (!man_sai_livre()) { g_man_sai = 0; return; }   // ciclo/HOME/movimento assumiram (eles desligam as saidas no inicio)
-    if (millis() - g_man_sai_t0 > MAN_SAI_TETO_MS) {
+    uint32_t teto = (g_man_sai & 0x40) ? 20000UL : MAN_SAI_TETO_MS;     // a bomba de alta pressao desliga em 20 s
+    if (millis() - g_man_sai_t0 > teto) {
         man_sai_aplicar(0);
-        g_manual_msg = "Saidas manuais desligadas (limite de 60 s)"; g_manual_msg_ms = millis();
+        g_manual_msg = (teto == 20000UL) ? "Teste da bomba desligado (limite de 20 s)" : "Saidas manuais desligadas (limite de 60 s)"; g_manual_msg_ms = millis();
     }
 }
 
@@ -655,7 +667,7 @@ static void atrasos_aplicar() {                  // SECO = tudo zerado; CARRO RE
 }
 
 // Processos que podem aparecer numa sequencia: pre-lavagem, espumas A/B, cor magica, cera, alta pressao, secagem, enxague, FIM.
-// (Spray nao esta implementado no firmware de testes.)
+// (Spray foi removido: era a mesma coisa que a Cera d'agua.)
 static bool seq_proc_valido(uint8_t p) { return p == PROC_PRE_LAVAGEM || p == PROC_ESPUMA_A || p == PROC_ESPUMA_B || p == PROC_COR_MAGICA || p == PROC_CERA_AGUA || p == PROC_ALTA_PRESSAO || p == PROC_SECAGEM || p == PROC_ENXAGUE || p == PROC_FIM; }
 
 void cfg_carregar() {
@@ -671,6 +683,7 @@ void cfg_carregar() {
         p.getBytes("esp", w, sizeof(w));
         for (int m = 0; m < 4; m++) for (int s = 0; s < NUM_SLOTS; s++) if (w[m][s] <= 3600 || w[m][s] == 0xFFFF) g_modelos_espera[m][s] = w[m][s];
     }
+    if (!p.getBool("pres2", false)) for (int m = 0; m < 4; m++) g_velocidades[m][13] = 250;   // etapa 13 passou a ser a pressao da Alta Pressao (25 Hz); ignora valor antigo
     uint8_t q[4][NUM_SLOTS];
     if (p.getBytesLength("seq") == sizeof(q)) {
         p.getBytes("seq", q, sizeof(q));
@@ -690,7 +703,7 @@ void cfg_carregar() {
 static void cfg_salvar(uint8_t tabela) {
     Preferences p;
     if (!p.begin("cfg", false)) return;
-    if (tabela == 0) p.putBytes("vel", g_velocidades, sizeof(g_velocidades));
+    if (tabela == 0) { p.putBytes("vel", g_velocidades, sizeof(g_velocidades)); p.putBool("pres2", true); }
     if (tabela == 4) p.putBytes("seq", g_modelos, sizeof(g_modelos));
     if (tabela == 1) p.putBytes("esp", g_modelos_espera, sizeof(g_modelos_espera));
     if (tabela == 2) p.putBytes("atr", g_atraso_real, sizeof(g_atraso_real));
@@ -785,13 +798,15 @@ void processa_comandos() {
                 giro_cfg_salvar(a - 40);
                 DBG_PRINTF("[GIRO] tempo do processo %d = %u ms (salvo)\n", (int)(a - 40), (unsigned)g_giro_dur_proc[a - 40]);
                 break;
-            case 60: case 61: case 62: case 63: case 64: case 65: {   // saida manual (arg 1 liga / 0 desliga)
+            case 60: case 61: case 62: case 63: case 64: case 65: case 66: {   // saida manual (arg 1 liga / 0 desliga); 66 = TESTE da bomba de alta pressao (Y13)
                 if (!man_sai_livre()) { g_manual_msg = "Saidas manuais so com a maquina parada"; g_manual_msg_ms = millis(); break; }
+                if (a == 66 && arg && !g_teste_bomba) { g_manual_msg = "Ligue o BOMBA (ON) na tela TECNICO antes de testar a bomba"; g_manual_msg_ms = millis(); break; }
                 uint8_t bit = (uint8_t)(1u << (a - 60));
                 uint8_t novo = arg ? (uint8_t)(g_man_sai | bit) : (uint8_t)(g_man_sai & ~bit);
                 if (arg) g_man_sai_t0 = millis();
                 man_sai_aplicar(novo);
                 break; }
+            case 70: g_tec_ping_ms = millis() ? millis() : 1; break;   // display nas telas TECNICO/MANUAL/WI-FI: tecnico presente (mantem as luzes acesas)
             case 7: if (arg <= 3) g_tipo_prox = arg; break;  // tipo do proximo ciclo (0 presencial, 1 aplicativo, 2 socio, 3 bonus)
             case 9:                                          // ACERTO (pagamento efetuado)
                 if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_manual_ativo) {
@@ -855,6 +870,48 @@ void painel_tick() {
         auto_iniciar(modelo);
     } else {
         DBG_PRINTF("[PAINEL] modelo %u ignorado (estado=%d)\n", (unsigned)modelo, (int)g_estado_auto);
+    }
+}
+
+// ---- MIGRACAO DE CANAL pedida pelo display (canal_tick, no loop) ----
+// Sequencia: manda a W2 ir para o canal N (no canal ANTIGO, onde ela ainda ouve), muda a si mesma, espera o heartbeat da W2 no canal
+// novo (ate 3 s). Deu certo: salva o canal na NVS e manda o "oi" (MsgCanal) ao display (que ja esta no canal novo).
+// Deu errado: manda a W2 voltar, volta ao canal antigo e NAO salva. So migra com a maquina parada.
+static uint8_t g_can_est = 0, g_can_ant = ESPNOW_CANAL, g_can_dest = ESPNOW_CANAL;
+static uint32_t g_can_t0 = 0, g_can_hb_antes = 0;
+static void canal_envia(const uint8_t* mac, uint8_t canal, int vezes) {
+    MsgCanal m = {};
+    m.cab.tipo = MSG_CANAL; m.cab.id_maquina = ID_MAQUINA; m.cab.origem = ORIGEM_WAVE1; m.cab.seq = g_ws_seq++;
+    m.canal = canal;
+    for (int i = 0; i < vezes; i++) { esp_now_send((uint8_t*)mac, (uint8_t*)&m, sizeof(m)); delay(30); }
+}
+static void canal_salvar(uint8_t c) { Preferences p; if (p.begin("rede", false)) { p.putUChar("canal", c); p.end(); } }
+void canal_tick() {
+    if (g_can_est == 0) {
+        uint8_t n = g_canal_pedido; if (!n) return;
+        g_canal_pedido = 0;
+        if (n == g_canal_atual) { canal_envia(MAC_DISPLAY, n, 3); return; }               // ja estou nele: so confirma
+        if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_manual_ativo) {
+            g_manual_msg = "Canal: maquina ocupada"; g_manual_msg_ms = millis(); return;
+        }
+        g_can_ant = g_canal_atual; g_can_dest = n;
+        canal_envia(MAC_WAVE2, n, 3);                                                       // a W2 vai primeiro (ainda no canal antigo)
+        aplica_canal(n);
+        g_can_hb_antes = g_hb2; g_can_t0 = millis(); g_can_est = 1;
+        DBG_PRINTF("[CANAL] migrando %u -> %u (esperando a W2)\n", (unsigned)g_can_ant, (unsigned)n);
+        return;
+    }
+    if (g_hb2 != g_can_hb_antes && (millis() - g_hb2) < 600) {                              // W2 apareceu no canal novo
+        canal_salvar(g_can_dest);
+        canal_envia(MAC_DISPLAY, g_can_dest, 4);                                            // "oi" para o display
+        DBG_PRINTF("[CANAL] ok: no canal %u (salvo)\n", (unsigned)g_can_dest);
+        g_can_est = 0;
+    } else if (millis() - g_can_t0 > 3000) {                                                // falhou: volta tudo
+        canal_envia(MAC_WAVE2, g_can_ant, 3);                                               // (no canal novo, caso a W2 tenha migrado)
+        aplica_canal(g_can_ant);
+        DBG_PRINTF("[CANAL] FALHOU: W2 nao respondeu no canal %u; voltei ao %u\n", (unsigned)g_can_dest, (unsigned)g_can_ant);
+        g_manual_msg = "Canal: a W2 nao acompanhou; voltei ao canal antigo"; g_manual_msg_ms = millis();
+        g_can_est = 0;
     }
 }
 

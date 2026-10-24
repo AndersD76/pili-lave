@@ -41,10 +41,14 @@ static uint8_t           g_seq = 0;
 static uint16_t g_cfg[6][4][14];
 static bool     g_cfg_ok[6][4];
 
+static void wifi_on_recv(const uint8_t* data, int len);    // wifi_tecnico.h
+
 static void on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
     if (len < (int)sizeof(CabEspNow)) return;
     const CabEspNow* c = (const CabEspNow*)data;
-    if (c->id_maquina != ID_MAQUINA || c->origem != ORIGEM_WAVE1) return;
+    if (c->id_maquina != ID_MAQUINA) return;
+    if (c->origem == ORIGEM_CAMERA || (c->origem == ORIGEM_WAVE1 && c->tipo == MSG_CANAL)) { wifi_on_recv(data, len); return; }   // camera / "oi" da W1
+    if (c->origem != ORIGEM_WAVE1) return;
     if (c->tipo == MSG_TESTE_STATUS && len >= (int)sizeof(MsgTesteStatus)) {
         memcpy(&g_st, data, sizeof(g_st));
         g_st_ms = millis();
@@ -84,12 +88,26 @@ static void cfg_set(uint8_t tabela, uint8_t i1, uint8_t i2, uint16_t valor) {
     for (int k = 0; k < 2; k++) { esp_now_send((uint8_t*)MAC_WAVE1, (uint8_t*)&m, sizeof(m)); if (k == 0) delay(25); }
 }
 
+// ---- canal do radio: guardado na NVS (namespace "rede"); a maquina nova nasce no canal 1 ----
+static uint8_t g_canal_disp = ESPNOW_CANAL;
+static void radio_set_canal(uint8_t ch) {
+    esp_wifi_set_promiscuous(true); esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE); esp_wifi_set_promiscuous(false);
+    g_canal_disp = ch;
+}
+static uint8_t canal_salvo_ler() {
+    Preferences p; uint8_t c = ESPNOW_CANAL;
+    if (p.begin("rede", true)) { c = p.getUChar("canal", ESPNOW_CANAL); p.end(); }
+    return (c >= 1 && c <= 13) ? c : ESPNOW_CANAL;
+}
+static void canal_gravar(uint8_t c) { Preferences p; if (p.begin("rede", false)) { p.putUChar("canal", c); p.end(); } }
+
 static void radio_init() {
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
     esp_wifi_set_mac(WIFI_IF_STA, (uint8_t*)MAC_DISPLAY);
     esp_wifi_set_promiscuous(true);
-    esp_wifi_set_channel(ESPNOW_CANAL, WIFI_SECOND_CHAN_NONE);
+    g_canal_disp = canal_salvo_ler();
+    esp_wifi_set_channel(g_canal_disp, WIFI_SECOND_CHAN_NONE);
     esp_wifi_set_promiscuous(false);
     if (esp_now_init() != ESP_OK) { Serial.println("[ESP-NOW] init FALHOU"); return; }
     esp_now_set_pmk(ESPNOW_PMK);
@@ -99,6 +117,11 @@ static void radio_init() {
     memcpy(p.lmk, ESPNOW_LMK, 16);
     memcpy(p.peer_addr, MAC_WAVE1, 6);
     esp_now_add_peer(&p);
+    esp_now_peer_info_t pc = {};                      // camera e broadcast: SEM criptografia (como a camera espera)
+    pc.channel = 0; pc.ifidx = WIFI_IF_STA; pc.encrypt = false;
+    memcpy(pc.peer_addr, MAC_CAMERA, 6); esp_now_add_peer(&pc);
+    static const uint8_t BC_RADIO[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+    memcpy(pc.peer_addr, BC_RADIO, 6); esp_now_add_peer(&pc);
     Serial.printf("[TESTE] radio pronto (canal fixo %d)\n", ESPNOW_CANAL);
 }
 
@@ -222,6 +245,11 @@ static void cb_auto_iniciar(lv_event_t*)  { enviar(20, 1, g_modelo_sel); }
 static void cb_auto_pausa(lv_event_t*)    { enviar((g_st_ok && g_st.estado_auto == 8) ? 22 : 21, 2); }   // alterna pausar/continuar
 static void cb_auto_cancelar(lv_event_t*) { enviar(23, 3); }
 static lv_obj_t* lbl_t_carro; static lv_obj_t* btn_t_carro;
+static lv_obj_t* lbl_t_bomba_teste; static lv_obj_t* btn_t_bomba_teste;
+static void cb_bomba_teste(lv_event_t*) {   // liga/desliga o TESTE da bomba de alta pressao (Y13): valor absoluto; a W1 recusa se BOMBA estiver OFF
+    bool ligada = g_st_ok && ((g_st.man_saidas >> 6) & 1);
+    enviar(66, 2, ligada ? 0 : 1);
+}
 static void cb_carro(lv_event_t*) { enviar((g_st_ok && (g_st.bomba_on & 2)) ? 6 : 5, 2); }   // alterna SECO / CARRO REAL
 
 static lv_obj_t* novo_botao_cb(lv_obj_t* pai, const char* texto, lv_color_t cor, int x, int y, int w, int h,
@@ -247,16 +275,17 @@ static uint8_t   ed_n = 0;
 static uint8_t   g_ed_tab = 0, g_ed_mod = 0;
 static uint32_t  g_cfg_req_ms = 0, g_ed_refetch_ms = 0;
 
-static const char* NOMES_ETAPA_V[11] = { "Pre-lavagem", "Spray agua", "Espuma A desloc.", "Espuma A giro", "Espuma B desloc.",
-    "Espuma B giro", "Cor Magica desloc.", "Cor Magica giro", "Alta pressao", "Secagem", "Retorno" };
-static const char* NOME_PROC_C[11] = { "-", "Pre-lavagem", "Spray", "Espuma A", "Espuma B", "Cor Magica", "Cera d'agua", "Alta Pressao",
+static const char* NOMES_ETAPA_V[14] = { "Pre-lavagem", "Cera d'agua", "Espuma A desloc.", "Espuma A giro", "Espuma B desloc.",
+    "Espuma B giro", "Cor Magica desloc.", "Cor Magica giro", "Alta pressao", "Secagem", "Retorno",
+    "Press. Pre-lavagem", "Press. Enxague", "Press. Alta Pressao" };   // 11..13 = pressao da agua (frequencia do SAJ)
+static const char* NOME_PROC_C[11] = { "-", "Pre-lavagem", "-", "Espuma A", "Espuma B", "Cor Magica", "Cera d'agua", "Alta Pressao",
     "Secagem", "Enxague", "Fim" };
 static const char* NOMES_ATRASO[4] = { "Espuma A: espera depois", "Espuma B: espera depois", "Cor Magica: espera depois", "Secagem: pausa antes" };
 static const char* NOMES_GIRO[3]   = { "Pre-lavagem", "Espuma A", "Alta Pressao" };
-static const char* TITULO_ED[5]    = { "VELOCIDADES (Hz)", "ESPERAS DOS MODELOS", "ATRASOS EM CARRO REAL", "TEMPO DO GIRO 1->2", "SEQUENCIA DOS MODELOS" };
+static const char* TITULO_ED[5]    = { "VELOCIDADES E PRESSAO (Hz)", "ESPERAS DOS MODELOS", "ATRASOS EM CARRO REAL", "TEMPO DO GIRO 1->2", "SEQUENCIA DOS MODELOS" };
 #define ED_COM_MODELO (g_ed_tab <= 1 || g_ed_tab == 4)      // abas que dependem do modelo escolhido
 static const uint8_t SEQ_ORDEM[9] = { 10, 1, 3, 4, 5, 6, 7, 8, 9 };   // ciclo do botao +/-: FIM, pre-lavagem, espuma A/B, cor magica, cera, alta pressao, secagem, enxague
-static const char* NOME_SEQ[11] = { "-", "Pre-lavagem", "Spray", "Espuma A", "Espuma B", "Cor Magica", "Cera d'agua", "Alta Pressao", "Secagem", "Enxague", "(fim)" };
+static const char* NOME_SEQ[11] = { "-", "Pre-lavagem", "-", "Espuma A", "Espuma B", "Cor Magica", "Cera d'agua", "Alta Pressao", "Secagem", "Enxague", "(fim)" };
 
 static void ed_pedir() {
     uint8_t m = (ED_COM_MODELO) ? g_ed_mod : 0;
@@ -356,7 +385,7 @@ static void ui_atualizar_ed(bool contato, const MsgTesteStatus& st) {
     if (ok && contato) {
         const uint16_t* v = g_cfg[g_ed_tab][m];
         switch (g_ed_tab) {
-            case 0: for (int e = 0; e < 11; e++) ed_slot[ed_n++] = e; break;
+            case 0: for (int e = 0; e < 14; e++) ed_slot[ed_n++] = e; break;
             case 1: for (int sl = 0; sl < 14; sl++) { uint16_t p = g_cfg[4][m][sl]; if (p == 3 || p == 4 || p == 5 || p == 6 || p == 8) ed_slot[ed_n++] = sl; } break;
             case 2: for (int i = 0; i < 4; i++) ed_slot[ed_n++] = i; break;
             case 3: for (int i = 0; i < 3; i++) ed_slot[ed_n++] = i; break;
@@ -412,7 +441,7 @@ static void senha_mostra() {
     lv_label_set_text(lbl_senha_pontos, n ? b : "----");
 }
 static bool maquina_ocupada() {
-    return g_st_ok && ((g_st.estado_auto >= 1 && g_st.estado_auto <= 5) || g_st.estado_auto == 8 || g_st.home_estado >= 1 || g_st.rodando);
+    return g_st_ok && ((g_st.estado_auto >= 1 && g_st.estado_auto <= 5) || g_st.estado_auto == 8 || (g_st.home_estado >= 1 && g_st.home_estado <= 4) || g_st.rodando);   // HOME em andamento = estados 1..4 (5 = concluido e 6 = falhou ficam gravados e NAO contam)
 }
 // ---- ALTERAR SENHA: alvo 10+k (k = 0 config, 1 tecnico, 2 pagamento); fase 0 = senha atual, 1 = nova, 2 = repetir ----
 static uint8_t g_alt_fase = 0; static char g_alt_nova[9] = "";
@@ -520,16 +549,16 @@ static uint32_t  pl_req_ms = 0;
 static void cb_socio(lv_event_t*) { enviar(7, 2, (uint8_t)(((g_st_ok ? g_st.tipo_prox : 0) + 1) & 3)); }   // gira o TIPO do proximo ciclo: presencial > aplicativo > socio > bonus
 
 // ---- Saidas MANUAIS (liga/desliga; so com a maquina parada; a W1 desliga sozinha em 60 s) ----
-static lv_obj_t *btn_m_sai[6], *lbl_m_sai[6];
+static lv_obj_t *btn_m_sai[7], *lbl_m_sai[7];
 static void cb_man_sai(lv_event_t* e) {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
     bool ligada = g_st_ok && ((g_st.man_saidas >> idx) & 1);
     enviar((uint8_t)(60 + idx), 2, ligada ? 0 : 1);      // valor ABSOLUTO (repetir e seguro)
 }
 static void ui_manual_toggles_criar() {
-    static const char* NM[6] = { "VALVULA", "ESPUMA A", "ESPUMA B", "COR MAGICA", "SECAGEM", "CERA D'AGUA" };
-    for (int i = 0; i < 6; i++)
-        btn_m_sai[i] = novo_botao_cb(scr_manual, NM[i], COR_CINZA, 16 + (i % 3) * 260, 276 + (i / 3) * 56, 248, 50, cb_man_sai, i, &lbl_m_sai[i]);
+    static const char* NM[7] = { "VALVULA", "ESPUMA A", "ESPUMA B", "COR MAGICA", "SECAGEM", "CERA D'AGUA", "BOMBA ALTA\nPRESSAO (20 s)" };
+    for (int i = 0; i < 7; i++)
+        btn_m_sai[i] = novo_botao_cb(scr_manual, NM[i], COR_CINZA, 16 + (i % 4) * 194, 276 + (i / 4) * 56, 184, 50, cb_man_sai, i, &lbl_m_sai[i]);
 }
 
 // ---- AVISO DE FIM DE CICLO: aparece sobre QUALQUER tela e fica ate tocar OK (ou comecar outro ciclo) ----
@@ -629,6 +658,19 @@ static void ui_auto_criar() {
     novo_botao_cb(scr_auto, "PAGAMENTO\nEFETUADO", COR_AZUL, 588, 396, 200, 76, cb_pede_senha, 2);
 }
 
+// Ao SAIR da tela TECNICO (para AUTOMATICO ou MANUAL) a maquina volta ao modo de operacao: COM X10 (carro real) e BOMBA em ON.
+// Evita esquecer esses dois botoes depois de um teste a seco. (Ir para a tela WI-FI nao conta: ela faz parte da aba tecnica.)
+static void tecnico_sair_assume_operacao() {
+    if (g_st_ok && ((g_st.man_saidas >> 6) & 1)) enviar(66, 2, 0);     // desliga o teste da bomba, se estiver ligado
+    enviar(4, 2);                                                       // BOMBA em ON
+    if (!maquina_ocupada()) enviar(5, 2);                               // COM X10 (a W1 so troca de modo com a maquina parada)
+    snprintf(g_aviso, sizeof(g_aviso), "Saiu do TECNICO: BOMBA em ON e COM X10"); g_aviso_ms = millis();
+}
+static void cb_tec_para_auto(lv_event_t*)   { tecnico_sair_assume_operacao(); if (scr_auto)   lv_scr_load(scr_auto); }
+static void cb_tec_para_manual(lv_event_t*) { tecnico_sair_assume_operacao(); if (scr_manual) lv_scr_load(scr_manual); }
+
+#include "wifi_tecnico.h"
+
 static void ui_criar() {
     lv_obj_t* scr = lv_obj_create(nullptr);
     scr_principal = scr;    // = tela TECNICO (atras da senha 2828)
@@ -636,9 +678,10 @@ static void ui_criar() {
     lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
     // Barra de cima: botao da BOMBA no canto superior esquerdo + navegacao
-    btn_bomba = novo_botao(scr, "BOMBA: OFF (a seco)", COR_CINZA, 8, 8, 320, 56, cb_bomba, &lbl_bomba);
-    novo_botao(scr, "AUTOMATICO", COR_VERDE, 340, 8, 210, 56, cb_ir_auto);
-    novo_botao(scr, "MANUAL", COR_AZUL, 560, 8, 230, 56, cb_ir_manual);
+    btn_bomba = novo_botao(scr, "BOMBA: OFF (a seco)", COR_CINZA, 8, 8, 250, 56, cb_bomba, &lbl_bomba);
+    novo_botao(scr, "AUTOMATICO", COR_VERDE, 266, 8, 180, 56, cb_tec_para_auto);
+    novo_botao(scr, "MANUAL", COR_AZUL, 454, 8, 170, 56, cb_tec_para_manual);
+    novo_botao(scr, "WI-FI", COR_AZUL, 632, 8, 160, 56, cb_ir_wifi);
 
     lbl_estado = novo_label(scr, &lv_font_montserrat_20, COR_TEXTO,    16, 80,  770);
     lbl_etapa  = novo_label(scr, &lv_font_montserrat_18, COR_FRACO,    16, 118, 770);
@@ -650,10 +693,11 @@ static void ui_criar() {
     lbl_giro   = novo_label(scr, &lv_font_montserrat_16, COR_AMARELO,  16, 298, 780);
     lbl_cmd    = novo_label(scr, &lv_font_montserrat_16, COR_AZUL,     16, 320, 780);
 
-    novo_botao(scr, "HOME",          COR_AZUL,      16, 352, 150, 100, cb_home);
-    novo_botao(scr, "INICIAR TESTE", COR_VERDE,    174, 352, 230, 100, cb_iniciar);
-    novo_botao(scr, "PARAR",         COR_VERMELHO, 412, 352, 180, 100, cb_parar);
-    btn_t_carro = novo_botao(scr, "CARRO SECO", COR_CINZA, 600, 352, 190, 100, cb_carro, &lbl_t_carro);
+    novo_botao(scr, "HOME",          COR_AZUL,      16, 352, 126, 100, cb_home);
+    novo_botao(scr, "INICIAR TESTE", COR_VERDE,    150, 352, 190, 100, cb_iniciar);
+    novo_botao(scr, "PARAR",         COR_VERMELHO, 348, 352, 128, 100, cb_parar);
+    btn_t_bomba_teste = novo_botao(scr, "BOMBA TESTE\n(20 s)", COR_CINZA, 484, 352, 150, 100, cb_bomba_teste, &lbl_t_bomba_teste);
+    btn_t_carro = novo_botao(scr, "SEM X10\n(a seco)", COR_CINZA, 642, 352, 148, 100, cb_carro, &lbl_t_carro);
 
     pw_carregar();
     ui_manual_criar();
@@ -661,6 +705,8 @@ static void ui_criar() {
     ui_auto_criar();
     ui_cfg_criar();
     ui_senha_criar();
+    ui_wifi_criar();
+    if (wifi_mig_pendente()) ws_msg("Migracao de canal INTERROMPIDA antes. Toque em BUSCAR REDES (se precisar, ele procura a camera nos canais).", true);
     ui_evento_criar();
     lv_scr_load(scr_auto);   // a maquina vive no AUTOMATICO: e a tela inicial
 }
@@ -680,14 +726,14 @@ static void ui_atualizar_manual(bool contato, const MsgTesteStatus& s) {
     lv_color_t cor = COR_FRACO;
     if (s.manual_mov >= 10 && s.manual_mov <= 13) {
         snprintf(buf, sizeof(buf), "MOVENDO: %s  (solte para parar)", MOV[s.manual_mov]); cor = COR_VERDE;
-    } else if (s.estado_auto != 0 || s.home_estado >= 1) {
+    } else if (s.estado_auto != 0 || (s.home_estado >= 1 && s.home_estado <= 4)) {
         snprintf(buf, sizeof(buf), "Maquina ocupada (ciclo ou HOME): manual bloqueado"); cor = COR_AMARELO;
     } else {
         snprintf(buf, sizeof(buf), "Parado. Segure um botao para mover."); cor = COR_FRACO;
     }
     lv_label_set_text(lbl_m_estado, buf);
     lv_obj_set_style_text_color(lbl_m_estado, cor, 0);
-    for (int i = 0; i < 6; i++) lv_obj_set_style_bg_color(btn_m_sai[i], ((s.man_saidas >> i) & 1) ? lv_color_hex(0xE08A00) : COR_CINZA, 0);
+    for (int i = 0; i < 7; i++) lv_obj_set_style_bg_color(btn_m_sai[i], ((s.man_saidas >> i) & 1) ? (i == 6 ? lv_color_hex(0xC62828) : lv_color_hex(0xE08A00)) : COR_CINZA, 0);
 
     char msg[56];
     strncpy(msg, s.msg, sizeof(msg) - 1); msg[sizeof(msg) - 1] = '\0';
@@ -710,7 +756,7 @@ static void ui_atualizar_auto(bool contato, const MsgTesteStatus& s) {
         lv_label_set_text(lbl_a_cont, ""); lv_label_set_text(lbl_a_sens, "");
         return;
     }
-    static const char* PROC[11] = { "-", "Pre-lavagem", "Spray", "Espuma A", "Espuma B", "Cor Magica",
+    static const char* PROC[11] = { "-", "Pre-lavagem", "-", "Espuma A", "Espuma B", "Cor Magica",
                                     "Cera de agua", "Alta Pressao", "Secagem", "Enxague", "Fim" };
     lv_color_t cor = COR_TEXTO;
     switch (s.estado_auto) {
@@ -789,6 +835,15 @@ static void ui_atualizar() {
 
     ui_evento_atualiza(contato, s);
 
+    // TECNICO presente: enquanto estiver nas telas TECNICO, MANUAL ou WI-FI avisa a W1 (acao 70) para manter as luzes da maquina acesas.
+    {
+        static uint32_t t_ping = 0; static lv_obj_t* tela_ant = nullptr;
+        lv_obj_t* a = lv_scr_act();
+        bool tec = (a == scr_principal || a == scr_manual || a == scr_wifi);
+        if (tec && (a != tela_ant || millis() - t_ping > 10000)) { t_ping = millis(); enviar(70, 1, 0); }
+        tela_ant = a;
+    }
+
     // Ciclo armado/iniciado de fora (painel fisico, controle remoto): mostra a tela AUTOMATICO e o modelo pedido.
     static uint8_t estado_ant = 0;
     if (contato) {
@@ -803,6 +858,7 @@ static void ui_atualizar() {
     if (scr_auto && lv_scr_act() == scr_auto)     { ui_atualizar_auto(contato, s);   return; }
     if (scr_hub && lv_scr_act() == scr_hub)       { return; }
     if (scr_ed && lv_scr_act() == scr_ed)         { ui_atualizar_ed(contato, s);     return; }
+    if (scr_wifi && lv_scr_act() == scr_wifi)     { ui_atualizar_wifi(contato);      return; }
 
     if (!g_st_ok) {
         lv_label_set_text(lbl_estado, "SEM CONTATO COM A WAVESHARE 1 (nunca recebeu status)");
@@ -883,7 +939,7 @@ static void ui_atualizar() {
         static const char* MOV[] = { "PARADO", "FRENTE", "REVERSO" };
         snprintf(buf, sizeof(buf), "Y4:%d | Y14 cmd:%d real:%d | Y13 cmd:%d real:%d | Delta cmd: %s %.1f Hz",
                  (s.w1_do >> 3) & 1, (s.w2_do_cmd >> 3) & 1, (s.w2_do_real >> 3) & 1,
-                 (s.w2_do_cmd >> 2) & 1, (s.w2_do_real >> 2) & 1,
+                 (s.w2_do_cmd >> (Y13_CANAL_W2 - 1)) & 1, (s.w2_do_real >> (Y13_CANAL_W2 - 1)) & 1,
                  MOV[s.vfd_mov > 2 ? 0 : s.vfd_mov], s.vfd_mov_freq / 10.0f);
         lv_label_set_text(lbl_cmd, buf);
     }
@@ -891,8 +947,11 @@ static void ui_atualizar() {
     lv_label_set_text(lbl_bomba, (s.bomba_on & 1) ? "BOMBA: ON (Y13)" : "BOMBA: OFF (a seco)");
     lv_obj_set_style_bg_color(btn_bomba, (s.bomba_on & 1) ? lv_color_hex(0xE08A00) : COR_CINZA, 0);
     bool real = (s.bomba_on & 2) != 0;
-    lv_label_set_text(lbl_t_carro, real ? "CARRO REAL" : "CARRO SECO");
+    lv_label_set_text(lbl_t_carro, real ? "COM X10\n(carro real)" : "SEM X10\n(a seco)");
     lv_obj_set_style_bg_color(btn_t_carro, real ? lv_color_hex(0xE08A00) : COR_CINZA, 0);
+    bool bt = (s.man_saidas >> 6) & 1;
+    lv_label_set_text(lbl_t_bomba_teste, bt ? "BOMBA TESTE\nLIGADA" : "BOMBA TESTE\n(20 s)");
+    lv_obj_set_style_bg_color(btn_t_bomba_teste, bt ? lv_color_hex(0xC62828) : COR_CINZA, 0);
 }
 
 // ----------------------------------------------------------- setup/loop ----
@@ -932,5 +991,6 @@ void loop() {
             lvgl_port_unlock();
         }
     }
+    wifi_tick();         // busca de redes / migracao de canal (maquina de estados, fora do LVGL)
     delay(5);
 }

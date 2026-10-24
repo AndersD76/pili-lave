@@ -157,6 +157,9 @@ static void on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int le
     const CabEspNow* cab = (const CabEspNow*)data;
     if (cab->id_maquina != ID_MAQUINA) return;
     if (cab->tipo == MSG_CANAL && len >= (int)sizeof(MsgCanal)) {
+        // So a W1 (mestre) manda a W2 trocar de canal. A CAMERA anuncia o canal do roteador a cada 1 s (MSG_CANAL) e antes isso
+        // arrastava a W2 sozinha para o canal da camera (ex.: 6), deixando a W2 muda para a W1/display no canal 1.
+        if (memcmp(info->src_addr, MAC_WAVE1, 6) != 0) return;
         const MsgCanal* mc = (const MsgCanal*)data;
         if (mc->canal >= 1 && mc->canal <= 13 && mc->canal != g_canal_atual) {
             aplica_canal(mc->canal);
@@ -206,6 +209,8 @@ void setup() {
     }
 
     g_prefs.begin("ws2", false);
+    // Recuperacao unica (v2): uma W2 que ja foi arrastada para outro canal pela camera volta ao canal 1 neste primeiro boot.
+    if (!g_prefs.getBool("v2", false)) { g_prefs.putUChar("canal", ESPNOW_CANAL); g_prefs.putBool("v2", true); }
     uint8_t canal_salvo = g_prefs.getUChar("canal", ESPNOW_CANAL);
     if (canal_salvo < 1 || canal_salvo > 13) canal_salvo = ESPNOW_CANAL;
     g_canal_atual = canal_salvo;

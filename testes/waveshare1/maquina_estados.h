@@ -70,20 +70,23 @@ static void auto_retomar_efetivo();
 //   Waveshare #2 (io2_set_do canal 1-8)
 #define SET_Y10(v) io2_set_do(1, v)   // bomba espuma (baixo)
 #define SET_Y12(v) io2_set_do(2, v)   // luz vermelha
-#define SET_Y13(v) io2_set_do(3, (v) && g_bomba_ciclo)   // bomba alta pressao (so com a bomba ON)
+#define SET_Y13(v) io2_set_do(Y13_CANAL_W2, (v) && g_bomba_ciclo)   // bomba alta pressao (so com a bomba ON); canal da W2 em protocolo_teste.h
 #define SET_Y14(v) io2_set_do(4, v)   // contator deslocamento (trava Y4<->Y14)
 //   (DO5 = Y15 BLOQUEADO no firmware da waveshare2 — nao usar)
 #define SET_Y0(v)  io2_set_do(6, v)   // Y0 (DO6 waveshare2) — aciona JUNTO com a Cor Magica
+#define SET_LUZES(v) io2_set_do(7, v)       // DO7 waveshare2 — LUZES DA MAQUINA (ver luzes_tick)
 #define SET_ASPIRADOR(v) io2_set_do(8, v)   // DO8 waveshare2 — aspirador de po (liberado pelo app)
 
 // -----------------------------------------------------------------------
 // PROJETO DE TESTES (etapa 0) — Alta Pressao em bancada, sem carro.
-//   g_teste_bomba : Y13 + SAJ 25Hz habilitados (OFF = "a seco")
-//   g_teste_seco  : sempre true aqui = carrinho por TEMPO (sem X10/carro)
+//   g_teste_bomba : Y13 + SAJ habilitados (OFF = "a seco"). PADRAO AO LIGAR = ON.
+//   g_teste_seco  : true = carrinho por TEMPO (X10 simulado, sem carro). PADRAO AO LIGAR = false (COM X10, carro real).
+//   Padrao de producao decidido pelo Giovani (2026-10-23): depois de queda de energia ou regravacao a maquina volta pronta para lavar
+//   com carro (COM X10 + BOMBA ON). Em SEM X10 o braco bate no carro. Para teste a seco, o tecnico escolhe OFF / SEM X10 na tela TECNICO.
 // -----------------------------------------------------------------------
-bool     g_teste_bomba   = false;
+bool     g_teste_bomba   = true;
 bool     g_bomba_ciclo   = false;   // g_teste_bomba TRAVADO no inicio do ciclo (nao muda no meio dele)
-bool     g_teste_seco    = true;
+bool     g_teste_seco    = false;
 bool     g_teste_rodando = false;
 uint8_t  g_ev_seq = 0, g_ev_tipo = 0, g_ev_modelo = 0;   // ultimo evento de fim de ciclo (vai no status pro display)
 uint8_t  g_tipo_prox     = 0;       // tipo do proximo ciclo: 0 presencial, 1 aplicativo, 2 socio, 3 bonus — escolhido na tela
@@ -425,7 +428,7 @@ static uint32_t _pausa_ini  = 0;   // millis() do instante em que pausou
 // io1: Y1(b0) Y2(b1) Y3(b2) Y5(b4) Y7(b6) | io2: Y10(b0) Y13(b2) Y0(b5). Ficam de fora: luzes (Y11/Y12),
 // Y6 (entrada pneumatica) e os contatores de movimento (Y4/Y14).
 #define PAUSA_MASK_IO1 0x57
-#define PAUSA_MASK_IO2 0x25
+#define PAUSA_MASK_IO2 (0x01 | (1 << (Y13_CANAL_W2 - 1)) | 0x20)   // Y10 (canal 1) + Y13 + Y0 (canal 6)
 static uint8_t  _pausa_do1 = 0, _pausa_do2 = 0;
 
 void auto_pausar() {
@@ -545,4 +548,29 @@ void recuperacao_tick() {
 }
 
 // Sub-maquinas dos processos (usa os macros/helpers acima e g_estado_auto)
+// ---- LUZES DA MAQUINA (DO7 da W2) — pedido do Giovani (2026-10-24) ----
+// Ligam sempre que houver lavagem em andamento ou pedido de lavagem esperando (ciclo armado esperando o carro; no futuro tambem a fila do app),
+// e tambem durante o HOME, o modo MANUAL e o trabalho do TECNICO (pedido do Giovani, 2026-10-24).
+// Quando acaba a lavagem e nao ha mais nada esperando, ficam acesas por mais 10 MINUTOS e apagam. Ao ligar a W1 comecam apagadas.
+// desligar_tudo() NAO mexe neste canal (PARAR TUDO nao apaga as luzes; so o tempo apaga).
+#define LUZES_APOS_FIM_MS 600000UL                 // 10 min
+bool g_fila_app = false;                           // FUTURO: camera/app avisa que ha fila esperando lavagem (ainda nao ligado)
+static bool     g_luzes_on = false;
+static uint32_t g_luzes_t_ativo = 0;
+void luzes_tick() {
+    // "Ativo" = lavagem em andamento/esperando, HOME, movimento manual, saidas manuais (inclui BOMBA TESTE) ou TECNICO presente
+    // (o display manda a acao 70 a cada 10 s enquanto esta nas telas TECNICO, MANUAL ou WI-FI; vale por 30 s sem aviso).
+    bool tecnico = g_tec_ping_ms && (millis() - g_tec_ping_ms) < 30000UL;
+    bool ativo = (g_estado_auto != AUTO_IDLE && g_estado_auto != AUTO_ERRO) || g_teste_rodando || g_fila_app
+                 || home_rodando() || g_manual_ativo || g_man_sai || tecnico;
+    uint32_t agora = millis();
+    if (ativo) {
+        g_luzes_t_ativo = agora ? agora : 1;
+        if (!g_luzes_on) { SET_LUZES(true); g_luzes_on = true; DBG_PRINTLN("[LUZES] ligadas (lavagem em andamento / esperando)"); }
+    } else if (g_luzes_on && (agora - g_luzes_t_ativo) >= LUZES_APOS_FIM_MS) {
+        SET_LUZES(false); g_luzes_on = false;
+        DBG_PRINTLN("[LUZES] apagadas (10 min sem lavagem)");
+    }
+}
+
 #include "processos.h"

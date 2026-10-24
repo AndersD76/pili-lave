@@ -782,12 +782,10 @@ enum {
     PL_GIRO2_INI, PL_GIRO2, PL_RET_INI, PL_RET, PL_FIM
 };
 
-// Etapa de velocidade: Pre-lavagem e Enxague agora tem campo PROPRIO na tela
-// (antes dividiam vel(0) — o Enxague usava a mesma velocidade configurada pra
-// Pre-lavagem). Reaproveita o slot 1 ("Spray agua"), que nunca teve processo
-// implementado (PROC_SPRAY cai direto no default do dispatcher).
+// Etapa de velocidade: Pre-lavagem e Enxague usam vel(0). A etapa 1 e da CERA D'AGUA (antes se chamava "Spray agua": Spray e Cera
+// d'agua sao a mesma coisa e o Spray foi removido). O Enxague nao esta em nenhum modelo; se voltar a ser usado, pode ganhar etapa propria.
 static inline uint16_t pl_vel() {
-    return (g_estado.processo_ativo == PROC_ENXAGUE) ? vel(1) : vel(0);
+    return vel(0);
 }
 // Velocidade da bomba SAJ (motor separado do Delta) — etapa 11 (Pre-lavagem)
 // ou 12 (Enxague), configuravel na tela de Velocidades.
@@ -909,7 +907,7 @@ static bool tick_alta_pressao() {
         case AP_BOMBA:
             if (g_bomba_ciclo) {   // projeto de testes: bomba so se habilitada, SAJ fixo em 25Hz
                 SET_Y13(true);
-                saj_set_freq(TESTE_SAJ_HZ);
+                saj_set_freq(vel(13) / 10.0f);   // pressao da Alta Pressao (tela de Velocidades, etapa 13; padrao 25 Hz = TESTE_SAJ_HZ)
             }
             _pt = millis(); _pst = AP_BOMBA_WAIT; break;
         case AP_BOMBA_WAIT:
@@ -1039,7 +1037,8 @@ static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
                           void (*desliga)(), uint32_t liga_wait_ms = 2000,
                           uint32_t espera_fim_ms = 0,
                           void (*fim_liga)() = nullptr,
-                          void (*fim_desliga)() = nullptr) {
+                          void (*fim_desliga)() = nullptr,
+                          bool desliga_na_volta = false) {   // true = desliga as saidas do processo quando COMECA A VOLTAR (ate o X12)
     switch (_pst) {
         case SP_HOME:
             // TESTE: checagem de HOME por processo desativada — validacao unica agora
@@ -1098,6 +1097,7 @@ static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
             // retorno final ignorar a velocidade que o operador configurou pro
             // deslocamento daquele processo especifico (ex: Cor Magica a 40Hz
             // avancava a 40Hz mas voltava sempre no valor fixo do "Retorno").
+            if (desliga_na_volta && desliga) desliga();                      // TESTE Cor Magica: tudo desliga junto ao comecar a voltar
             carr_rev_x12_iniciar(vel(etapa_desl)); _pst = SP_REV; break;    // retorno final ate X12
         case SP_REV: {
             int r = carr_rev_x12_tick();
@@ -1147,20 +1147,32 @@ static bool tick_espuma_b() {
 // Correcao: Y7 (bomba espuma cima) tambem deve ligar junto com Y1 — antes so
 // ligava Y1 e Y7 ficava desligado, deixando a Cor Magica sem vazao de agua.
 static void _off_cm() { SET_Y1(false); SET_Y7(false); SET_Y0(false); }
+// TESTE (2026-10-23, pedido do Giovani): na Cor Magica a bomba e as valvulas so trabalham na IDA. No momento em que o carrinho COMECA A VOLTAR
+// (retorno ate o X12) desliga tudo junto (Y1, Y7, Y0) e a volta e feita so com o Y14. So a Cor Magica; os outros processos nao mudam.
+// PARA VOLTAR AO COMPORTAMENTO ANTERIOR (tudo ligado ate o fim da volta): troque o 1 por 0 aqui embaixo (ou use a linha comentada em tick_cor_magica).
+#define COR_MAGICA_DESLIGA_NA_VOLTA 1
 static bool tick_cor_magica() {
     if (_pst == SP_HOME) { SET_Y1(true); SET_Y7(true); SET_Y0(true); saj_set_freq(35.0f); }   // Y0 junto com a Cor Magica
-    return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, espera_slot_ms((uint32_t)g_config.atraso_cor_magica * 1000));
+    // ANTES (comportamento anterior; para voltar a ele, descomente esta linha e apague a de baixo):
+    // return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, espera_slot_ms((uint32_t)g_config.atraso_cor_magica * 1000));
+    return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, espera_slot_ms((uint32_t)g_config.atraso_cor_magica * 1000),
+                         nullptr, nullptr, COR_MAGICA_DESLIGA_NA_VOLTA != 0);
 }
 
-// ---- Cera de agua: Y7 + Y10, SEM giro (usa etapa 0 como default) ----
-//      No final: liga Y0 por 2s continuos antes de concluir (pedido do
-//      operador — mesmo Y0 ja usado na Cor Magica).
-static void _off_cera() { SET_Y7(false); SET_Y10(false); }
+// ---- Cera de agua: Y10 + Y7 + Y0, SEM giro (velocidade = etapa 1, antes "Spray agua") ----
+//      Pedido do Giovani (2026-10-24): o Y0 liga JUNTO com o Y10 e o Y7 no inicio e fica ligado o processo TODO (ida, volta e a espera final);
+//      so desliga quando a espera final termina. (Antes: o Y0 ligava apenas na espera final.)
+//      Y10 e Y7 desligam ao fim da volta (como sempre); o Y0 segue ligado ate o fim da espera.
+static void _off_cera() { SET_Y7(false); SET_Y10(false); }                           // Y0 NAO desliga aqui (so no fim da espera final)
+static void _off_cera_com_y0() { SET_Y7(false); SET_Y10(false); SET_Y0(false); }    // usado quando a espera final e 0 s (nao ha "fim da espera")
 static void _liga_y0_cera()  { SET_Y0(true); }
 static void _desliga_y0_cera() { SET_Y0(false); }
 static bool tick_cera_agua() {
-    if (_pst == SP_HOME) { SET_Y10(true); SET_Y7(true); saj_set_freq(35.0f); }   // solenoide ANTES do Y7 (intertravamento)
-    return _proc_simples(false, 1000, 0, 0, _off_cera, 2000, espera_slot_ms(2000),
+    // ANTES (para voltar ao comportamento anterior: descomente esta linha, apague a de baixo e use _off_cera com a espera final ligando o Y0):
+    // if (_pst == SP_HOME) { SET_Y10(true); SET_Y7(true); saj_set_freq(35.0f); }
+    if (_pst == SP_HOME) { SET_Y10(true); SET_Y7(true); SET_Y0(true); saj_set_freq(35.0f); }   // solenoide ANTES do Y7 (intertravamento); Y0 junto
+    uint32_t espera = espera_slot_ms(2000);
+    return _proc_simples(false, 1000, 1, 1, espera > 0 ? _off_cera : _off_cera_com_y0, 2000, espera,      // etapa 1 = velocidade da Cera d'agua
                           _liga_y0_cera, _desliga_y0_cera);
 }
 
@@ -1236,7 +1248,7 @@ void executar_processo_tick() {
         case PROC_COR_MAGICA:   concluido = tick_cor_magica();   break;
         case PROC_CERA_AGUA:    concluido = tick_cera_agua();    break;
         case PROC_SECAGEM:      concluido = tick_secagem();      break;
-        // PROC_SPRAY e outros nao implementados: pula (nao trava o ciclo)
+        // processos nao implementados: pula (nao trava o ciclo)
         default:                concluido = true;               break;
     }
 
