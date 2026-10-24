@@ -77,7 +77,7 @@ static uint8_t  nd_evq_n()     { return g_nd_evq_n; }
 
 // ------------------------------------------------------------- envios ---
 static const char* nd_estado_str() {
-    if (!g_st_ok) return "FREE";
+    if (!g_st_ok || (millis() - g_st_ms) > 5000) return "WASHING";           // sem contato com a W1 nao se sabe o estado: avisa OCUPADA (o app nao reserva)
     if (((g_st.io2_di >> 4) & 1) || ((g_st.io2_di >> 5) & 1)) return "WASHING";     // X14 / X15: carro presente NUNCA e "livre" pro app
     switch (g_st.estado_auto) { case 5: case 2: case 8: return "WASHING"; default: return "FREE"; }   // PROCESSO, CARRO_ENTRANDO, PAUSADO
 }

@@ -722,7 +722,7 @@ static void ui_criar() {
 static void ui_atualizar_manual(bool contato, const MsgTesteStatus& s) {
     char buf[200];
     if (!g_st_ok || !contato) {
-        lv_label_set_text(lbl_m_estado, "SEM CONTATO COM A WAVESHARE 1 (os botoes nao funcionam)");
+        lv_label_set_text(lbl_m_estado, "SEM CONTATO COM A MAQUINA (W1)\nUse o PAINEL da maquina. App indisponivel.");
         lv_obj_set_style_text_color(lbl_m_estado, COR_VERMELHO, 0);
         lv_label_set_text(lbl_m_info, "");
         lv_label_set_text(lbl_m_sens, "");
@@ -757,7 +757,7 @@ static void ui_atualizar_manual(bool contato, const MsgTesteStatus& s) {
 static void ui_atualizar_auto(bool contato, const MsgTesteStatus& s) {
     char buf[220];
     if (!g_st_ok || !contato) {
-        lv_label_set_text(lbl_a_estado, "SEM CONTATO COM A WAVESHARE 1 (os botoes nao funcionam)");
+        lv_label_set_text(lbl_a_estado, "SEM CONTATO COM A MAQUINA (W1)\nUse o PAINEL da maquina. App indisponivel.");
         lv_obj_set_style_text_color(lbl_a_estado, COR_VERMELHO, 0);
         lv_label_set_text(lbl_a_etapa, ""); lv_label_set_text(lbl_a_msg, "");
         lv_label_set_text(lbl_a_cont, ""); lv_label_set_text(lbl_a_sens, "");
@@ -841,6 +841,11 @@ static void ui_atualizar_auto(bool contato, const MsgTesteStatus& s) {
 static void ui_atualizar() {
     bool contato = g_st_ok && (millis() - g_st_ms) < 2000;
     MsgTesteStatus s = g_st;   // copia local (o callback pode atualizar a qualquer momento)
+    {   // contato com a W1 voltou depois de ter sido perdido: avisa quem opera
+        static bool tinha = false, perdeu = false;
+        if (contato) { tinha = true; if (perdeu) { perdeu = false; strncpy(g_aviso, "COMUNICACAO REESTABELECIDA", sizeof(g_aviso) - 1); g_aviso_ms = millis(); } }
+        else if (tinha) perdeu = true;
+    }
 
     ui_evento_atualiza(contato, s);
 
@@ -872,7 +877,7 @@ static void ui_atualizar() {
     if (scr_rede && lv_scr_act() == scr_rede)     { return; }
 
     if (!g_st_ok) {
-        lv_label_set_text(lbl_estado, "SEM CONTATO COM A WAVESHARE 1 (nunca recebeu status)");
+        lv_label_set_text(lbl_estado, "SEM CONTATO COM A MAQUINA (W1)\nUse o PAINEL da maquina. App indisponivel.");
         lv_obj_set_style_text_color(lbl_estado, COR_VERMELHO, 0);
         return;
     }
