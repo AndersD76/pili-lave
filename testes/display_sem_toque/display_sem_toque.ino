@@ -126,7 +126,7 @@ static void radio_init() {
 }
 
 // ------------------------------------------------------------------ UI -----
-static lv_obj_t *lbl_estado, *lbl_etapa, *lbl_msg, *lbl_cont, *lbl_link, *lbl_sens, *lbl_giro, *lbl_cmd, *lbl_w1;
+static lv_obj_t *lbl_estado, *lbl_etapa, *lbl_msg, *lbl_cont, *lbl_link, *lbl_sens, *lbl_giro, *lbl_cmd, *lbl_w1, *lbl_nuvem;
 static lv_obj_t *btn_bomba, *lbl_bomba;
 static lv_obj_t *scr_principal = nullptr, *scr_manual = nullptr, *scr_auto = nullptr;      // as telas
 static lv_obj_t *lbl_a_estado, *lbl_a_etapa, *lbl_a_msg, *lbl_a_sens, *lbl_a_cont, *lbl_a_pausa;   // textos da tela AUTOMATICO
@@ -670,6 +670,7 @@ static void cb_tec_para_auto(lv_event_t*)   { tecnico_sair_assume_operacao(); if
 static void cb_tec_para_manual(lv_event_t*) { tecnico_sair_assume_operacao(); if (scr_manual) lv_scr_load(scr_manual); }
 
 #include "wifi_tecnico.h"
+#include "cadastro_tecnico.h"
 
 static void ui_criar() {
     lv_obj_t* scr = lv_obj_create(nullptr);
@@ -681,12 +682,13 @@ static void ui_criar() {
     btn_bomba = novo_botao(scr, "BOMBA: OFF (a seco)", COR_CINZA, 8, 8, 250, 56, cb_bomba, &lbl_bomba);
     novo_botao(scr, "AUTOMATICO", COR_VERDE, 266, 8, 180, 56, cb_tec_para_auto);
     novo_botao(scr, "MANUAL", COR_AZUL, 454, 8, 170, 56, cb_tec_para_manual);
-    novo_botao(scr, "WI-FI", COR_AZUL, 632, 8, 160, 56, cb_ir_wifi);
+    novo_botao(scr, "REDE", COR_AZUL, 632, 8, 160, 56, cb_ir_rede);
 
     lbl_estado = novo_label(scr, &lv_font_montserrat_20, COR_TEXTO,    16, 80,  770);
     lbl_etapa  = novo_label(scr, &lv_font_montserrat_18, COR_FRACO,    16, 118, 770);
     lbl_msg    = novo_label(scr, &lv_font_montserrat_18, COR_VERMELHO, 16, 154, 770);
     lbl_cont   = novo_label(scr, &lv_font_montserrat_20, COR_TEXTO,    16, 196, 770);
+    lbl_nuvem  = novo_label(scr, &lv_font_montserrat_16, COR_AZUL,     16, 216, 780);
     lbl_link   = novo_label(scr, &lv_font_montserrat_18, COR_FRACO,    16, 236, 770);
     lbl_w1     = novo_label(scr, &lv_font_montserrat_16, COR_VERDE,    16, 258, 780);
     lbl_sens   = novo_label(scr, &lv_font_montserrat_16, COR_FRACO,    16, 278, 770);
@@ -706,6 +708,7 @@ static void ui_criar() {
     ui_cfg_criar();
     ui_senha_criar();
     ui_wifi_criar();
+    ui_cad_criar();
     if (wifi_mig_pendente()) ws_msg("Migracao de canal INTERROMPIDA antes. Toque em BUSCAR REDES (se precisar, ele procura a camera nos canais).", true);
     ui_evento_criar();
     lv_scr_load(scr_auto);   // a maquina vive no AUTOMATICO: e a tela inicial
@@ -787,6 +790,8 @@ static void ui_atualizar_auto(bool contato, const MsgTesteStatus& s) {
 
     char msg[60];
     if (g_aviso[0] && (millis() - g_aviso_ms) < 3500) { strncpy(msg, g_aviso, sizeof(msg) - 1); }
+    else if (s.nuvem_flags & 2) { snprintf(msg, sizeof(msg), "MAQUINA BLOQUEADA (licenca): %u dias sem pagar - fale com a Pili", (unsigned)s.lic_dias); }
+    else if (s.nuvem_flags & 4) { snprintf(msg, sizeof(msg), "AVISO de licenca: %u dias sem pagamento (bloqueia aos 50)", (unsigned)s.lic_dias); }
     else                                              { strncpy(msg, s.msg, sizeof(msg) - 1); }
     msg[sizeof(msg) - 1] = '\0';
     lv_label_set_text(lbl_a_msg, msg);
@@ -839,7 +844,7 @@ static void ui_atualizar() {
     {
         static uint32_t t_ping = 0; static lv_obj_t* tela_ant = nullptr;
         lv_obj_t* a = lv_scr_act();
-        bool tec = (a == scr_principal || a == scr_manual || a == scr_wifi);
+        bool tec = (a == scr_principal || a == scr_manual || a == scr_wifi || a == scr_rede || a == scr_cad || a == scr_cad_nova);
         if (tec && (a != tela_ant || millis() - t_ping > 10000)) { t_ping = millis(); enviar(70, 1, 0); }
         tela_ant = a;
     }
@@ -859,6 +864,8 @@ static void ui_atualizar() {
     if (scr_hub && lv_scr_act() == scr_hub)       { return; }
     if (scr_ed && lv_scr_act() == scr_ed)         { ui_atualizar_ed(contato, s);     return; }
     if (scr_wifi && lv_scr_act() == scr_wifi)     { ui_atualizar_wifi(contato);      return; }
+    if (scr_cad && (lv_scr_act() == scr_cad || lv_scr_act() == scr_cad_nova)) { ui_atualizar_cad(contato); return; }
+    if (scr_rede && lv_scr_act() == scr_rede)     { return; }
 
     if (!g_st_ok) {
         lv_label_set_text(lbl_estado, "SEM CONTATO COM A WAVESHARE 1 (nunca recebeu status)");
@@ -949,6 +956,16 @@ static void ui_atualizar() {
     bool real = (s.bomba_on & 2) != 0;
     lv_label_set_text(lbl_t_carro, real ? "COM X10\n(carro real)" : "SEM X10\n(a seco)");
     lv_obj_set_style_bg_color(btn_t_carro, real ? lv_color_hex(0xE08A00) : COR_CINZA, 0);
+    {   // nuvem / licenca (a W1 conversa direto com a camera)
+        char nb[160];
+        const char* on = (s.nuvem_flags & 1) ? "ONLINE" : "OFFLINE";
+        char idade[16]; if (s.hb_idade_s == 0xFFFF) snprintf(idade, sizeof(idade), "nunca"); else snprintf(idade, sizeof(idade), "%us", (unsigned)s.hb_idade_s);
+        snprintf(nb, sizeof(nb), "Nuvem: %s (ultima resposta: %s) | Licenca: %s | Eventos na fila: %u%s%s%s", on, idade,
+                 (s.nuvem_flags & 2) ? "BLOQUEADA" : ((s.nuvem_flags & 4) ? "AVISO" : "ok"), (unsigned)s.evq_n,
+                 (s.nuvem_flags & 8) ? " | ASPIRADOR ligado" : "", (s.nuvem_flags & 16) ? " | ciclo do APP" : "", cad_provisionado() ? "" : " | NAO CADASTRADA");
+        lv_label_set_text(lbl_nuvem, nb);
+        lv_obj_set_style_text_color(lbl_nuvem, ((s.nuvem_flags & 1) && !(s.nuvem_flags & 2)) ? COR_VERDE : COR_AMARELO, 0);
+    }
     bool bt = (s.man_saidas >> 6) & 1;
     lv_label_set_text(lbl_t_bomba_teste, bt ? "BOMBA TESTE\nLIGADA" : "BOMBA TESTE\n(20 s)");
     lv_obj_set_style_bg_color(btn_t_bomba_teste, bt ? lv_color_hex(0xC62828) : COR_CINZA, 0);
@@ -992,5 +1009,6 @@ void loop() {
         }
     }
     wifi_tick();         // busca de redes / migracao de canal (maquina de estados, fora do LVGL)
+    cad_tick();          // cadastro da maquina (busca de unidade, cadastro, identidade)
     delay(5);
 }

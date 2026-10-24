@@ -39,6 +39,8 @@ static bool     g_ws_msg_erro = false;
 
 static const uint8_t BC_ALL[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
+static void cad_on_recv(const uint8_t* data, int len);    // cadastro_tecnico.h
+
 // Chamado do callback do ESP-NOW (nao mexe em LVGL).
 static void wifi_on_recv(const uint8_t* data, int len) {
     const CabEspNow* c = (const CabEspNow*)data;
@@ -50,6 +52,7 @@ static void wifi_on_recv(const uint8_t* data, int len) {
             uint8_t n = ((const MsgResyncReq*)data)->canal;
             if (n >= 1 && n <= 13) g_resync_pedido = n;
         }
+        else if (c->tipo == MSG_PROV_RESP || c->tipo == MSG_IDENT_RESP || c->tipo == MSG_UNI_RESP || c->tipo == MSG_IDPUSH_RESP) cad_on_recv(data, len);   // cadastro da maquina
         else if (c->tipo == MSG_SCAN_RESP && len >= (int)sizeof(MsgScanResp)) {
             const MsgScanResp* r = (const MsgScanResp*)data;
             g_scan_ult_ms = agora;

@@ -159,6 +159,10 @@ Projeto paralelo em `testes/` onde o firmware está sendo refeito passo a passo 
 (máquina de estados + RS-485 só do Delta + ESP-NOW com a W2) e display como cliente fino (ESP-NOW, `protocolo_teste.h`). A produção
 (`lava_car_485/`) continua intacta. Estado, telas, protocolo e pendências: `testes/LEIAME.md` e `testes/PENDENCIAS_NA_MAQUINA.md`.
 Displays novos sem flat do toque (GT911): `docs/TROCA_DE_DISPLAY.md`.
+**Nuvem na base nova (2026-10-24):** a W1 fica só com a operação; o **display** conversa com a câmera (`testes/display/nuvem_display.h`:
+heartbeat a cada 5 s, fila de eventos na NVS com ACK, licença 40/50 dias + 15 dias ligada sem comunicação) e manda ordens à W1 a cada 2 s
+(`MSG_NV_ORDEM` 38: lâmpada, licença, aspirador, reserva do app). A W1 (`testes/waveshare1/nuvem_w1.h`) manda eventos (`MSG_NV_EVT` 36, confirmados por `MSG_NV_EVT_ACK` 37),
+guarda até 16 na NVS e executa as ordens (início pelo app, lâmpada, aspirador). Sem ordens por 60 s a W1 age em modo seguro. Compilado, ainda não testado na máquina.
 
 ## 4. Firmware das Waveshares — `lava_car_485/waveshare1/` e `waveshare2/`
 

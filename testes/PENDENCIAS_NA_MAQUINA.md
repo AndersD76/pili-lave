@@ -82,10 +82,11 @@ reinicia em **COM X10 + BOMBA ON**, então não precisa reconfigurar a tela).
 - [x] (obsoleto desde 2026-10-24) A W1 passou a reiniciar em COM X10 + BOMBA ON; ver seção G.
 
 ## G. Mudanças de processo — estado em 2026-10-24
-- [ ] **NUVEM direto na W1 (decisão de 2026-10-24) — W1, câmera v5 e display COMPILADOS, NADA GRAVADO.** `testes/waveshare1/nuvem_w1.h` porta do antigo: heartbeat para a câmera a cada 5 s,
-  **início de lavagem pelo app** (reserva paga, tipo "aplicativo", com dedup), **eventos** car-entered/wash-complete/fault com **fila na NVS e ACK**, **licença** (pagamento 40/50 dias; 15 dias LIGADA sem
-  comunicação), **lâmpada** do app + **vermelho piscando em erro**, **aspirador (DO8)**. Câmera: `firmware_camera/release/camera_v5.bin` (obedece "vai para o canal N", sobe no canal combinado,
-  pede **re-sync** ao display quando o roteador muda de canal, responde HB_RESP/EVT_ACK também para a W1). Display: aceita o re-sync da câmera e migra sem senha com a máquina parada.
+- [ ] **NUVEM pelo DISPLAY (decisão de 2026-10-24, revisada: a W1 fica só com a operação) — W1, W2, câmera v5 e display COMPILADOS, NADA GRAVADO.** `testes/display/nuvem_display.h`: heartbeat para a câmera a cada 5 s,
+  **eventos** (a W1 manda `MSG_NV_EVT`; o display guarda na SUA fila na NVS, confirma a W1 e entrega à câmera até o ACK do backend), **licença** (pagamento 40/50 dias; 15 dias LIGADA sem comunicação) e as
+  **ordens para a W1 a cada 2 s** (`MSG_NV_ORDEM`: lâmpada, licença, aspirador, iniciar reserva do app). `testes/waveshare1/nuvem_w1.h`: só executa as ordens (início pelo app com dedup, **lâmpada** + **vermelho piscando em erro**,
+  **aspirador DO8**) e guarda até 16 eventos na NVS até o display confirmar. Sem ordens por 60 s: lâmpada apagada, aspirador off, não inicia pelo app. Câmera: `firmware_camera/release/camera_v5.bin` (obedece "vai para o canal N",
+  sobe no canal combinado, pede **re-sync** ao display quando o roteador muda de canal). Display: aceita o re-sync da câmera e migra sem senha com a máquina parada. **Depende do display ligado** para app/eventos (painel e controle remoto seguem sem ele).
   **Ordem para gravar (com o Giovani na máquina):** (1) backup exato das placas (`docs/BACKUP_E_RESTAURACAO.md`); (2) W1 + display + W2; (3) câmera v5 pelo OTA (ver `firmware_camera/release/LEIAME.md`; é deploy de PRODUÇÃO).
   **Testar:** heartbeat (`[HB] OK` no log da W1), lâmpada seguindo o app, iniciar uma lavagem pelo app com a máquina parada (e com ela ocupada: não deve iniciar; mesma reserva 2x: não repete),
   concluir uma lavagem e conferir `[EVT] ACK` e o registro no backend, desligar a câmera no meio (evento deve ficar na fila e sair depois), reiniciar a W1 com evento na fila, licença (simular `blocked`), aspirador pelo app,

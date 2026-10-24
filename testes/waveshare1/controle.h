@@ -511,6 +511,7 @@ static void status_enviar() {
     s.ug_pulsos = g_ult_giro.pulsos; s.ug_dt_ms = g_ult_giro.dt_ms;
     s.ug_x16_ms = g_ult_giro.x16_ms; s.ug_x17_ms = g_ult_giro.x17_ms;
     s.ev_seq = g_ev_seq; s.ev_tipo = g_ev_tipo; s.ev_modelo = g_ev_modelo;
+    s.nuvem_flags = nuvem_flags(); s.evq_n = nuvem_evq_n(); s.lic_dias = nuvem_lic_dias(); s.hb_idade_s = nuvem_hb_idade_s();
     s.tipo_prox = g_tipo_prox;
     s.man_saidas = g_man_sai;
     s.manual_mov = g_manual_ativo;
@@ -534,9 +535,6 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* 
     if (len < (int)sizeof(CabEspNow)) return;
     const CabEspNow* cab = (const CabEspNow*)data;
     if (cab->id_maquina != ID_MAQUINA) return;
-
-    // ---- da CAMERA (heartbeat/respostas/eventos): o callback so copia; nuvem_tick() processa no loop ----
-    if (cab->origem == ORIGEM_CAMERA && cab->tipo != MSG_TESTE_DATA) { nuvem_on_recv(data, len); return; }
 
     // ---- da Waveshare 2 ----
     if (cab->origem == ORIGEM_WAVE2) {
@@ -562,6 +560,8 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* 
         else if (m->acao >= 10 && m->acao <= 13) { g_manual_cmd = m->acao; g_manual_ms = millis(); }   // segurando
         else if (m->acao == 14) g_manual_cmd = 0;                       // soltou
         else if (g_fila_cmd) { uint16_t a = (uint16_t)m->acao | ((uint16_t)m->arg << 8); xQueueSend(g_fila_cmd, &a, 0); }
+    } else if (cab->tipo == MSG_NV_EVT_ACK || cab->tipo == MSG_NV_ORDEM) {        // nuvem (via display): confirmacao de evento e ordens
+        nuvem_on_recv(data, len);
     } else if (cab->tipo == MSG_CANAL && len >= (int)sizeof(MsgCanal)) {          // display: "vai para o canal N"
         const MsgCanal* m = (const MsgCanal*)data;
         if (m->canal >= 1 && m->canal <= 13) g_canal_pedido = m->canal;
@@ -993,8 +993,6 @@ void controle_init() {
     memcpy(p.lmk, ESPNOW_LMK, 16);
     memcpy(p.peer_addr, MAC_DISPLAY, 6); esp_now_add_peer(&p);
     memcpy(p.peer_addr, MAC_WAVE2, 6);   esp_now_add_peer(&p);
-    esp_now_peer_info_t pc = {}; pc.channel = 0; pc.ifidx = WIFI_IF_STA; pc.encrypt = false;      // camera: SEM criptografia (como ela espera)
-    memcpy(pc.peer_addr, MAC_CAMERA, 6); esp_now_add_peer(&pc);
 }
 
 // Chamar no loop(): manda status periodico e cuida do alarme da W2.

@@ -77,19 +77,44 @@ enum : uint8_t {
 //   i1 = 1: v[0..3] bonus por modelo, v[4..5] saldo historico presencial (lo,hi), v[6..7] aplicativo, v[8..9] socios, v[10..11] bonus
 // So com a maquina parada. DUMP: tabela 0/1 -> v[0..13] do modelo i1; tabela 2 -> v[0..3]; tabela 3 -> v[0..2] (efetivo).
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t dia, mes; uint16_t ano; } MsgTesteData;
-// ---- NUVEM via CAMERA (a W1 conversa DIRETO com a camera — decisao de 2026-10-24). Mesmas mensagens/ids do firmware antigo e da camera ----
+// ---- CADASTRO DA MAQUINA (iguais a lava_car_485/display/tipos.h e ao firmware da camera; DEVEM bater byte a byte) ----
+enum : uint8_t { MSG_PROV_REQ = 13, MSG_PROV_RESP = 14, MSG_IDENT_REQ = 15, MSG_IDENT_RESP = 16, MSG_UNI_REQ = 17, MSG_UNI_RESP = 18,
+                 MSG_IDPUSH_REQ = 19, MSG_IDPUSH_RESP = 20 };
+typedef struct __attribute__((packed)) { CabEspNow cab; char deviceKey[24]; char cidade[32]; char rua[40]; uint16_t numero; char stationId[28]; } MsgProvReq;
+typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t ok; uint16_t numero; char cidade[32]; char rua[40]; char erro[48]; } MsgProvResp;
+typedef struct __attribute__((packed)) { CabEspNow cab; } MsgIdentReq;
+typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t temIdentidade; char deviceKey[24]; uint16_t numero; char cidade[32]; char rua[40]; } MsgIdentResp;
+typedef struct __attribute__((packed)) { CabEspNow cab; char cidade[32]; } MsgUniReq;
+#define UNI_STATIONID_LEN 28
+#define UNI_RUA_LEN       40
+#define UNI_POR_PAGINA    3
+typedef struct __attribute__((packed)) { char stationId[UNI_STATIONID_LEN]; char rua[UNI_RUA_LEN]; uint8_t proximoNumero; } UniEntry;
+typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t pagina, total_paginas, n; UniEntry unidades[UNI_POR_PAGINA]; } MsgUniResp;
+typedef struct __attribute__((packed)) { CabEspNow cab; char deviceKey[24]; char cidade[32]; char rua[40]; uint16_t numero; } MsgIdPushReq;
+typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t ok; } MsgIdPushResp;
+
+// ---- NUVEM, lado W1 <-> DISPLAY (revisao de 2026-10-24: a W1 fica SO com a operacao; quem conversa com a camera e o DISPLAY) ----
+// W1 -> Display: evento de lavagem (fica na fila da W1 ate o display confirmar). Display -> W1: confirmacao e as ORDENS da nuvem.
+enum : uint8_t { MSG_NV_EVT = 36, MSG_NV_EVT_ACK = 37, MSG_NV_ORDEM = 38 };
+typedef struct __attribute__((packed)) { CabEspNow cab; uint32_t id; uint8_t evt_tipo, prog; char res[40]; char source[8]; char errcode[64]; } MsgNvEvt;   // tipo 1=car-entered 2=wash-complete 3=fault
+typedef struct __attribute__((packed)) { CabEspNow cab; uint32_t id; } MsgNvEvtAck;                                                                         // "recebi e gravei na minha fila"
+typedef struct __attribute__((packed)) {                                                                                                                 // a cada 2 s
+    CabEspNow cab; uint8_t lamp; uint8_t flags; uint16_t lic_dias; int16_t vacuum_seg; uint8_t start_valido; uint8_t start_prog; char start_res[40];
+} MsgNvOrdem;   // flags: bit0 = licenca BLOQUEADA, bit1 = aviso de licenca, bit2 = nuvem ONLINE; lamp = 0 off, 1 verde fixo, 2 verde pisca, 3 vermelho fixo, 4 vermelho pisca, 5 alterna
+
+// ---- NUVEM via CAMERA (o DISPLAY conversa com a camera; a W1 so opera). Mesmas mensagens/ids do firmware antigo e da camera ----
 enum : uint8_t { MSG_HB_STATE = 7, MSG_HB_RESP = 8, MSG_EVT = 9, MSG_EVT_ACK = 10 };
-typedef struct __attribute__((packed)) {      // W1 -> Camera (a cada 5 s): estado para o heartbeat
+typedef struct __attribute__((packed)) {      // Display -> Camera (a cada 5 s): estado para o heartbeat
     CabEspNow cab; char state[12]; uint32_t restanteSeg;   // state = "FREE" / "WASHING"
 } MsgHbState;
-typedef struct __attribute__((packed)) {      // Camera -> W1: resposta do backend
+typedef struct __attribute__((packed)) {      // Camera -> Display: resposta do backend
     CabEspNow cab; uint8_t ok; uint8_t lightState; uint16_t lic_days; uint8_t lic_blocked;
     uint8_t start_valido; uint8_t start_prog; uint32_t start_dur; char start_res[40]; int16_t vacuum_seg;
 } MsgHbResp;
-typedef struct __attribute__((packed)) {      // W1 -> Camera: evento p/ a nuvem (a fila fica na NVS da W1 ate o ACK)
+typedef struct __attribute__((packed)) {      // Display -> Camera: evento p/ a nuvem (a fila fica na NVS do display ate o ACK)
     CabEspNow cab; uint8_t evt_tipo; uint8_t prog; char res[40]; char source[8]; char errcode[64];   // tipo 1=car-entered 2=wash-complete 3=fault
 } MsgEvt;
-typedef struct __attribute__((packed)) {      // Camera -> W1: backend aceitou (200)
+typedef struct __attribute__((packed)) {      // Camera -> Display: backend aceitou (200)
     CabEspNow cab; uint8_t evt_tipo; uint8_t ok; char res[40];
 } MsgEvtAck;
 
@@ -146,6 +171,10 @@ typedef struct __attribute__((packed)) {
     uint8_t  ev_seq;          // contador de EVENTOS DE FIM DE CICLO (sobe 1 a cada ciclo concluido ou com erro; o display nao perde nenhum)
     uint8_t  ev_tipo;         // ultimo evento: 1 = ciclo concluido, 2 = erro
     uint8_t  ev_modelo;       // modelo do ultimo evento
+    uint8_t  nuvem_flags;     // bit0 = nuvem ONLINE (camera respondeu nos ultimos 60 s), bit1 = licenca BLOQUEADA, bit2 = aviso de licenca (40+ dias), bit3 = aspirador ligado, bit4 = ciclo em andamento veio do APP
+    uint8_t  evq_n;           // eventos esperando ACK da nuvem (fila na NVS da W1)
+    uint16_t lic_dias;        // dias sem pagamento (licenca)
+    uint16_t hb_idade_s;      // segundos desde a ultima resposta OK da camera (0xFFFF = nunca)
     uint8_t  tipo_prox;       // tipo do proximo ciclo (0 presencial, 1 aplicativo, 2 socio, 3 bonus)
     uint8_t  man_saidas;      // saidas MANUAIS ligadas (bits: 0 valvula Y6, 1 espuma A, 2 espuma B, 3 cor magica, 4 secagem, 5 cera)
     uint8_t  manual_mov;      // movimento MANUAL em curso (0=nenhum, 10..13 como em MsgTesteCmd)
@@ -159,3 +188,5 @@ static_assert(sizeof(MsgTesteCfgDump) <= 250, "MsgTesteCfgDump passou de 250 byt
 static_assert(sizeof(MsgWifiCfg) <= 250, "MsgWifiCfg passou de 250 bytes");
 static_assert(sizeof(MsgScanResp) <= 250, "MsgScanResp passou de 250 bytes");
 static_assert(sizeof(MsgHbResp) <= 250 && sizeof(MsgEvt) <= 250 && sizeof(MsgEvtAck) <= 250 && sizeof(MsgHbState) <= 250, "mensagem da nuvem passou de 250 bytes");
+static_assert(sizeof(MsgProvReq) <= 250 && sizeof(MsgProvResp) <= 250 && sizeof(MsgIdentResp) <= 250 && sizeof(MsgUniResp) <= 250 && sizeof(MsgIdPushReq) <= 250, "mensagem de cadastro passou de 250 bytes");
+static_assert(sizeof(MsgNvEvt) <= 250 && sizeof(MsgNvEvtAck) <= 250 && sizeof(MsgNvOrdem) <= 250, "mensagem NV passou de 250 bytes");

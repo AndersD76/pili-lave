@@ -27,7 +27,7 @@ de 71–80% para 0–9%.
 
 ## 3. O antigo fazia e o novo AINDA NÃO faz
 
-> **Atualização de 2026-10-24 (tarde):** os itens 1 a 7 e 10 abaixo agora estão **escritos e compilados** (W1 `nuvem_w1.h`, câmera v5, display), **mas nada foi gravado nem testado**. Falta o item 8 (cadastro da máquina). Ver `testes/PENDENCIAS_NA_MAQUINA.md`.
+> **Atualização de 2026-10-24 (tarde):** os itens 1 a 7 e 10 abaixo agora estão **escritos e compilados** (display `nuvem_display.h` + W1 `nuvem_w1.h` só operação, câmera v5), **mas nada foi gravado nem testado**. Falta o item 8 (cadastro da máquina). Ver `testes/PENDENCIAS_NA_MAQUINA.md`.
 
 ### 3.1 Para o novo substituir o antigo (bloqueantes)
 | # | Função do antigo | No novo | O que falta |
