@@ -1,9 +1,9 @@
 # Pendências que precisam da máquina (testar quando o Giovani voltar lá)
 
-Atualizado em 2026-10-22. O que está validado está em `LEIAME.md`. Aqui só o que **falta** e exige
+Atualizado em 2026-10-24. O que está validado está em `LEIAME.md`. Aqui só o que **falta** e exige
 estar na frente da máquina. Marcar `[x]` e anotar o resultado quando for feito.
-Antes de começar: abrir a captura serial da W1 **em tarefa de fundo** (abrir a porta reseta a W1: a
-bomba volta para OFF e o modo para SECO; configurar na tela depois de abrir).
+Antes de começar: abrir a captura serial da W1 **em tarefa de fundo** (abrir a porta reseta a W1; desde 2026-10-24 ela
+reinicia em **COM X10 + BOMBA ON**, então não precisa reconfigurar a tela).
 
 ## A. Segurança / bug reportado (prioridade)
 - [x] ~~Braço bateu no carro no giro da Espuma A~~ — **RESOLVIDO / não era bug** (informado pelo Giovani em 2026-10-22):
@@ -50,6 +50,14 @@ bomba volta para OFF e o modo para SECO; configurar na tela depois de abrir).
 - Nuvem, e depois avaliar promover `testes/` no lugar de `lava_car_485/`.
 
 ## E. Câmera / app / backend (adiado de propósito — fazer quando formos mexer na câmera)
+- [ ] **Wi-Fi do display (aba TECNICO > WI-FI) e migração de canal — compilado, NÃO testado com a câmera.** Display: busca de redes pela
+  câmera (com canal), escolha/senha/nome digitado, migração camera -> W1(+W2) -> credenciais, rollback, caça aos canais 1-13 só se a câmera
+  não responder ao BUSCAR (`testes/display/wifi_tecnico.h`). W1: aceita `MSG_CANAL` do display, leva a W2 e confirma com "oi"
+  (`canal_tick`, canal salvo na NVS `rede`). **Falta na CÂMERA:** obedecer `MSG_CANAL` vindo do DISPLAY ("vai para o canal N", sem conectar
+  na internet) e responder com `MSG_CANAL` ("oi") no canal novo, e só conectar quando chegar `MSG_WIFI_CFG`; mais o re-sync automático quando
+  o roteador trocar de canal (ver `docs/COMBINADOS.md` seção 6). Para testar: gravar W1 (e W2 se mudar), alterar a câmera, depois no display:
+  TECNICO > WI-FI > BUSCAR REDES > escolher rede > senha > CONECTAR; conferir o log `[CANAL]` da W1 e que todos acabam no mesmo canal.
+  Testar também a falha (câmera desligada) e a queda de energia no meio (mensagem "Migração interrompida" ao religar).
 - [ ] **Data/hora na máquina.** A W1 e o display não têm relógio. A câmera, quando conectada à internet, deve mandar a data por
   ESP-NOW (`MSG_TESTE_DATA`, origem `ORIGEM_CAMERA`; a W1 já aceita). A **câmera ainda não envia**. Sem isso a planilha mostra
   "Desde --/--/----" e o acerto local grava sem data.
@@ -62,3 +70,32 @@ bomba volta para OFF e o modo para SECO; configurar na tela depois de abrir).
   para UM ciclo; cancelar limpa). Quando houver cadastro de mensalistas (placa reconhecida pela câmera), o marcador deve vir de lá.
 - [ ] Tela da planilha (AUTOMATICO) e acerto local: validar na máquina que o ciclo concluído conta no modelo certo, que sócio x normal
   separa direito, que o contador persiste depois de religar a W1 e que o acerto soma ao saldo e zera.
+
+## F. Gravado na máquina em 2026-10-23 (W2, W1 e display) — validar
+- [x] **W2 estava no canal 6** (a câmera anunciava o canal do roteador e a W2 obedecia e salvava; display dizia "sem conexão com W2").
+  Corrigido: a W2 só aceita troca de canal da **W1** e voltou ao canal 1 no primeiro boot. Depois disso: W2 ok, RS-485 100%.
+- [ ] Gravados e **ainda sem teste de ciclo**: painel físico (X1/X2/X5/X6/X4), planilha e acerto, configurações/sequência dos modelos, saídas
+  manuais, aviso de fim de ciclo, Wi-Fi/canal (falta a câmera), **Spray removido (= Cera d'água, velocidade da etapa 1)**.
+- [x] **BOMBA TESTE (Y13)** nas telas TECNICO e MANUAL (liga só com BOMBA em ON, máquina parada; desliga em 20 s): **funcionou** em 2026-10-23.
+  O "sem sinal no Y13" era **fio do Y13 em lugar errado na W2** (não era firmware nem canal ruim). Sobra constante `Y13_CANAL_W2` (hoje 3) em
+  `protocolo_teste.h` (hoje NÃO sobra canal livre: DO7 = luzes, DO8 = aspirador). Testar o jato com água na linha.
+- [x] (obsoleto desde 2026-10-24) A W1 passou a reiniciar em COM X10 + BOMBA ON; ver seção G.
+
+## G. Mudanças de processo — estado em 2026-10-24
+- [ ] **Luzes da máquina no DO7 da W2** (lógica nova): ligam quando há lavagem em andamento ou ciclo armado esperando o carro; ao acabar e não haver mais nada,
+  ficam acesas **mais 10 min** e apagam. Começam apagadas ao ligar a W1. PARAR TUDO não apaga (só o tempo). **COMPILADO, NÃO GRAVADO.** Falta: ligar a lâmpada/relé
+  no DO7 da W2 (confirmar o fio) e testar. **A "fila esperando" do app ainda não existe** na máquina (variável `g_fila_app` preparada; a câmera/app precisam avisar).
+  Aspirador = **DO8** da W2 (`SET_ASPIRADOR`): na produção já liga pelo app (heartbeat); na base de testes só existe o macro, falta ligar quando a câmera voltar.
+- [ ] **Pressão da água na tela de Velocidades (CONFIG > VELOCIDADES E PRESSAO):** 3 campos novos por modelo — **Press. Pré-lavagem** (etapa 11), **Press. Enxágue**
+  (12) e **Press. Alta Pressão** (13, padrão 25 Hz), em Hz do SAJ. **COMPILADO, NÃO GRAVADO** (W1 e display). Hoje o SAJ está **fora do RS-485**
+  (frequência fixa no próprio SAJ), então os valores ficam **guardados mas sem efeito** até o filtro do RS-485 chegar e o controle do SAJ voltar
+  (`TESTE_SAJ_POR_RS485 1` em `saj_rs485_w1.h`, e conferir `saj_lendo_parado()`). Ao reinstalar o SAJ: testar se a pressão muda de verdade em cada
+  processo. As outras frequências do SAJ ainda são fixas no código (espumas, cor mágica, cera 35 Hz; secagem 55 Hz) — dizer se também devem virar campos.
+- [ ] **Cor Mágica: tudo desliga ao COMEÇAR A VOLTAR** (Y1, Y7, Y0 juntos; volta só com Y14). **GRAVADO na W1**, ainda sem validar. Chave: `COR_MAGICA_DESLIGA_NA_VOLTA`
+  em `processos.h` (1/0). Conferir: a água para exatamente quando o carrinho começa a voltar e a volta termina no X12.
+- [ ] **Cera d'água: Y0 liga junto com Y10 e Y7 e fica ligado o processo todo, inclusive a espera final** (5 s nos modelos 2/3; 4 min no 4).
+  **COMPILADO, NÃO GRAVADO** (Giovani não está na máquina). Ao chegar: gravar a W1 (COM24), rodar um modelo que tenha Cera d'água e conferir o Y0.
+  Linha antiga deixada comentada em `tick_cera_agua` para voltar fácil.
+- [ ] **Confirmar:** Y0 ligado 4 min na espera da Cera d'água do modelo 4 é o desejado? (pendente desde antes)
+- [x] W1 liga sempre em **COM X10 + BOMBA ON** (gravado). Display reassume isso ao sair do TECNICO (gravado). Correção do HOME "concluído" que bloqueava o TECNICO (gravado).
+- [ ] **Commit** de todo o trabalho de 2026-10-23/24 (W1, W2, display, docs) — ainda NÃO feito. Sem push até o Giovani mandar.
