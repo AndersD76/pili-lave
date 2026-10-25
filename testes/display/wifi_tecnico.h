@@ -258,7 +258,7 @@ static void wifi_tick() {
 static lv_obj_t *scr_wifi = nullptr, *lbl_w_msg, *lbl_w_info, *lbl_w_sel;
 static lv_obj_t *btn_w_rede[5], *lbl_w_rede[5];
 static lv_obj_t *ta_w_ssid, *ta_w_canal, *ta_w_senha, *kb_w;
-static lv_obj_t *btn_w_conectar, *lbl_w_conectar;
+static lv_obj_t *btn_w_conectar, *lbl_w_conectar, *btn_w_ok = nullptr, *g_ta_edit = nullptr;
 
 static void cb_w_voltar(lv_event_t*) { if (scr_principal) lv_scr_load(scr_principal); }
 static void cb_w_buscar(lv_event_t*) {
@@ -277,10 +277,23 @@ static void cb_w_rede(lv_event_t* e) {
     if (i < g_redes_n) { g_rede_sel = (uint8_t)i; g_manual_ssid = false; }
 }
 static void cb_w_manual(lv_event_t*) { g_manual_ssid = !g_manual_ssid; if (g_manual_ssid) g_rede_sel = 255; }
+// O teclado cobre os campos de baixo: o campo em edicao sobe para logo acima do teclado (com botao OK) e volta ao lugar ao fechar.
+static void w_ta_restaura() {
+    if (!g_ta_edit) return;
+    if (g_ta_edit == ta_w_ssid)       { lv_obj_set_size(g_ta_edit, 330, 42); lv_obj_set_pos(g_ta_edit, 16, 324); }
+    else if (g_ta_edit == ta_w_canal) { lv_obj_set_size(g_ta_edit, 140, 42); lv_obj_set_pos(g_ta_edit, 356, 324); }
+    else                              { lv_obj_set_size(g_ta_edit, 480, 42); lv_obj_set_pos(g_ta_edit, 16, 372); }
+    g_ta_edit = nullptr;
+    if (btn_w_ok) lv_obj_add_flag(btn_w_ok, LV_OBJ_FLAG_HIDDEN);
+}
+static void w_kb_fecha() { lv_obj_add_flag(kb_w, LV_OBJ_FLAG_HIDDEN); w_ta_restaura(); }
+static void cb_w_ok(lv_event_t*) { w_kb_fecha(); }
 static void cb_w_ta(lv_event_t* e) {
     lv_obj_t* ta = (lv_obj_t*)lv_event_get_target(e);
     lv_event_code_t c = lv_event_get_code(e);
     if (c == LV_EVENT_FOCUSED || c == LV_EVENT_CLICKED) {
+        if (g_ta_edit != ta) { w_ta_restaura(); g_ta_edit = ta; lv_obj_set_size(ta, 690, 46); lv_obj_set_pos(ta, 16, 226); lv_obj_move_foreground(ta); }
+        if (btn_w_ok) { lv_obj_clear_flag(btn_w_ok, LV_OBJ_FLAG_HIDDEN); lv_obj_move_foreground(btn_w_ok); }
         lv_keyboard_set_textarea(kb_w, ta);
         lv_keyboard_set_mode(kb_w, ta == ta_w_canal ? LV_KEYBOARD_MODE_NUMBER : LV_KEYBOARD_MODE_TEXT_LOWER);
         lv_obj_clear_flag(kb_w, LV_OBJ_FLAG_HIDDEN);
@@ -288,7 +301,7 @@ static void cb_w_ta(lv_event_t* e) {
 }
 static void cb_w_kb(lv_event_t* e) {
     lv_event_code_t c = lv_event_get_code(e);
-    if (c == LV_EVENT_READY || c == LV_EVENT_CANCEL) lv_obj_add_flag(kb_w, LV_OBJ_FLAG_HIDDEN);
+    if (c == LV_EVENT_READY || c == LV_EVENT_CANCEL) w_kb_fecha();
 }
 static void cb_w_conectar(lv_event_t*) {
     if (g_ws != WS_IDLE && g_ws != WS_FIM) return;
@@ -304,7 +317,7 @@ static void cb_w_conectar(lv_event_t*) {
     if (!ssid[0])             { ws_msg("Escolha uma rede (ou digite o nome).", true); return; }
     if (canal < 1 || canal > 13) { ws_msg("Canal invalido (1 a 13). Na rede digitada, informe o canal.", true); return; }
     if (!g_st_ok)             { ws_msg("Sem contato com a maquina (W1): nao da para migrar o canal.", true); return; }
-    lv_obj_add_flag(kb_w, LV_OBJ_FLAG_HIDDEN);
+    w_kb_fecha();
     wifi_migrar(ssid, lv_textarea_get_text(ta_w_senha), canal);
 }
 static void cb_ir_wifi(lv_event_t*) {
@@ -348,9 +361,11 @@ static void ui_wifi_criar() {
     btn_w_conectar = novo_botao_cb(scr_wifi, "CONECTAR", COR_VERDE, 512, 324, 276, 90, cb_w_conectar, 0, &lbl_w_conectar);
 
     kb_w = lv_keyboard_create(scr_wifi);
-    lv_obj_set_size(kb_w, 800, 250); lv_obj_align(kb_w, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_size(kb_w, 800, 200); lv_obj_align(kb_w, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_add_event_cb(kb_w, cb_w_kb, LV_EVENT_ALL, nullptr);
     lv_obj_add_flag(kb_w, LV_OBJ_FLAG_HIDDEN);
+    btn_w_ok = novo_botao_cb(scr_wifi, "OK", COR_VERDE, 716, 226, 76, 46, cb_w_ok, 0);
+    lv_obj_add_flag(btn_w_ok, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void ui_atualizar_wifi(bool contato) {
