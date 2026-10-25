@@ -262,14 +262,15 @@ void auto_tick() {
             if (!g_teste_rodando && !X15 && !g_giro_ativo) {
                 if (_t_x15_off == 0) _t_x15_off = agora;
                 if (agora - _t_x15_off >= 1000) {
-                    DBG_PRINTLN("[AUTO] X15 saiu no processo -> aborta programa + HOME");
-                    desligar_tudo();
+                    // 2026-10-25: NAO faz mais HOME automatico. O X15 e instavel; num ciclo real o HOME girou o braco com o
+                    // carro AINDA dentro e bateu nele. Agora so PARA TUDO e fica em erro (lampada vermelha piscando): o lavador
+                    // confere o carro e aciona o HOME manualmente. (Comportamento antigo: desligar_tudo + processos_reset +
+                    // programa_sel=0 + AUTO_IDLE + home_iniciar().)
+                    DBG_PRINTLN("[AUTO] X15 saiu no processo -> PARA TUDO (sem HOME automatico)");
                     processos_reset();
                     g_estado.processo_ativo = PROC_NENHUM;
-                    g_estado.programa_sel   = 0;
-                    g_estado_auto           = AUTO_IDLE;
                     _t_x15_off = 0;
-                    home_iniciar();          // referencia o braco
+                    auto_erro("X15 perdido no processo: confira o carro e faca o HOME");
                     break;
                 }
             } else {
