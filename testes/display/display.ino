@@ -245,7 +245,11 @@ static void marca_modelo() {
 }
 static void cb_modelo(lv_event_t* e) { g_modelo_sel = (uint8_t)(intptr_t)lv_event_get_user_data(e); marca_modelo(); }
 static void cb_auto_iniciar(lv_event_t*)  { enviar(20, 1, g_modelo_sel); }
-static void cb_auto_pausa(lv_event_t*)    { enviar((g_st_ok && g_st.estado_auto == 8) ? 22 : 21, 2); }   // alterna pausar/continuar
+static lv_obj_t* btn_a_pausa = nullptr;
+static void cb_auto_pausa(lv_event_t*)    {   // alterna pausar/continuar; armado esperando o carro (X14) o botao vira CANCELAR ESPERA
+    if (g_st_ok && g_st.estado_auto == 1) { enviar(23, 3); return; }
+    enviar((g_st_ok && g_st.estado_auto == 8) ? 22 : 21, 2);
+}
 static void cb_auto_cancelar(lv_event_t*) { enviar(23, 3); }
 static lv_obj_t* lbl_t_carro; static lv_obj_t* btn_t_carro;
 static lv_obj_t* lbl_t_bomba_teste; static lv_obj_t* btn_t_bomba_teste;
@@ -623,7 +627,7 @@ static void ui_auto_criar() {
     marca_modelo();
 
     novo_botao_cb(scr_auto, "INICIAR AUTOMATICO", COR_VERDE,    16, 148, 380, 80, cb_auto_iniciar, 0);
-    novo_botao_cb(scr_auto, "PAUSAR",             COR_AMARELO, 404, 148, 380, 80, cb_auto_pausa, 0, &lbl_a_pausa);
+    btn_a_pausa = novo_botao_cb(scr_auto, "PAUSAR",             COR_AMARELO, 404, 148, 380, 80, cb_auto_pausa, 0, &lbl_a_pausa);
     novo_botao_cb(scr_auto, "TECNICO", COR_CINZA, 16, 238, 260, 56, cb_pede_senha, 1);
     btn_socio = novo_botao_cb(scr_auto, "TIPO: PRESENCIAL", COR_CINZA, 284, 238, 270, 56, cb_socio, 0, &lbl_socio);
 
@@ -809,7 +813,8 @@ static void ui_atualizar_auto(bool contato, const MsgTesteStatus& s) {
              (s.w1_do >> 7) & 1, (s.w2_do_real >> 1) & 1);
     lv_label_set_text(lbl_a_sens, buf);
 
-    lv_label_set_text(lbl_a_pausa, s.estado_auto == 8 ? "CONTINUAR" : "PAUSAR");
+    lv_label_set_text(lbl_a_pausa, s.estado_auto == 1 ? "CANCELAR ESPERA" : (s.estado_auto == 8 ? "CONTINUAR" : "PAUSAR"));
+    lv_obj_set_style_bg_color(btn_a_pausa, s.estado_auto == 1 ? COR_VERMELHO : COR_AMARELO, 0);
 
     static const char* TP[4] = { "TIPO: PRESENCIAL", "TIPO: APLICATIVO", "TIPO: SOCIO", "TIPO: BONUS" };
     static const uint32_t TCOR[4] = { 0x444C56, 0x1E5FA8, 0xE08A00, 0x7B3FA0 };
