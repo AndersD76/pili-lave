@@ -112,3 +112,22 @@ reinicia em **COM X10 + BOMBA ON**, então não precisa reconfigurar a tela).
 - [ ] **Confirmar:** Y0 ligado 4 min na espera da Cera d'água do modelo 4 é o desejado? (pendente desde antes)
 - [x] W1 liga sempre em **COM X10 + BOMBA ON** (gravado). Display reassume isso ao sair do TECNICO (gravado). Correção do HOME "concluído" que bloqueava o TECNICO (gravado).
 - [ ] **Commit** de todo o trabalho de 2026-10-23/24 (W1, W2, display, docs) — ainda NÃO feito. Sem push até o Giovani mandar.
+
+## H. Nuvem pelo display — estado em 2026-10-25 e pendências do teste com o app
+Gravado e funcionando na máquina: W1 (COM24), W2 (COM10), display (COM11) e câmera v6 (OTA, publicada na `main`). Canal 6, W1/W2 ok, nuvem ONLINE,
+a tela Wi-Fi mostra a rede da câmera, a senha digitada fica guardada, a máquina aparece livre no app. O fluxo "pagou → câmera leu a placa → luz verde" funcionou.
+
+- [ ] **PWA: sem botão de cancelar no estado "carro reconhecido" (reserva ACTIVE).** `server/app/(pwa)/app/page.tsx` só mostra "Cancelar lavagem e receber de volta"
+  quando a reserva é HELD, mas a rota `/api/reservations/[id]/cancel` já aceita HELD e ACTIVE. Deploy de produção só na `main` (a tela na `main` pode ser diferente da
+  branch `loja-conveniencia`, que tem a "Loja conveniência"). Aguardando o "pode publicar" do Giovani.
+- [ ] **Verde preso depois de "cancelar":** a lâmpada da W1 (ociosa) segue o `lightState` do heartbeat; reserva ACTIVE = verde fixo. A reserva só volta a HELD
+  depois de 5 min (`ACTIVE_TTL_MIN`) **quando `expireStale()` roda** (cron `/api/cron/expire-reservations`, ou chamadas a `/api/reservations` e à leitura de placa).
+  Conferir se o cron está agendado no Railway; se não, a reserva fica ACTIVE para sempre. Voucher do teste: RQMF7HS5GT (reserva `cmvo5xphv005…`).
+  Conferir também se cancelar pelo ADMIN (lista de Lavagens) cancela a reserva e apaga a luz (`lightUntil`), como faz a rota do cliente.
+- [x] W1 desarma sozinha o ciclo armado pelo app quando a reserva some do backend (8 s, só com nuvem ONLINE). Gravado. **Validar:** reservar, deixar o verde acender, cancelar, ver o verde apagar.
+- [x] Display: botão **CANCELAR ESPERA** (no lugar do PAUSAR) quando a W1 espera o carro. Gravado. **Validar** na máquina.
+- [x] W1 e display: log de diagnóstico da lâmpada (`[LAMP]`, `[NUVEM] ordens` a cada 10 s) na serial da W1 (115200).
+- Decidido: o verde acende e a W1 espera o X14 em **duas situações**: (1) liberada pelo app (câmera leu a placa ou "Já estou na máquina") e (2) controle remoto / botão INICIAR AUTOMATICO da tela. Não mudar.
+- [ ] Ainda não testado: ciclo completo iniciado pelo app (carro entra → lava → evento chega ao backend e ao app), fila de eventos com a câmera desligada, aspirador pelo app,
+  licença (aviso/bloqueio), recuperação de boot, cadastro "TROCOU DISPLAY".
+- [ ] Commits locais **sem push** (branch `loja-conveniencia`): depois de `1e2f298` há câmera v6, CANCELAR ESPERA, correções da W1. A câmera v5/v6 já está na `main` (push só dos arquivos de firmware).

@@ -122,7 +122,10 @@ static void lampada_tick() {
         g_estado_auto == AUTO_AGUARDA_POS || g_estado_auto == AUTO_AGUARDA_CARRO || g_estado_auto == AUTO_CARRO_ENTRANDO) return;   // o ciclo comanda
     if (home_rodando() || g_manual_ativo) return;
     uint8_t novo = (g_estado_auto == AUTO_ERRO) ? LAMP_RED_BLINK : ((ordens_frescas() && (g_ord_flags & 4)) ? g_ord_lamp : LAMP_OFF);   // erro local SEMPRE pisca vermelho
-    if (novo != _lamp_atual) { _lamp_atual = novo; _lamp_t = 0; _lamp_on = false; }
+    if (novo != _lamp_atual) {
+        _lamp_atual = novo; _lamp_t = 0; _lamp_on = false;
+        DBG_PRINTF("[LAMP] lampada -> %u (ordem=%u flags=%u frescas=%d)\n", (unsigned)novo, (unsigned)g_ord_lamp, (unsigned)g_ord_flags, (int)ordens_frescas());
+    }
     lamp_aplicar(_lamp_atual);
 }
 
@@ -176,6 +179,10 @@ void nuvem_tick() {
         if (!sumiu) t_sem_res = 0;
         else if (!t_sem_res) t_sem_res = agora ? agora : 1;
         else if (agora - t_sem_res > 8000) { t_sem_res = 0; DBG_PRINTF("[NUVEM] reserva %s cancelada/expirada: ciclo desarmado\n", g_res_ciclo); teste_parar(); }
+    }
+    {   // diagnostico: o que o display esta mandando (a cada 10 s)
+        static uint32_t t_diag = 0;
+        if (agora - t_diag >= 10000) { t_diag = agora; DBG_PRINTF("[NUVEM] ordens: lamp=%u flags=%u start=%d res=%.12s idade=%us\n", (unsigned)g_ord_lamp, (unsigned)g_ord_flags, (int)g_ord_start_valido, g_ord_start_res, (unsigned)nuvem_hb_idade_s()); }
     }
     lampada_tick();
 }
