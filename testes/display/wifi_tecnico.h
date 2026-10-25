@@ -263,7 +263,8 @@ static void wifi_tick() {
 }
 
 // ================================================================ TELA =======
-static lv_obj_t *scr_wifi = nullptr, *lbl_w_msg, *lbl_w_info, *lbl_w_sel;
+static lv_obj_t *scr_wifi = nullptr, *lbl_w_msg, *lbl_w_info, *lbl_w_sel, *lbl_w_atual;
+static char g_rede_atual[33] = "";      // ultima rede entregue a camera (guardada na NVS)
 static lv_obj_t *btn_w_rede[5], *lbl_w_rede[5];
 static lv_obj_t *ta_w_ssid, *ta_w_canal, *ta_w_senha, *kb_w;
 static lv_obj_t *btn_w_conectar, *lbl_w_conectar, *btn_w_ok = nullptr, *g_ta_edit = nullptr;
@@ -271,6 +272,7 @@ static lv_obj_t *btn_w_conectar, *lbl_w_conectar, *btn_w_ok = nullptr, *g_ta_edi
 // Wi-Fi digitado fica guardado no display (ultima rede usada): ao escolher a mesma rede a senha ja vem preenchida.
 static void wifi_salvar_ultima(const char* ssid, const char* senha, uint8_t canal) {
     Preferences p; if (!p.begin("rede", false)) return;
+    snprintf(g_rede_atual, sizeof(g_rede_atual), "%s", ssid);
     p.putString("w_ssid", ssid); p.putString("w_pass", senha); p.putUChar("w_can", canal); p.end();
 }
 static bool wifi_ultima(char* ssid, size_t ns, char* senha, size_t np, uint8_t* canal) {
@@ -374,6 +376,8 @@ static void ui_wifi_criar() {
     novo_botao_cb(scr_wifi, "OUTRA REDE (digitar)", COR_AZUL, 512, 198, 276, 42, cb_w_manual, 0);
 
     lbl_w_sel = novo_label(scr_wifi, &lv_font_montserrat_16, COR_TEXTO, 16, 330, 480);
+    lbl_w_atual = novo_label(scr_wifi, &lv_font_montserrat_16, COR_VERDE, 512, 252, 280);
+    { char pw[65]; uint8_t cn; wifi_ultima(g_rede_atual, sizeof(g_rede_atual), pw, sizeof(pw), &cn); }
     ta_w_ssid = lv_textarea_create(scr_wifi);
     lv_textarea_set_one_line(ta_w_ssid, true); lv_textarea_set_placeholder_text(ta_w_ssid, "nome da rede (SSID)");
     lv_textarea_set_max_length(ta_w_ssid, 32);
@@ -407,6 +411,7 @@ static void ui_atualizar_wifi(bool contato) {
     snprintf(b, sizeof(b), "Canal %u  W1: %s  W2: %s\nCamera: %s  Nuvem: %s", (unsigned)g_canal_disp, contato ? "ok" : "sem", (contato && g_st.w2_ok) ? "ok" : "sem",
              cv ? "vista" : "nao", nd_online() ? "ONLINE" : "OFFLINE");
     lv_label_set_text(lbl_w_info, b);
+    { char r[64]; snprintf(r, sizeof(r), "Rede enviada a camera:\n%s", g_rede_atual[0] ? g_rede_atual : "(nenhuma ainda)"); lv_label_set_text(lbl_w_atual, r); }
     int paginas = (g_redes_n + 4) / 5;
     for (int i = 0; i < 5; i++) {
         int k = (int)g_redes_pag * 5 + i;
