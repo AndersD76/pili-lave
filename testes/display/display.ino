@@ -598,9 +598,9 @@ static void ui_evento_atualiza(bool contato, const MsgTesteStatus& s) {
     if (s.ev_seq == ev_visto) return;
     ev_visto = s.ev_seq;
     char b[120];
-    if (s.ev_tipo == 1) {
-        snprintf(b, sizeof(b), "CICLO CONCLUIDO\n(modelo %u)", (unsigned)s.ev_modelo);
-        lv_obj_set_style_border_color(pop_ev, COR_VERDE, 0);
+    if (s.ev_tipo == 1) {   // concluido com sucesso: so um aviso curto na linha de mensagens (sem pop-up e sem OK)
+        snprintf(g_aviso, sizeof(g_aviso), "Ciclo concluido (modelo %u)", (unsigned)s.ev_modelo); g_aviso_ms = millis();
+        return;
     } else {
         char m[56]; strncpy(m, s.msg, sizeof(m) - 1); m[sizeof(m) - 1] = 0;
         snprintf(b, sizeof(b), "ERRO NO CICLO (modelo %u)\n%s", (unsigned)s.ev_modelo, m);
