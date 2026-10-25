@@ -72,6 +72,7 @@ static bool     nd_lic_bloq()  { return g_nd_lic_bloq; }
 static bool     nd_lic_aviso() { return g_nd_lic_aviso; }
 static uint16_t nd_lic_dias()  { return g_nd_lic_dias; }
 static bool     nd_online()    { return g_nd_online; }
+static bool     nd_resp_apos(uint32_t t) { return g_nd_hb_ok_ms && (int32_t)(g_nd_hb_ok_ms - t) > 0; }   // houve resposta do backend depois de t (millis)
 static uint16_t nd_idade_s()   { return g_nd_hb_ok_ms ? (uint16_t)min<uint32_t>((millis() - g_nd_hb_ok_ms) / 1000UL, 65534UL) : 0xFFFF; }
 static uint8_t  nd_evq_n()     { return g_nd_evq_n; }
 

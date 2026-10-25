@@ -145,8 +145,14 @@ static void wifi_falhou(const char* motivo) {
 }
 
 // Chamado a cada volta do loop() (fora do LVGL). Maquina de estados NAO bloqueante.
+static bool nd_resp_apos(uint32_t t);                    // nuvem_display.h: ja chegou resposta do backend (via camera) depois de t?
+static uint32_t g_fim_t0 = 0;                             // fim da migracao: quando comecou a esperar a camera ficar online
 static void wifi_tick() {
     uint32_t agora = millis();
+    if (g_ws == WS_FIM && g_fim_t0) {                     // so diz "conectada" quando o backend de fato respondeu depois da migracao
+        if (nd_resp_apos(g_fim_t0)) { ws_msg("Camera CONECTADA na internet: nuvem ONLINE."); g_fim_t0 = 0; }
+        else if (agora - g_fim_t0 > 180000UL) { ws_msg("A camera NAO ficou online em 3 min. Confira a senha/sinal do Wi-Fi e tente de novo.", true); g_fim_t0 = 0; }
+    }
     // RE-SYNC AUTOMATICO: a camera avisou que o roteador mudou de canal. Migra camera, W1 e W2 sem senha de tecnico, so com a maquina parada.
     if (g_resync_pedido && (g_ws == WS_IDLE || g_ws == WS_FIM) && g_st_ok && !maquina_ocupada()) {
         uint8_t n = g_resync_pedido; g_resync_pedido = 0;
@@ -227,9 +233,10 @@ static void wifi_tick() {
         } else {
             wifi_mig_nvs(0, 0);
             char b[100];
-            if (g_ws_ssid[0]) snprintf(b, sizeof(b), "Rede '%s' entregue. Todos no canal %u; a camera esta conectando na internet.", g_ws_ssid, (unsigned)g_canal_disp);
-            else              snprintf(b, sizeof(b), "Re-sync concluido: camera, W1 e W2 no canal %u (o roteador mudou).", (unsigned)g_canal_disp);
+            if (g_ws_ssid[0]) snprintf(b, sizeof(b), "Rede '%s' entregue. Todos no canal %u. Aguardando a camera conectar na internet...", g_ws_ssid, (unsigned)g_canal_disp);
+            else              snprintf(b, sizeof(b), "Re-sync concluido: camera, W1 e W2 no canal %u. Aguardando a camera ficar online...", (unsigned)g_canal_disp);
             ws_msg(b);
+            g_fim_t0 = agora ? agora : 1;
             g_ws = WS_FIM;
         }
         break;
