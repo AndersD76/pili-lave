@@ -169,5 +169,13 @@ void nuvem_tick() {
     if (g_evq_n && agora - g_evt_tx_ms >= NUVEM_EVT_REENVIO_MS) { g_evt_tx_ms = agora; evq_enviar_cabeca(); }   // reenvia ate o display confirmar
     nuvem_processar_start();
     nuvem_processar_vacuum();
+    {   // ciclo armado pelo APP esperando o carro: se a reserva sumiu do backend (cancelada/expirada), DESARMA e apaga o verde
+        static uint32_t t_sem_res = 0;
+        bool sumiu = g_estado_auto == AUTO_AGUARDA_CARRO && nuvem_res_ativa() && ordens_frescas() && (g_ord_flags & 4) &&   // so com a nuvem ONLINE (offline nao conta)
+                     (!g_ord_start_valido || strncmp(g_ord_start_res, g_res_ciclo, sizeof(g_res_ciclo)) != 0);
+        if (!sumiu) t_sem_res = 0;
+        else if (!t_sem_res) t_sem_res = agora ? agora : 1;
+        else if (agora - t_sem_res > 8000) { t_sem_res = 0; DBG_PRINTF("[NUVEM] reserva %s cancelada/expirada: ciclo desarmado\n", g_res_ciclo); teste_parar(); }
+    }
     lampada_tick();
 }

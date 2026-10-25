@@ -396,6 +396,7 @@ void teste_parar() {
     g_ciclo_auto            = false;
     g_tipo_prox             = 0;       // cancelar/parar volta o tipo para presencial
     man_sai_zera();                    // saidas manuais: desligar_tudo() ja desligou; zera o marcador
+    nuvem_res_limpar();                // cancelar/parar: o ciclo deixa de ser de uma reserva do app
     _retomando              = false;
     g_estado.processo_ativo = PROC_NENHUM;
     g_estado.alarme         = false;
