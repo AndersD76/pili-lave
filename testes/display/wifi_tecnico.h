@@ -167,7 +167,7 @@ static void wifi_tick() {
         break; }
 
     case WS_CACA: {                                       // varre 1..13 (so porque o BUSCAR nao achou a camera)
-        if (g_ws_t0 == 0 || agora - g_ws_t0 > 450) {
+        if (g_ws_t0 == 0 || agora - g_ws_t0 > 1300) {
             if (g_cam_vista_ms && g_ws_t0) {              // achou: trava neste canal
                 canal_gravar(g_canal_disp);
                 char b[80]; snprintf(b, sizeof(b), "Camera encontrada no canal %u. Buscando redes...", (unsigned)g_canal_disp); ws_msg(b);
