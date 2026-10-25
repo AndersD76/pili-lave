@@ -481,6 +481,13 @@ int     proc_estado();          // fwd — definido em processos.h (incluido dep
 uint8_t teste_giro_n();         // fwd — idem
 void    teste_iniciar();        // fwd — definidos em maquina_estados.h
 void    teste_parar();
+void    backend_evt_fault(const char* errorCode);   // (definida em nuvem_w1.h)
+// PARAR TUDO / CANCELAR do operador: se havia um ciclo de reserva do APP (armado ou com carro), avisa o backend (falha + estorno na hora,
+// veiculo liberado); em erro (AUTO_ERRO) o aviso ja foi dado. Ciclo local (painel/INICIAR) nao tem reserva: so para.
+static void cancelar_operador() {
+    if (nuvem_res_ativa() && g_estado_auto != AUTO_IDLE && g_estado_auto != AUTO_ERRO) backend_evt_fault("cancelado pelo operador");
+    teste_parar();
+}
 typedef struct { uint8_t tipo, como, fh, pulsos; uint16_t dt_ms, x16_ms, x17_ms; } UltGiro;
 extern UltGiro g_ult_giro;   // definido em processos.h
 extern bool     g_teste_bomba, g_teste_seco, g_teste_rodando, g_ciclo_auto;
@@ -767,7 +774,7 @@ static void cfg_processa() {
 
 // Executa o que o display pediu. Chamar SO do loop()/das esperas do loop — nunca do callback.
 void processa_comandos() {
-    if (g_parar_pedido) { g_parar_pedido = false; teste_parar(); }
+    if (g_parar_pedido) { g_parar_pedido = false; cancelar_operador(); }
     cfg_processa();
     uint16_t pacote;
     while (g_fila_cmd && xQueueReceive(g_fila_cmd, &pacote, 0) == pdTRUE) {
@@ -831,7 +838,7 @@ void processa_comandos() {
                 break;
             case 21: if (g_estado_auto == AUTO_PROCESSO) auto_pausar();  break;
             case 22: if (g_estado_auto == AUTO_PAUSADO)  auto_retomar(); break;
-            case 23: teste_parar(); break;                   // cancelar = parada total
+            case 23: cancelar_operador(); break;             // cancelar = parada total (avisa o backend se era ciclo do app)
         }
     }
 }
