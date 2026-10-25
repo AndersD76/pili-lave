@@ -145,6 +145,7 @@ static void wifi_falhou(const char* motivo) {
 }
 
 // Chamado a cada volta do loop() (fora do LVGL). Maquina de estados NAO bloqueante.
+static bool nd_online();
 static bool nd_resp_apos(uint32_t t);                    // nuvem_display.h: ja chegou resposta do backend (via camera) depois de t?
 static uint32_t g_fim_t0 = 0;                             // fim da migracao: quando comecou a esperar a camera ficar online
 static void wifi_tick() {
@@ -267,6 +268,17 @@ static lv_obj_t *btn_w_rede[5], *lbl_w_rede[5];
 static lv_obj_t *ta_w_ssid, *ta_w_canal, *ta_w_senha, *kb_w;
 static lv_obj_t *btn_w_conectar, *lbl_w_conectar, *btn_w_ok = nullptr, *g_ta_edit = nullptr;
 
+// Wi-Fi digitado fica guardado no display (ultima rede usada): ao escolher a mesma rede a senha ja vem preenchida.
+static void wifi_salvar_ultima(const char* ssid, const char* senha, uint8_t canal) {
+    Preferences p; if (!p.begin("rede", false)) return;
+    p.putString("w_ssid", ssid); p.putString("w_pass", senha); p.putUChar("w_can", canal); p.end();
+}
+static bool wifi_ultima(char* ssid, size_t ns, char* senha, size_t np, uint8_t* canal) {
+    Preferences p; if (!p.begin("rede", true)) return false;
+    String a = p.getString("w_ssid", ""), b = p.getString("w_pass", ""); *canal = p.getUChar("w_can", 0); p.end();
+    if (!a.length()) return false;
+    snprintf(ssid, ns, "%s", a.c_str()); snprintf(senha, np, "%s", b.c_str()); return true;
+}
 static void cb_w_voltar(lv_event_t*) { if (scr_principal) lv_scr_load(scr_principal); }
 static void cb_w_buscar(lv_event_t*) {
     if (g_ws != WS_IDLE && g_ws != WS_FIM) return;
@@ -281,9 +293,20 @@ static void cb_w_pag(lv_event_t* e) {
 }
 static void cb_w_rede(lv_event_t* e) {
     int i = (int)g_redes_pag * 5 + (int)(intptr_t)lv_event_get_user_data(e);
-    if (i < g_redes_n) { g_rede_sel = (uint8_t)i; g_manual_ssid = false; }
+    if (i < g_redes_n) {
+        g_rede_sel = (uint8_t)i; g_manual_ssid = false;
+        char sv[33], pw[65]; uint8_t cn;
+        if (wifi_ultima(sv, sizeof(sv), pw, sizeof(pw), &cn) && strcmp(sv, g_redes[i].ssid) == 0) lv_textarea_set_text(ta_w_senha, pw);   // mesma rede da ultima vez
+    }
 }
-static void cb_w_manual(lv_event_t*) { g_manual_ssid = !g_manual_ssid; if (g_manual_ssid) g_rede_sel = 255; }
+static void cb_w_manual(lv_event_t*) {
+    g_manual_ssid = !g_manual_ssid; if (g_manual_ssid) g_rede_sel = 255;
+    char sv[33], pw[65]; uint8_t cn;
+    if (g_manual_ssid && wifi_ultima(sv, sizeof(sv), pw, sizeof(pw), &cn)) {
+        lv_textarea_set_text(ta_w_ssid, sv); lv_textarea_set_text(ta_w_senha, pw);
+        char c[4]; snprintf(c, sizeof(c), "%u", (unsigned)cn); lv_textarea_set_text(ta_w_canal, cn ? c : "");
+    }
+}
 // O teclado cobre os campos de baixo: o campo em edicao sobe para logo acima do teclado (com botao OK) e volta ao lugar ao fechar.
 static void w_ta_restaura() {
     if (!g_ta_edit) return;
@@ -325,6 +348,7 @@ static void cb_w_conectar(lv_event_t*) {
     if (canal < 1 || canal > 13) { ws_msg("Canal invalido (1 a 13). Na rede digitada, informe o canal.", true); return; }
     if (!g_st_ok)             { ws_msg("Sem contato com a maquina (W1): nao da para migrar o canal.", true); return; }
     w_kb_fecha();
+    wifi_salvar_ultima(ssid, lv_textarea_get_text(ta_w_senha), canal);
     wifi_migrar(ssid, lv_textarea_get_text(ta_w_senha), canal);
 }
 static void cb_ir_wifi(lv_event_t*) {
@@ -339,7 +363,7 @@ static void ui_wifi_criar() {
     novo_botao(scr_wifi, "VOLTAR", COR_AZUL, 8, 8, 150, 50, cb_w_voltar);
     lv_obj_t* t = novo_label(scr_wifi, &lv_font_montserrat_20, COR_AMARELO, 180, 20, 420);
     lv_label_set_text(t, "WI-FI (a camera e quem conecta)");
-    lbl_w_info = novo_label(scr_wifi, &lv_font_montserrat_16, COR_FRACO, 560, 22, 232);
+    lbl_w_info = novo_label(scr_wifi, &lv_font_montserrat_16, COR_FRACO, 500, 12, 296);
     lbl_w_msg  = novo_label(scr_wifi, &lv_font_montserrat_16, COR_AMARELO, 16, 64, 770);
 
     for (int i = 0; i < 5; i++)
@@ -380,8 +404,8 @@ static void ui_atualizar_wifi(bool contato) {
     lv_label_set_text(lbl_w_msg, g_ws_msg);
     lv_obj_set_style_text_color(lbl_w_msg, g_ws_msg_erro ? COR_VERMELHO : COR_AMARELO, 0);
     uint32_t cv = g_cam_vista_ms;
-    snprintf(b, sizeof(b), "Canal: %u  W1: %s\nCamera: %s", (unsigned)g_canal_disp, contato ? "ok" : "sem contato",
-             cv ? "vista" : "nao vista");
+    snprintf(b, sizeof(b), "Canal %u  W1: %s  W2: %s\nCamera: %s  Nuvem: %s", (unsigned)g_canal_disp, contato ? "ok" : "sem", (contato && g_st.w2_ok) ? "ok" : "sem",
+             cv ? "vista" : "nao", nd_online() ? "ONLINE" : "OFFLINE");
     lv_label_set_text(lbl_w_info, b);
     int paginas = (g_redes_n + 4) / 5;
     for (int i = 0; i < 5; i++) {
