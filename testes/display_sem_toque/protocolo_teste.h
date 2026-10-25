@@ -111,6 +111,8 @@ typedef struct __attribute__((packed)) {      // Camera -> Display: resposta do 
     CabEspNow cab; uint8_t ok; uint8_t lightState; uint16_t lic_days; uint8_t lic_blocked;
     uint8_t start_valido; uint8_t start_prog; uint32_t start_dur; char start_res[40]; int16_t vacuum_seg;
 } MsgHbResp;
+enum : uint8_t { MSG_REDE_INFO = 22 };
+typedef struct __attribute__((packed)) { CabEspNow cab; int8_t rssi; char ssid[33]; } MsgRedeInfo;   // Camera -> Display (a cada 5 s): rede Wi-Fi em que a camera esta conectada
 typedef struct __attribute__((packed)) {      // Display -> Camera: evento p/ a nuvem (a fila fica na NVS do display ate o ACK)
     CabEspNow cab; uint8_t evt_tipo; uint8_t prog; char res[40]; char source[8]; char errcode[64];   // tipo 1=car-entered 2=wash-complete 3=fault
 } MsgEvt;

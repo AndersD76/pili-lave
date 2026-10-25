@@ -40,6 +40,7 @@ static bool     g_ws_msg_erro = false;
 static const uint8_t BC_ALL[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
 static void cad_on_recv(const uint8_t* data, int len);    // cadastro_tecnico.h
+static char g_rede_cam[33] = ""; static int8_t g_rede_cam_rssi = 0; static volatile uint32_t g_rede_cam_ms = 0;   // rede informada pela propria camera
 
 // Chamado do callback do ESP-NOW (nao mexe em LVGL).
 static void wifi_on_recv(const uint8_t* data, int len) {
@@ -48,6 +49,10 @@ static void wifi_on_recv(const uint8_t* data, int len) {
     if (c->origem == ORIGEM_CAMERA) {
         g_cam_vista_ms = agora;
         if (c->tipo == MSG_CANAL) g_cam_hello_ms = agora;
+        else if (c->tipo == MSG_REDE_INFO && len >= (int)sizeof(MsgRedeInfo)) {
+            const MsgRedeInfo* r = (const MsgRedeInfo*)data;
+            memcpy(g_rede_cam, r->ssid, sizeof(g_rede_cam)); g_rede_cam[sizeof(g_rede_cam) - 1] = 0; g_rede_cam_rssi = r->rssi; g_rede_cam_ms = agora;
+        }
         else if (c->tipo == MSG_RESYNC_REQ && len >= (int)sizeof(MsgResyncReq)) {
             uint8_t n = ((const MsgResyncReq*)data)->canal;
             if (n >= 1 && n <= 13) g_resync_pedido = n;
@@ -364,7 +369,7 @@ static void ui_wifi_criar() {
     lv_obj_clear_flag(scr_wifi, LV_OBJ_FLAG_SCROLLABLE);
     novo_botao(scr_wifi, "VOLTAR", COR_AZUL, 8, 8, 150, 50, cb_w_voltar);
     lv_obj_t* t = novo_label(scr_wifi, &lv_font_montserrat_20, COR_AMARELO, 180, 20, 420);
-    lv_label_set_text(t, "WI-FI (a camera e quem conecta)");
+    lv_label_set_text(t, "WI-FI");
     lbl_w_info = novo_label(scr_wifi, &lv_font_montserrat_16, COR_FRACO, 500, 12, 296);
     lbl_w_msg  = novo_label(scr_wifi, &lv_font_montserrat_16, COR_AMARELO, 16, 64, 770);
 
@@ -411,7 +416,12 @@ static void ui_atualizar_wifi(bool contato) {
     snprintf(b, sizeof(b), "Canal %u  W1: %s  W2: %s\nCamera: %s  Nuvem: %s", (unsigned)g_canal_disp, contato ? "ok" : "sem", (contato && g_st.w2_ok) ? "ok" : "sem",
              cv ? "vista" : "nao", nd_online() ? "ONLINE" : "OFFLINE");
     lv_label_set_text(lbl_w_info, b);
-    { char r[64]; snprintf(r, sizeof(r), "Rede enviada a camera:\n%s", g_rede_atual[0] ? g_rede_atual : "(nenhuma ainda)"); lv_label_set_text(lbl_w_atual, r); }
+    {   // a propria camera informa a rede a cada 5 s (v6); sem informar, mostra a ultima rede entregue por aqui
+        char r[96];
+        if (g_rede_cam_ms && millis() - g_rede_cam_ms < 20000) snprintf(r, sizeof(r), "Rede da camera:\n%s (%d dBm)", g_rede_cam, (int)g_rede_cam_rssi);
+        else snprintf(r, sizeof(r), "Camera sem informar a rede.\nUltima enviada: %s", g_rede_atual[0] ? g_rede_atual : "(nenhuma)");
+        lv_label_set_text(lbl_w_atual, r);
+    }
     int paginas = (g_redes_n + 4) / 5;
     for (int i = 0; i < 5; i++) {
         int k = (int)g_redes_pag * 5 + i;

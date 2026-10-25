@@ -161,6 +161,8 @@ typedef struct __attribute__((packed)) {
 
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal; } MsgCanal;
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal; } MsgResyncReq;   // MSG_RESYNC_REQ
+#define MSG_REDE_INFO 22   // camera -> display: nome da rede Wi-Fi em que ela esta conectada (a cada 5 s)
+typedef struct __attribute__((packed)) { CabEspNow cab; int8_t rssi; char ssid[33]; } MsgRedeInfo;
 
 typedef struct __attribute__((packed)) { CabEspNow cab; } MsgScanReq;
 
@@ -1244,7 +1246,7 @@ void setup() {
 
 void loop() {
   esp_task_wdt_reset();
-  static uint32_t tHb = 0, tCanal = 0;
+  static uint32_t tHb = 0, tCanal = 0, tRede = 0;
 
   // (0) Aplica credenciais novas que chegaram do display
   if (g_canal_pedido) { uint8_t n = g_canal_pedido; g_canal_pedido = 0; aplicarCanalPedido(n); }   // display: "vai para o canal N"
@@ -1270,6 +1272,12 @@ void loop() {
   //     heartbeat (payload pequeno, termina rápido) quase não era afetado.
   if (!g_lpr_enviando && millis() - tCanal >= PILI_CANAL_ANUNCIO_MS) { tCanal = millis(); anunciarCanal(); }
   espnowWatchdogTick();   // reinicia sozinha se o ESP-NOW parar de sair (ver comentario acima)
+  if (conectada && !g_lpr_enviando && millis() - tRede >= 5000) {   // diz ao display em que rede esta (so mostra na tela de Wi-Fi)
+    tRede = millis();
+    MsgRedeInfo ri = {}; ri.cab.tipo = MSG_REDE_INFO; ri.cab.id_maquina = ID_MAQUINA; ri.cab.origem = ORIGEM_CAMERA; ri.cab.seq = 0;
+    ri.rssi = (int8_t)WiFi.RSSI(); strncpy(ri.ssid, WiFi.SSID().c_str(), sizeof(ri.ssid) - 1);
+    esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&ri, sizeof(ri));
+  }
 
   if (!conectada) {
     // MODO CONFIG (sem credenciais): rádio no canal 1, anunciando, PEDINDO

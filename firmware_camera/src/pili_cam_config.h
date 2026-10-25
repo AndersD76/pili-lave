@@ -77,7 +77,7 @@
 //   se a gravação fechar certinho (senão continua rodando o firmware atual
 //   -- o ESP32 nunca troca pra uma imagem incompleta/corrompida sozinho).
 //   SUBIR A VERSÃO aqui a cada firmware novo, senão ele nunca se atualiza.
-#define PILI_FW_VERSION       5   // v5: comando de canal do display, re-sync automatico, respostas da nuvem tambem para a W1
+#define PILI_FW_VERSION       6   // v6: informa ao display a rede Wi-Fi conectada (MSG_REDE_INFO). v5: comando de canal do display, re-sync automatico, respostas da nuvem tambem para a W1
 #define PILI_OTA_VERSION_PATH "/firmware/camera-version.json"
 #define PILI_OTA_BIN_PATH     "/firmware/camera.bin"
 #define PILI_OTA_CHECK_MS     (10UL * 60UL * 1000UL)  // confere a cada 10min
