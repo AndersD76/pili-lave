@@ -131,3 +131,21 @@ a tela Wi-Fi mostra a rede da câmera, a senha digitada fica guardada, a máquin
 - [ ] Ainda não testado: ciclo completo iniciado pelo app (carro entra → lava → evento chega ao backend e ao app), fila de eventos com a câmera desligada, aspirador pelo app,
   licença (aviso/bloqueio), recuperação de boot, cadastro "TROCOU DISPLAY".
 - [ ] Commits locais **sem push** (branch `loja-conveniencia`): depois de `1e2f298` há câmera v6, CANCELAR ESPERA, correções da W1. A câmera v5/v6 já está na `main` (push só dos arquivos de firmware).
+
+## I. Teste com o app em 2026-10-25 — resultado e pendências
+**Funcionou de ponta a ponta (reserva RYD1E43, modelo 1):** reserva paga → câmera leu a placa → luz verde → `START pelo app` → X14 → ciclo completo → `car_entered` e
+`wash_completed` no backend → reserva COMPLETED / pedido REDEEMED, sem reserva presa. Gravado: W1 (`ce4ae90`), display (`3da4edc`), câmera v6 (na `main`).
+
+- [x] Ciclo abortado pelo X15 (17:11): o código antigo fazia HOME automático com o carro dentro e o braço bateu no carro. **Corrigido e gravado:** X15 perdido no processo → para tudo
+  e fica em erro (sem HOME), avisando o backend (falha + estorno). PARAR TUDO / cancelar do operador também avisa o backend quando era ciclo do app. A reserva presa do teste foi liberada à mão.
+- [ ] **X15 instável** (sensor): conferir ajuste mecânico, distância, cabo e blindagem. É a origem da batida.
+- [ ] **Y7 bloqueado na Cor Mágica:** o intertravamento do Y7 (`io1_set_do`, `controle.h`) só aceita Y2/Y3/Y10 e ignora o Y1; na Cor Mágica (Y1+Y7) aparece
+  `[SEGURANCA] Y7 bloqueado` no início do 2º processo do modelo 1. O Giovani viu o ciclo terminar bem e disse para **não mudar por enquanto**; a correção (incluir `do_estado1 & (1<<0)`) NÃO foi gravada.
+  Confirmar na máquina se a bomba Y7 deve ligar na Cor Mágica.
+- [ ] **Ruído elétrico** nas transições do inversor: pulsos fantasmas no painel (X1/X2/X5/X6 → "modelo N ignorado"), X11 oscilando, erros de CRC no RS-485 e falhas no link com a W2.
+  Com a máquina parada um pulso fantasma ARMA um ciclo e acende o verde. Avaliar filtro/debounce no firmware e blindagem/aterramento.
+- [ ] **Queda de energia** de ~3 min (17:11–17:14, provavelmente a parada de emergência): a W2 e a câmera voltam sozinhas.
+- [ ] **Leitura da placa com o carro parado** pode levar até 1 min (filtro "cena parada" do servidor compara com a foto anterior). Correção proposta no servidor, aguardando "pode publicar".
+- [ ] `remainingSec` sempre 0 no servidor (o app não mostra contagem regressiva). O estado FREE/WASHING oscilou por alguns segundos durante o ciclo: revisar `nd_estado_str`.
+- [ ] Banco de produção sem a coluna `User.codigoCliente` (migrations da loja não aplicadas): atenção ao unir `loja-conveniencia` com a `main`.
+- [ ] A serial da W1 parou de imprimir às 17:46 durante o ciclo (a máquina seguiu e terminou): ver se é limite do monitor USB ou da W1.
