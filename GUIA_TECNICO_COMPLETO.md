@@ -162,7 +162,11 @@ Displays novos sem flat do toque (GT911): `docs/TROCA_DE_DISPLAY.md`.
 **Nuvem na base nova (2026-10-24):** a W1 fica só com a operação; o **display** conversa com a câmera (`testes/display/nuvem_display.h`:
 heartbeat a cada 5 s, fila de eventos na NVS com ACK, licença 40/50 dias + 15 dias ligada sem comunicação) e manda ordens à W1 a cada 2 s
 (`MSG_NV_ORDEM` 38: lâmpada, licença, aspirador, reserva do app). A W1 (`testes/waveshare1/nuvem_w1.h`) manda eventos (`MSG_NV_EVT` 36, confirmados por `MSG_NV_EVT_ACK` 37),
-guarda até 16 na NVS e executa as ordens (início pelo app, lâmpada, aspirador). Sem ordens por 60 s a W1 age em modo seguro. Compilado, ainda não testado na máquina.
+guarda até 16 na NVS e executa as ordens (início pelo app, lâmpada, aspirador). Sem ordens por 60 s a W1 age em modo seguro. **Gravado e validado na máquina em 2026-10-25** (teste com o app de ponta a ponta). Estado atual, decisões e o que mudou desde então: **`docs/ESTADO_ATUAL.md`**.
+
+**Resumo do que a máquina faz com o app (2026-10-25):** reserva paga no app (HELD) → a câmera lê a placa ou o cliente toca em "Já estou na máquina" (ACTIVE: luz verde, o heartbeat devolve `start`) → o display repassa à W1 (`MSG_NV_ORDEM`), que arma o ciclo e espera o X14 → `car_entered` (ENTERED) → ciclo → `wash_completed` (COMPLETED). Em erro (AUTO_ERRO) ou PARAR TUDO/cancelar do operador a W1 manda `fault` e o backend marca a reserva FAILED e **estorna na hora** (`/api/machine/fault`). A W1 desarma sozinha o ciclo armado se a reserva sumir do backend (8 s, nuvem ONLINE). O display avisa "ocupada" à câmera se perder a W1. **X15 perdido no processo para tudo e fica em erro, sem HOME automático** (o antigo fazia HOME e o braço bateu no carro).
+
+**Câmera v6** (`MSG_REDE_INFO` 22, rede Wi-Fi mostrada na tela do display) e a regra de publicação por OTA: `firmware_camera/release/LEIAME.md`. **Lacunas conhecidas do backend/PWA** (botão de cancelar só em HELD, leitura de placa com carro parado, cron de expiração, `remainingSec` sempre 0, `/admin/lavagens` lista vouchers): `testes/PENDENCIAS_NA_MAQUINA.md` seções H e I.
 
 ## 4. Firmware das Waveshares — `lava_car_485/waveshare1/` e `waveshare2/`
 

@@ -64,7 +64,7 @@ Detalhes técnicos: `testes/LEIAME.md`, `testes/PENDENCIAS_NA_MAQUINA.md`, `docs
 - Só quando o display busca e **não acha a câmera**, ao apertar BUSCAR ele varre os 13 canais; depois de escolhido, todos ficam travados no canal.
 - Upload de firmware da **câmera pelo Wi-Fi (OTA)**; o display não tem Wi-Fi, continua por cabo USB.
 
-## 7. Pendente para quando o Giovani voltar à máquina
+## 7. Pendente para quando o Giovani voltar à máquina (lista viva em `testes/PENDENCIAS_NA_MAQUINA.md`; estado geral em `docs/ESTADO_ATUAL.md`)
 - Gravar W1 e câmera e validar a lista de `PENDENCIAS_NA_MAQUINA.md`.
 - Câmera: data, acerto vindo do app, busca de redes com canal, migração de canal e re-sync automático.
 - Display **com toque**: os dois displays novos vieram **sem o flat do toque** (pedir a versão com toque); por ora o COM5 é o que funciona.
@@ -76,3 +76,14 @@ Detalhes técnicos: `testes/LEIAME.md`, `testes/PENDENCIAS_NA_MAQUINA.md`, `docs
   Como restaurar e como ler a memória exata das placas: `docs/BACKUP_E_RESTAURACAO.md` (a leitura das placas depende delas conectadas).
 - **A migração segue a ordem de `docs/PARIDADE_ANTIGO_NOVO.md`:** (1) recuperação de boot, luz de erro, hard reset do display; (2) câmera + nuvem (canal, heartbeat, início pelo app,
   eventos com fila e ACK, licença, lâmpada, aspirador); (3) cadastro da máquina. **Decidido em 2026-10-24 (revisado no mesmo dia): a W1 fica SÓ com a operação; quem conversa com a câmera é o DISPLAY** (heartbeat, eventos com fila e ACK, licença, contagem de 15 dias ligada), pois assim um defeito na nuvem não derruba o controle no meio da lavagem. A W1 manda os eventos ao display e recebe dele as ordens (lâmpada, bloqueio de licença, aspirador, iniciar reserva do app). O teste de homem morto do movimento manual é só de operação e não muda.
+
+## 9. Decisões de 2026-10-25 (teste com o app na máquina)
+- **A luz verde só acende com a lavagem liberada**: pelo app (câmera leu a placa, ou "Já estou na máquina") ou pelo controle remoto / botão INICIAR AUTOMATICO. Nos dois casos a W1 espera o X14 para iniciar. Não mudar.
+- **Falha ou parada no meio do ciclo cancela a lavagem na hora**: o backend marca a reserva como FALHA, estorna e libera o veículo para nova reserva (AUTO_ERRO e PARAR TUDO/cancelar do operador avisam o backend).
+- **Nunca HOME automático com carro dentro**: X15 perdido no processo → parar tudo e ficar em erro; o lavador aciona o HOME (o antigo girou o braço e bateu no carro).
+- **Ciclo concluído com sucesso não abre pop-up com OK**; erro continua com pop-up.
+- O display informa "ocupada" à câmera quando perde a W1; mostra "SEM CONTATO COM A MAQUINA / Use o PAINEL" e depois "COMUNICACAO REESTABELECIDA".
+- Câmera v6 informa a rede Wi-Fi ao display (aparece na tela de Wi-Fi). Senha do Wi-Fi digitada fica guardada no display.
+- **Y7 bloqueado na Cor Mágica**: o Giovani viu o ciclo terminar bem e pediu para **não mudar por enquanto** (correção preparada, não gravada).
+- Aspectos de **sócios, bônus e relatórios** do app: continuam para discutir depois.
+

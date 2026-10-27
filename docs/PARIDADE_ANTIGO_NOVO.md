@@ -27,7 +27,9 @@ de 71–80% para 0–9%.
 
 ## 3. O antigo fazia e o novo AINDA NÃO faz
 
-> **Atualização de 2026-10-24 (tarde):** os itens 1 a 7 e 10 abaixo agora estão **escritos e compilados** (display `nuvem_display.h` + W1 `nuvem_w1.h` só operação, câmera v5), **mas nada foi gravado nem testado**. Falta o item 8 (cadastro da máquina). Ver `testes/PENDENCIAS_NA_MAQUINA.md`.
+> **Atualização de 2026-10-27:** os itens 1 a 7 e 10 abaixo estão **gravados e validados na máquina** em 2026-10-25 (teste com o app de ponta a ponta: reserva, placa, luz verde,
+> ciclo, eventos ao backend). Quem conversa com a câmera é o **display** (`nuvem_display.h`); a W1 só opera (`nuvem_w1.h`). Câmera **v6** instalada. Faltam: item 8 (cadastro, sem teste),
+> a recuperação de boot (9) sem teste em queda real, licença e aspirador pelo app sem teste. Ver `docs/ESTADO_ATUAL.md` e `testes/PENDENCIAS_NA_MAQUINA.md` (seções H e I).
 
 ### 3.1 Para o novo substituir o antigo (bloqueantes)
 | # | Função do antigo | No novo | O que falta |
@@ -53,12 +55,13 @@ de 71–80% para 0–9%.
 
 ## 4. Riscos do desenho novo (para decidir com os olhos abertos)
 1. **A W1 virou ponto único de falha.** Se ela travar, nada opera (antes o display era esse ponto). Mitigação: o painel físico e o watchdog dela; o RS-485 agora só tem o Delta.
-2. **O código novo da W1 é bem mais jovem** que o antigo (que rodou em produção). Falta tempo de bancada: o primeiro ciclo completo com carro só foi feito hoje.
+2. **O código novo da W1 é bem mais jovem** que o antigo (que rodou em produção). Em 2026-10-25 rodaram ciclos reais com o app; apareceram o X15 instável, o ruído elétrico e o Y7 bloqueado na Cor Mágica (ver `PENDENCIAS_NA_MAQUINA.md` seção I).
 3. **A lógica de canal é crítica e ainda não foi testada com a câmera.** Se ela falhar, display, W1 e W2 podem ficar em canais diferentes (já aconteceu hoje: a W2 foi arrastada para o canal 6).
 4. A "fila esperando" para as luzes e para o app **ainda não chega à máquina** (depende dos itens 1 e 2).
 5. A senha do banco de produção está em `server/lib/prisma.ts` e já está no GitHub: trocar no Neon e remover o fallback.
 
-## 5. Decisão arquitetural que destrava os itens 1–7
+## 5. Decisão arquitetural (DECIDIDA em 2026-10-24: o DISPLAY conversa com a câmera; a W1 só opera)
+O texto abaixo é o debate original, mantido para registro. A opção escolhida foi a **ponte pelo display**, para um defeito na nuvem não derrubar o controle no meio da lavagem.
 **Quem conversa com a câmera: a W1 ou o display?**
 - **W1 fala com a câmera** (recomendado): os eventos de ciclo nascem na W1, então ela os envia com a fila na NVS. Não depende do display estar ligado. O display fica só com tela e a configuração de Wi-Fi.
 - **Display faz de ponte**: menos mudança na câmera, mas todo evento passa pelo display; se ele estiver desligado, o débito do app não sai.

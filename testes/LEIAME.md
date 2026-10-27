@@ -80,5 +80,11 @@ W1: tabelas e NVS (`cfg`, `giro`, `lav`), mensagens ESP-NOW 32..35 (config set/r
 Planilha: tipos presencial/aplicativo/sócio/bônus; a **data** só existe quando a câmera mandar `MSG_TESTE_DATA` (câmera ainda não envia).
 Ver `PENDENCIAS_NA_MAQUINA.md` (seções A–E) e `docs/TROCA_DE_DISPLAY.md` (displays novos sem flat de toque).
 
+## Nuvem e estado na máquina (2026-10-25)
+O **display** conversa com a câmera (`display/nuvem_display.h`: heartbeat, fila de eventos com ACK, licença, ordens à W1) e a **W1** só opera (`waveshare1/nuvem_w1.h`: inicia por reserva do app,
+lâmpada, aspirador, 16 eventos na NVS até o display confirmar). Mensagens 36–38 em `protocolo_teste.h` (idêntico em display/W1/display_sem_toque). **Tudo isso já foi gravado e validado na máquina**
+(teste com o app de ponta a ponta). Telas novas/alteradas: botão CANCELAR ESPERA no AUTOMATICO, tela Wi-Fi (senha guardada, rede da câmera, painel W1/W2/câmera/nuvem), cadastro da máquina (sem teste).
+Estado completo, decisões e como gravar: **`docs/ESTADO_ATUAL.md`**.
+
 ## Pendências para testar NA MÁQUINA
 Lista completa e atualizada em **[PENDENCIAS_NA_MAQUINA.md](PENDENCIAS_NA_MAQUINA.md)**.
