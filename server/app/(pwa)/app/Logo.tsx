@@ -30,6 +30,10 @@ export function Logo({ altura = 62, centralizada = false }: { altura?: number; c
         marginInline: centralizada ? "auto" : undefined,
         objectFit: "contain",
         display: "block",
+        /* a moldura preta do arquivo é mais escura que o fundo da tela e
+           aparecia como um retângulo; "lighten" deixa o fundo vencer onde
+           a imagem é mais escura, e o desenho (vermelho/branco) continua. */
+        mixBlendMode: "lighten",
       }}
     />
   );

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api, setToken, type Me } from "../client";
+import { FaixaEstacaoP3 } from "../EstacaoP3";
 import { Logo } from "../Logo";
 
 export default function Login() {
@@ -29,24 +30,27 @@ export default function Login() {
   }
 
   return (
-    <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16, justifyContent: "center", minHeight: "70dvh" }}>
-      <div style={{ textAlign: "center", marginBottom: 28 }}>
-        <Logo altura={96} centralizada />
-        <p className="sub">Entre com seu e-mail e senha.</p>
-      </div>
-      <input
-        className="field" type="email" inputMode="email" placeholder="seu@email.com" autoComplete="email"
-        value={email} onChange={(e) => setEmail(e.target.value)} autoFocus
-      />
-      <input
-        className="field" type="password" placeholder="Senha" autoComplete="current-password"
-        value={password} onChange={(e) => setPassword(e.target.value)}
-      />
-      {error && <p className="err">{error}</p>}
-      <button className="btn" disabled={loading || !email || !password}>
-        {loading ? "Entrando…" : "Entrar"}
-      </button>
-      <Link className="sub" href="/app/cadastro" style={{ textAlign: "center" }}>Criar conta</Link>
-    </form>
+    <>
+      <FaixaEstacaoP3 />
+      <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16, justifyContent: "center", minHeight: "70dvh" }}>
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <Logo altura={96} centralizada />
+          <p className="sub">PILI CLEAN faz parte da Estação P3</p>
+        </div>
+        <input
+          className="field" type="email" inputMode="email" placeholder="seu@email.com" autoComplete="email"
+          value={email} onChange={(e) => setEmail(e.target.value)} autoFocus
+        />
+        <input
+          className="field" type="password" placeholder="Senha" autoComplete="current-password"
+          value={password} onChange={(e) => setPassword(e.target.value)}
+        />
+        {error && <p className="err">{error}</p>}
+        <button className="btn" disabled={loading || !email || !password}>
+          {loading ? "Entrando…" : "Entrar"}
+        </button>
+        <Link className="sub" href="/app/cadastro" style={{ textAlign: "center" }}>Criar conta</Link>
+      </form>
+    </>
   );
 }
