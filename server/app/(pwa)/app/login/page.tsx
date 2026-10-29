@@ -30,8 +30,8 @@ export default function Login() {
 
   return (
     <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16, justifyContent: "center", minHeight: "70dvh" }}>
-      <div>
-        <Logo />
+      <div style={{ textAlign: "center", marginBottom: 28 }}>
+        <Logo altura={96} centralizada />
         <p className="sub">Entre com seu e-mail e senha.</p>
       </div>
       <input
