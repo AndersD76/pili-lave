@@ -20,7 +20,6 @@ export function FaixaEstacaoP3() {
         borderBottom: "1px solid var(--linha)",
         display: "flex",
         alignItems: "center",
-        justifyContent: "space-between",
       }}
     >
       <span
@@ -38,7 +37,6 @@ export function FaixaEstacaoP3() {
           P3
         </span>
       </span>
-      <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", color: "var(--aco-d)" }}>HUB</span>
     </header>
   );
 }
