@@ -36,6 +36,10 @@ static uint32_t t_armado_painel = 0;
 static uint32_t t_estado         = 0;
 static uint32_t t_x14_desligou   = 0;
 static bool     x14_estava_ativo = false;
+// Prazo nos estados CARRO_ENTRANDO / AGUARDA_POS (2026-11-01): ciclo armado SO por pulso do painel (sem reserva do app) que, depois de o carro
+// passar pelo X14, nao chega na posicao (X15) em PAINEL_ARMADO_MAX_MS (3 min) e desarmado. (Em 30/10 um ciclo assim ficou 16 min no AGUARDA_POS
+// com o verde aceso e bloqueou uma reserva paga.) Ciclos do app e do display NAO entram nesta regra.
+static inline bool painel_prazo_vencido(uint32_t agora) { return g_armado_painel && !nuvem_res_ativa() && (agora - t_x14_desligou) >= PAINEL_ARMADO_MAX_MS; }
 // CONTINUAR apos pausa: religa bombas/espumas/secador e ESPERA 2 s (restabelece a pressao) antes de
 // retomar o movimento. Espera sem bloquear o loop; PARAR/CANCELAR a interrompem (teste_parar zera).
 #define RETOMAR_PRESSAO_MS 2000
@@ -347,6 +351,10 @@ void auto_tick() {
             break;
 
         case AUTO_CARRO_ENTRANDO:
+            if (painel_prazo_vencido(agora)) {     // ciclo armado SO por painel: 3 min sem o carro chegar na posicao
+                DBG_PRINTLN("[AUTO] armado pelo painel: carro nao chegou na posicao em 3 min -> desarma (apaga o verde)");
+                g_armado_painel = false; teste_parar(); break;
+            }
             if (agora - t_x14_desligou >= 1000) {  // 1s apos X14 desligar
                 SET_Y13(false);           // desliga bomba alta pressao
                 SET_Y6(false);            // desliga solenoide entrada
@@ -356,6 +364,10 @@ void auto_tick() {
             break;
 
         case AUTO_AGUARDA_POS: {
+            if (painel_prazo_vencido(agora)) {     // ciclo armado SO por painel: 3 min sem o carro chegar na posicao (caso de 30/10: 16 min preso)
+                DBG_PRINTLN("[AUTO] armado pelo painel: carro nao chegou na posicao em 3 min -> desarma (apaga o verde)");
+                g_armado_painel = false; teste_parar(); break;
+            }
             modbus_refresh_io2_di();      // leitura FRESCA da waveshare2 (nao confiar na cache p/ X15)
             DBG_PRINTF("[DIAG] io2.di=0x%02X X15=%d X10=%d X12=%d HOME_GIRO=%d\n",
                           g_io2.di, (int)X15, (int)X10, (int)X12, (int)HOME_GIRO);
@@ -659,6 +671,11 @@ static void auto_retomar_efetivo() {
 enum { REC_AVALIAR = 0, REC_ATIVA, REC_CONCLUIDA };
 static uint8_t g_rec_estado = REC_AVALIAR;
 static bool    g_rec_home_iniciado = false;
+// Limite de tentativas (2026-11-01): em 31/10 a recuperacao falhou 29+ vezes seguidas, acionando o Delta a cada 4 s sem desistir. Agora, apos
+// REC_MAX_TENTATIVAS falhas SEGUIDAS do HOME ela DESISTE: para de comandar a maquina e fica em ERRO (vermelho piscando, mensagem na tela, evento
+// para a nuvem); o lavador limpa com PARAR TUDO e faz o HOME pelo painel. Carro reentrando (Fase 1) ou HOME ok zeram a contagem.
+#define REC_MAX_TENTATIVAS 3
+static uint8_t g_rec_tent = 0;
 
 bool recuperacao_ativa() { return g_rec_estado == REC_ATIVA; }
 // Fase 1 da recuperacao = "X15 ocupada, esperando retirar o veiculo" (HOME ainda nao iniciado). Nela o MANUAL (giro/carrinho, homem morto,
@@ -702,6 +719,7 @@ void recuperacao_tick() {
             home_reset(); g_rec_home_iniciado = false;
             DBG_PRINTLN("[REC] carro reentrou -> aborta home (Fase 1)");
         }
+        g_rec_tent = 0;                              // condicao mudou (carro na posicao): a contagem de falhas recomeca
         rec_lamp_fase1();
         return;
     }
@@ -716,11 +734,19 @@ void recuperacao_tick() {
     int he = home_estado();
     if (he == HOME_OK) {
         SET_Y11(false); SET_Y12(false);
-        g_rec_estado = REC_CONCLUIDA;
+        g_rec_estado = REC_CONCLUIDA; g_rec_tent = 0;
         DBG_PRINTLN("[REC] HOME concluido -> recuperacao encerrada");
     } else if (he == HOME_FALHA) {
-        g_rec_home_iniciado = false;                 // retenta no proximo tick (se X15 livre)
-        DBG_PRINTLN("[REC] HOME falhou -> vai retentar");
+        g_rec_home_iniciado = false;                 // retenta no proximo tick (se X15 livre) ... ate REC_MAX_TENTATIVAS
+        g_rec_tent++;
+        if (g_rec_tent >= REC_MAX_TENTATIVAS) {
+            DBG_PRINTF("[REC] HOME falhou %u vezes seguidas -> DESISTE (ERRO: faca o HOME pelo painel)\n", (unsigned)g_rec_tent);
+            g_rec_estado = REC_CONCLUIDA;            // para de comandar a maquina (libera PARAR TUDO / HOME / MANUAL)
+            SET_Y11(false); SET_Y12(false);
+            auto_erro("Recuperacao falhou 3x: faca o HOME pelo painel");   // ERRO + evento para a nuvem (display envia FAULT)
+        } else {
+            DBG_PRINTF("[REC] HOME falhou (%u/%u) -> vai retentar\n", (unsigned)g_rec_tent, (unsigned)REC_MAX_TENTATIVAS);
+        }
     }
 }
 

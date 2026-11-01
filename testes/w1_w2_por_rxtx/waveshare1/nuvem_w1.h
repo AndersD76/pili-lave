@@ -132,9 +132,18 @@ static void lampada_tick() {
 // ----------------------------------------------------- ordens do display ---
 static void nuvem_processar_start() {
     if (!ordens_frescas() || !g_ord_start_valido || g_ord_start_prog < 1 || g_ord_start_prog > 4) return;
-    if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_manual_ativo || recuperacao_ativa() || g_parar_pedido) return;   // regra mestra: so se parada
+    // O APP PREVALECE sobre um ciclo armado SO por pulso do painel que ainda nao comecou o processo (estados 1 a 3, sem reserva): era o caso de
+    // 30/10, em que um ciclo velho preso no AGUARDA_POS ignorou uma reserva paga. Ciclos do display (INICIAR) e qualquer coisa de estado >= 4
+    // (iniciando, processo, pausa, erro) NAO sao passados por cima: ai vale a regra mestra de so iniciar com a maquina parada.
+    bool preempta = g_armado_painel && !nuvem_res_ativa() &&
+                    (g_estado_auto == AUTO_AGUARDA_CARRO || g_estado_auto == AUTO_CARRO_ENTRANDO || g_estado_auto == AUTO_AGUARDA_POS);
+    if ((g_estado_auto != AUTO_IDLE && !preempta) || g_teste_rodando || home_rodando() || g_manual_ativo || recuperacao_ativa() || g_parar_pedido) return;   // regra mestra: so se parada
     if (licenca_bloqueada()) return;
     if (strncmp(g_ord_start_res, g_res_ultima, sizeof(g_res_ultima)) == 0) return;      // dedup: ja iniciada
+    if (preempta) {
+        DBG_PRINTF("[NUVEM] reserva do app prevalece sobre o ciclo armado pelo painel (estado %d): desarmando o local\n", (int)g_estado_auto);
+        g_armado_painel = false; teste_parar();                                          // volta a IDLE (apaga o verde velho) e segue para iniciar a do app
+    }
     if (g_man_sai) man_sai_aplicar(0);
     strncpy(g_res_ultima, g_ord_start_res, sizeof(g_res_ultima) - 1); nuvem_salvar_res();
     g_tipo_prox = 1;                                                                     // aplicativo
@@ -174,7 +183,8 @@ void nuvem_tick() {
     nuvem_processar_vacuum();
     {   // ciclo armado pelo APP esperando o carro: se a reserva sumiu do backend (cancelada/expirada), DESARMA e apaga o verde
         static uint32_t t_sem_res = 0;
-        bool sumiu = g_estado_auto == AUTO_AGUARDA_CARRO && nuvem_res_ativa() && ordens_frescas() && (g_ord_flags & 4) &&   // so com a nuvem ONLINE (offline nao conta)
+        bool sumiu = (g_estado_auto == AUTO_AGUARDA_CARRO || g_estado_auto == AUTO_CARRO_ENTRANDO || g_estado_auto == AUTO_AGUARDA_POS) &&   // (estados 2 e 3 desde 2026-11-01)
+                     nuvem_res_ativa() && ordens_frescas() && (g_ord_flags & 4) &&   // so com a nuvem ONLINE (offline nao conta)
                      (!g_ord_start_valido || strncmp(g_ord_start_res, g_res_ciclo, sizeof(g_res_ciclo)) != 0);
         if (!sumiu) t_sem_res = 0;
         else if (!t_sem_res) t_sem_res = agora ? agora : 1;
