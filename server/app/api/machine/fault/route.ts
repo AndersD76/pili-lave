@@ -43,6 +43,41 @@ export async function POST(req: NextRequest) {
           include: { order: true },
         });
 
+  /* Regra do Giovani (2026-11-01): o carro NAO chegou na posicao (X15) em 3 min depois da liberacao da lavagem (placa lida ou
+   * "Ja estou na maquina"). Nao e falha da maquina: a reserva VOLTA PARA A FILA (HELD), sem estorno e sem marcar a maquina em FAULT.
+   * A W1 manda errorCode comecando com "X15_POSICAO". */
+  if (body.errorCode?.startsWith("X15_POSICAO")) {
+    let voltaram = 0;
+    for (const r of alvos) {
+      const upd = await prisma.reservation.updateMany({
+        where: { id: r.id, status: { in: ["ACTIVE", "ENTERED"] } }, // trava contra corrida
+        data: { status: "HELD", machineId: null, activeAt: null, enteredAt: null },
+      });
+      if (upd.count > 0) {
+        voltaram++;
+        void avisarCliente(r.userId, {
+          titulo: "Sua reserva voltou para a fila",
+          corpo: "O carro nao chegou na posicao em 3 minutos. Sua reserva continua valida: e so chegar de novo.",
+          tag: "lavagem",
+        });
+      }
+    }
+    await prisma.event.create({
+      data: {
+        type: "reservation_requeued",
+        payload: { machineId: auth.machine.id, errorCode: body.errorCode, reservations: alvos.map((r) => r.id), voltaram },
+      },
+    });
+    await alertarAdmin(
+      "POSICAO_X15",
+      `O carro nao chegou na posicao (X15) em 3 min; ${voltaram} reserva(s) voltou(aram) para a fila.`,
+      { errorCode: body.errorCode, voltaram },
+      auth.machine.id,
+      auth.machine.operadorId
+    );
+    return NextResponse.json({ ok: true, requeued: voltaram });
+  }
+
   let estornadas = 0;
   let estornoCents = 0;
   for (const r of alvos) {
