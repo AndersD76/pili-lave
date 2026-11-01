@@ -129,6 +129,8 @@ void auto_cancelar();
 void auto_pausar();
 void auto_retomar();
 int  proc_estado();
+const char* recuperacao_pedir_home();   // botao HOME do display durante a recuperacao de boot: libera o HOME (devolve a mensagem para a tela)
+const char* recuperacao_mensagem();     // aviso da recuperacao (aguardando o HOME / retirar o veiculo) ou nullptr
 void recuperacao_tick();
 bool recuperacao_ativa();
 

@@ -725,6 +725,9 @@ static bool    g_rec_home_iniciado = false;
 // para a nuvem); o lavador limpa com PARAR TUDO e faz o HOME pelo painel. Carro reentrando (Fase 1) ou HOME ok zeram a contagem.
 #define REC_MAX_TENTATIVAS 3
 static uint8_t g_rec_tent = 0;
+// HOME OBRIGATORIO PELO BOTAO (2026-11-01): ao religar fora do zero a W1 zera as saidas e FICA PARADA (vermelho piscando + mensagem) ate alguem tocar no
+// botao HOME do display. So depois a recuperacao roda o HOME (ate REC_MAX_TENTATIVAS). Carro reentrando (X15) cancela o pedido: exige tocar de novo.
+static bool g_rec_home_pedido = false;
 
 bool recuperacao_ativa() { return g_rec_estado == REC_ATIVA; }
 // Fase 1 da recuperacao = "X15 ocupada, esperando retirar o veiculo" (HOME ainda nao iniciado). Nela o MANUAL (giro/carrinho, homem morto,
@@ -740,6 +743,20 @@ static void rec_lamp_fase1() {   // vermelho piscando 0,5 Hz (1000ms on/off) —
 static void rec_lamp_fase2() {   // verde/vermelho alternando 0,125 Hz (4000ms cada) — 4x mais lento
     static uint32_t t = 0; static bool verde = true;
     if (millis() - t >= 4000) { t = millis(); verde = !verde; SET_Y11(verde); SET_Y12(!verde); }
+}
+
+const char* recuperacao_pedir_home() {
+    if (g_rec_estado != REC_ATIVA)  return "HOME bloqueado: recuperacao de boot encerrada";
+    if (home_rodando() || g_rec_home_iniciado) return "HOME em andamento: aguarde";
+    modbus_refresh_io2_di();
+    if (X15) return "Retire o veiculo da posicao e toque em HOME de novo";
+    g_rec_home_pedido = true;
+    DBG_PRINTLN("[REC] HOME pedido pelo botao do display");
+    return "HOME iniciado";
+}
+const char* recuperacao_mensagem() {
+    if (g_rec_estado != REC_ATIVA || home_rodando() || g_rec_home_iniciado) return nullptr;
+    return X15 ? "Religou fora do zero: retire o veiculo e toque em HOME" : "Religou fora do zero: toque em HOME no display";
 }
 
 void recuperacao_tick() {
@@ -769,11 +786,13 @@ void recuperacao_tick() {
             DBG_PRINTLN("[REC] carro reentrou -> aborta home (Fase 1)");
         }
         g_rec_tent = 0;                              // condicao mudou (carro na posicao): a contagem de falhas recomeca
+        g_rec_home_pedido = false;                   // e o HOME volta a exigir o botao
         rec_lamp_fase1();
         return;
     }
 
-    // FASE 2 — X15 livre: inicia o home (uma vez) e acompanha ate concluir.
+    // FASE 2 — X15 livre: espera o botao HOME do display; com o pedido, inicia o home e acompanha ate concluir.
+    if (!g_rec_home_pedido && !g_rec_home_iniciado) { rec_lamp_fase1(); return; }
     if (!g_rec_home_iniciado) {
         home_iniciar(); g_rec_home_iniciado = true;
         DBG_PRINTLN("[REC] X15 livre -> inicia HOME");
@@ -783,14 +802,14 @@ void recuperacao_tick() {
     int he = home_estado();
     if (he == HOME_OK) {
         SET_Y11(false); SET_Y12(false);
-        g_rec_estado = REC_CONCLUIDA; g_rec_tent = 0;
+        g_rec_estado = REC_CONCLUIDA; g_rec_tent = 0; g_rec_home_pedido = false;
         DBG_PRINTLN("[REC] HOME concluido -> recuperacao encerrada");
     } else if (he == HOME_FALHA) {
         g_rec_home_iniciado = false;                 // retenta no proximo tick (se X15 livre) ... ate REC_MAX_TENTATIVAS
         g_rec_tent++;
         if (g_rec_tent >= REC_MAX_TENTATIVAS) {
             DBG_PRINTF("[REC] HOME falhou %u vezes seguidas -> DESISTE (ERRO: faca o HOME pelo painel)\n", (unsigned)g_rec_tent);
-            g_rec_estado = REC_CONCLUIDA;            // para de comandar a maquina (libera PARAR TUDO / HOME / MANUAL)
+            g_rec_estado = REC_CONCLUIDA; g_rec_home_pedido = false;   // para de comandar a maquina (libera PARAR TUDO / HOME / MANUAL)
             SET_Y11(false); SET_Y12(false);
             auto_erro("Recuperacao falhou 3x: faca o HOME pelo painel");   // ERRO + evento para a nuvem (display envia FAULT)
         } else {

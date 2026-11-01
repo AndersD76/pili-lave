@@ -63,6 +63,7 @@ void setup() {
     hard_reset_radio();
     i2c_recupera_barramento(I2C_SDA, I2C_SCL);
     Wire.begin(I2C_SDA, I2C_SCL);
+    pinMode(VIDA_PIN, OUTPUT); digitalWrite(VIDA_PIN, LOW);   // pulso de vida (IO1)
 
     uint8_t canal_boot = controle_canal_boot();   // le da NVS (ou ESPNOW_CANAL se nunca pareou)
 
@@ -122,6 +123,10 @@ void loop() {
     }
     nuvem_tick();          // camera: heartbeat, inicio pelo app, eventos com ACK, licenca, lampada, aspirador
     luzes_tick();          // luzes da maquina (DO7): ligam com lavagem/fila, apagam 10 min depois
+    {   // PULSO DE VIDA: so inverte o nivel se o laco chegou ate aqui (tudo acima rodou). Laco travado/bloqueado = o pino para.
+        static uint32_t t_vida = 0; static bool nivel_vida = false;
+        if (millis() - t_vida >= VIDA_MEIO_PERIODO_MS) { t_vida = millis(); nivel_vida = !nivel_vida; digitalWrite(VIDA_PIN, nivel_vida); }
+    }
 
     led_tick();
 }

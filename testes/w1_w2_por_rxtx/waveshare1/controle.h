@@ -22,6 +22,10 @@
 // ---- I2C / PCA9554 (saidas desta placa) ----
 #define I2C_SDA 42
 #define I2C_SCL 41
+// PULSO DE VIDA (2026-11-01): borne IO1 do conector de expansao = GPIO1 (livre; IO0 e o BOOT, SDA/SCL=I2C, TXD/RXD=cabo W1<->W2). O nivel inverte a cada
+// VIDA_MEIO_PERIODO_MS enquanto o laco principal gira. Hoje so serve para o teste de bancada (multimetro/LED); depois sera o 'estou viva' do supervisor externo.
+#define VIDA_PIN 1
+#define VIDA_MEIO_PERIODO_MS 3000UL
 #define PCA9554_ADDR 0x20
 #define PCA9554_REG_OUTPUT 0x01
 #define PCA9554_REG_CONFIG 0x03
@@ -585,6 +589,7 @@ static void status_enviar() {
     else if (g_estado_auto == AUTO_PAUSADO && g_pausa_w2)   m = g_tx_travado ? "PAUSADO por falha de radio (retoma sozinho)" : "PAUSADO por falha W2 (retoma sozinho)";
     else if (g_estado_auto >= AUTO_CARRO_ENTRANDO && g_estado_auto <= AUTO_INICIANDO && (millis() - g_hb2) > 1500) m = "Aguardando a W2 (sem contato)";
     else if (g_delta_mudo && g_estado_auto == AUTO_IDLE)    m = "Delta (inversor) sem resposta no RS-485: confira energia e cabo";
+    else if (recuperacao_mensagem())                        m = recuperacao_mensagem();
     else if (home_estado() != 0)                            m = home_mensagem();
     else if (g_manual_msg[0] && (millis() - g_manual_msg_ms) < 4000) m = g_manual_msg;
     strncpy(s.msg, m, sizeof(s.msg) - 1);
@@ -843,7 +848,10 @@ void processa_comandos() {
     uint16_t pacote;
     while (g_fila_cmd && xQueueReceive(g_fila_cmd, &pacote, 0) == pdTRUE) {
         uint8_t a = (uint8_t)(pacote & 0xFF), arg = (uint8_t)(pacote >> 8);
-        if (recuperacao_ativa() && (a == 0 || a == 1 || a == 20 || (a >= 60 && a <= 66))) {   // recuperacao de boot em andamento: ela comanda a maquina
+        if (recuperacao_ativa() && a == 0) {                  // HOME na recuperacao de boot: e o botao que LIBERA o HOME (nao inicia sozinho)
+            g_manual_msg = recuperacao_pedir_home(); g_manual_msg_ms = millis(); continue;
+        }
+        if (recuperacao_ativa() && (a == 1 || a == 20 || (a >= 60 && a <= 66))) {   // recuperacao de boot em andamento: ela comanda a maquina
             g_manual_msg = "Recuperacao de boot em andamento: aguarde"; g_manual_msg_ms = millis(); continue;
         }
         if (g_man_sai && (a == 0 || a == 1 || a == 20)) man_sai_aplicar(0);   // HOME/teste/automatico: desliga as saidas manuais antes

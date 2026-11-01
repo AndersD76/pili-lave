@@ -174,3 +174,11 @@ Contexto: em 29–31/10 a W2 sumiu por 160–208 s (duas vezes), o envio de rád
 **Roteiro de validação (depois do "grava")**: (1) boot com o braço fora do zero e carro fora: recuperação faz HOME; forçar falha (cabo do carrinho desconectado) e ver `HOME falhou (1/3) ... DESISTE` e ERRO; PARAR TUDO limpa. (2) Armar pelo painel, deixar o carro parado no X14/X15 sem chegar na posição por 3 min e ver o desarme. (3) Armar pelo painel e criar uma reserva no app antes disso: o app deve assumir. (4) Colocar a W1 em erro e conferir no admin/app que a máquina aparece como FALHA (não "OK"). (5) Display: no serial procurar `[TX]`; simular o travamento é difícil, então vale só conferir que não há reinícios do display (`up` do `[BOOT]`/uptime).
 
 **Ainda NÃO implementado (conversado em 2026-11-01):** leitura do código de falha do Delta/SAJ (falta confirmar o endereço do registrador); telemetria de saúde (reinícios/silêncios) para o painel do admin (hoje só serial/NVS; exige evento novo display→câmera→backend); supervisor externo de hardware e separar a emergência da comunicação (projeto elétrico: `docs/SUPERVISOR_HARDWARE.md`); cron de expiração no Railway (confirmar no painel).
+
+## K. HOME obrigatório + pulso de vida (2026-11-01) — compilado, NÃO gravado
+Fontes: testes/waveshare1 e testes/w1_w2_por_rxtx/waveshare1 (edições idênticas; build 954.407 B / 957.559 B).
+- [ ] **HOME obrigatório pelo botão** após energizar: desligue e religue a W1 com o braço fora do zero (ou depois de uma emergência). Esperado: nada se move, vermelho piscando, tela "Religou fora do zero: toque em HOME no display". Tocar em HOME: roda o HOME. Com carro no X15: mensagem de retirar o veículo; HOME não inicia. Religar já no zero: nada exigido.
+- [ ] Durante a espera, uma reserva do app não inicia ciclo.
+- [ ] **Pulso de vida em IO1** (GPIO1, borne do conector de expansão): multímetro VDC (ou LED + 330 Ω) entre IO1 e GND alterna ~0 V ↔ ~3,3 V a cada 3 s, com a máquina parada e em ciclo. Se não mexer, o borne não é o GPIO1: avisar antes de ligar qualquer supervisor.
+- Detalhes e pendências do supervisor externo: docs/SUPERVISOR_HARDWARE.md.
+- [ ] **Delta: parar na perda de comunicação Modbus** (parâmetros de tempo limite/tratamento de falha de comunicação do MS300; confirmar no manual). Pré-requisito do supervisor externo; detalhes em docs/SUPERVISOR_HARDWARE.md seção 6.
