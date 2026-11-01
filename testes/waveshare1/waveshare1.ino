@@ -77,6 +77,7 @@ void setup() {
     controle_init();   // registra o callback de recepcao + peers (display, W2)
     modbus_init();     // RS-485: sobe o barramento, reseta o inversor
     giro_cfg_carregar();        // tempo do giro por processo (NVS)
+    erro_imprimir_boot();       // caixa-preta: ultimos erros, silencios da W2 e travamentos do envio (serial)
     nuvem_carregar();           // fila de eventos, licenca e tempo ligada (NVS)
     lav_carregar();             // planilha de lavagens (NVS)
     cfg_carregar();             // velocidades, esperas por slot e atrasos (NVS)

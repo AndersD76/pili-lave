@@ -369,6 +369,7 @@ Cada unidade cobra o que quiser pelos 4 tipos de lavagem — não existe mais um
                         provisionar, unidades (busca por cidade)
 /api/admin/machine/payment   marcar pagamento em dia (legado, ver /admin/maquinas)
 /api/cron/expire-reservations   cron do Railway (a cada 5 min) — expira reservas, estorna, checa saúde
+                        (agendado no serviço `cron-pili` do Railway, ver "Cron de expiração" abaixo)
 /api/saude              diagnóstico de saúde da operação (usado pelo app antes de deixar comprar)
 ```
 
@@ -499,7 +500,7 @@ Desde que ficou claro que o PWA é a única forma real de uso (ver nota no item 
 | `ASAAS_*` | pagamento (recarga de saldo) |
 | `DEVICE_KEY` | chave genérica legada de dispositivo |
 | `MACHINE_DEVICE_KEY` | seed da máquina padrão |
-| `CRON_SECRET` | protege o cron de expiração |
+| `CRON_SECRET` | protege o cron de expiração (`x-cron-secret`). Criada no Railway em 2026-11-01 com `${{ secret(48) }}`; sem ela a rota ficaria aberta |
 | `PROVISION_SECRET` | senha de fábrica do auto-cadastro de máquina (também protege `/api/machine/unidades`) |
 | `PLATE_RECOGNIZER_TOKEN` | fallback de LPR |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | push notifications |
@@ -550,3 +551,12 @@ Firmware da câmera tem seu próprio `PILI_PROVISION_SECRET` (deve bater com o `
 ---
 
 *Documento gerado por revisão completa do código-fonte em 2026-09-18, atualizado em 2026-09-19 e 2026-10-11 (aspirador de pó, OTA da câmera, câmera ao vivo, comissão por escopo, watchdog/recuperação da câmera, ajustes de rampa). Atualize conforme o sistema evoluir — este arquivo não se atualiza sozinho.*
+
+## Cron de expiração (Railway) — configurado em 2026-11-01
+O cron do Railway não chama URL: ele executa um serviço no horário e espera que termine. Por isso existe um **serviço separado `cron-pili`** no mesmo projeto/ambiente (Pili Lave / produção), e **nunca** se usa o campo "Cron Schedule" do serviço `pili-lave` (ele derrubaria o app).
+- Imagem `node:20-alpine`; Cron Schedule `*/5 * * * *` (UTC); Restart Policy Never; sem domínio.
+- Start Command: `node -e "fetch(process.env.CRON_URL,{method:'POST',headers:{'x-cron-secret':process.env.CRON_SECRET}}).then(async r=>{console.log(r.status,await r.text());process.exit(r.ok?0:1)}).catch(e=>{console.error(e);process.exit(1)})"`
+- Variáveis do `cron-pili`: `CRON_SECRET=${{pili-lave.CRON_SECRET}}` (referência, o valor mora só no app) e `CRON_URL=https://pili-lave-production.up.railway.app/api/cron/expire-reservations`.
+- Conferir: aba **Cron Runs** do `cron-pili` (execução verde, log `200 {"ok":true,"expired":N,"requeued":N,"offline":N,"saude":{...}}`). `401` = segredo diferente do app.
+- A rota roda `expireStale()` e `verificarEAlertar()`: reservas vencidas, máquina offline e alertas de saúde ao admin sem precisar do painel aberto.
+- Deploy do app: o Railway segue a branch `main` (deploy automático, espera o CI do GitHub). Ao subir só uma correção, usar commit isolado sobre `origin/main`; não dar merge de branch inteira sem avaliar migrations.

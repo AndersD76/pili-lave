@@ -50,7 +50,7 @@ Os outros documentos têm o detalhe; este diz onde ele está e o que mudou por �
 - Reserva: `HELD` (paga, esperando) → `ACTIVE` (placa lida ou "Já estou na máquina": luz **verde**, heartbeat manda `start`) → `ENTERED` (X14) → `COMPLETED`/`FAILED`.
   Só dá para cancelar em HELD/ACTIVE (`/api/reservations/[id]/cancel`); em ENTERED não. A PWA só mostra o botão de cancelar em **HELD** (lacuna).
 - `expireStale()`: ACTIVE sem X14 há 5 min volta a HELD; ENTERED vira FAILED+estorno após 2× a duração do programa. Roda no cron `/api/cron/expire-reservations` (POST, aberto se não houver `CRON_SECRET`) e em chamadas a `/api/reservations` e à leitura de placa.
-  Não achamos agendamento do cron no repositório.
+  O agendamento do cron existe desde 2026-11-01 no serviço `cron-pili` do Railway (a cada 5 min); ver GUIA_TECNICO_COMPLETO, seção "Cron de expiração".
 - `computeLight()` manda a lâmpada no heartbeat; a W1 ociosa **segue a lâmpada do backend** (verde preso se a reserva ACTIVE ficou).
 - Leitura de placa: filtro "cena parada (não analisada)" compara cada foto com a **anterior**; com o carro parado só há 1 análise forçada por minuto (placa pode demorar até 1 min).
 - `/admin/lavagens` lista **vouchers** (fluxo antigo), não as reservas do app. `remainingSec` vem sempre 0.

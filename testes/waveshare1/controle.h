@@ -47,6 +47,11 @@ static const uint8_t DI_PINS[8] = { DI1_PIN,DI2_PIN,DI3_PIN,DI4_PIN,DI5_PIN,DI6_
 static volatile uint8_t  g_viv1 = 0;   // nivel ao vivo local
 static volatile uint8_t  g_lat1 = 0;   // latch acumulado local (ISR seta, refresh consome)
 static volatile uint32_t g_ult_us1[8] = {0,0,0,0,0,0,0,0};
+// Silencio do PAINEL (X1/X2/X5/X6): chavear QUALQUER saida (rele da W1 ou da W2: luzes, bomba, aspirador, solenoides, lampadas, parar)
+// gera um pulso falso nessas entradas e armava o ciclo/acendia o verde (visto 10x em 2026-10-29..31: apos "PARADO", aspirador, bomba,
+// luzes ao entrar no TECNICO). Por isso toda MUDANCA de saida abre uma janela de PAINEL_SILENCIO_MS em que o painel e ignorado.
+#define PAINEL_SILENCIO_MS 3000
+static uint32_t g_painel_silencio_ate = 0;
 
 void IRAM_ATTR di1_isr(void* arg) {
     uint32_t canal = (uint32_t)arg;
@@ -117,6 +122,7 @@ void io1_set_do(uint8_t canal, bool estado) {
         DBG_PRINTLN("[SEGURANCA] Y7 bloqueado: nenhum solenoide de espuma/cera (Y2/Y3/Y10) ligado");
         return;
     }
+    if ((((g_io1.do_ >> (canal-1)) & 1) != 0) != estado) g_painel_silencio_ate = millis() + PAINEL_SILENCIO_MS;   // mudou a saida: painel em silencio
     escreve_do_local(canal - 1, estado);
     if (estado) g_io1.do_ |=  (1 << (canal-1));
     else        g_io1.do_ &= ~(1 << (canal-1));
@@ -146,6 +152,16 @@ static volatile uint32_t g_hb2=0;
 // Diagnostico do enlace (resumo [LINK] a cada 5 s no serial):
 static uint32_t          g_w2_prev_ms = 0, g_w2_gap_max = 0;      // maior intervalo entre pacotes da W2
 static volatile uint32_t g_tx_ok = 0, g_tx_fail = 0;              // entrega dos envios por radio (display e W2)
+// Vigia do ENVIO por radio (2026-10-31: em 17:04 o tx_ok congelou — a W1 seguia recebendo mas nao transmitia mais: o display
+// acusou "sem contato" e o Y14 nunca chegava na W2). g_tx_pend = envios feitos desde a ultima confirmacao do radio (ok OU falha);
+// se passa de 8 e nenhuma confirmacao chega por 3 s, o envio esta TRAVADO (ver tx_watchdog_tick em maquina_estados.h).
+static volatile uint32_t g_tx_pend = 0, g_tx_cb_ms = 0;
+static bool              g_tx_travado = false;
+static inline esp_err_t tx_send(const uint8_t* mac, const uint8_t* dado, size_t n) {
+    if (g_tx_pend == 0) g_tx_cb_ms = millis();                // marca "esperando confirmacao desde agora"
+    g_tx_pend++;
+    return esp_now_send(mac, dado, n);
+}
 uint16_t                 g_loop_max_5s = 0;
 static uint32_t          g_recon_n = 0;                            // saidas da W2 reenviadas por divergencia (comandado x real)                       // maior pausa do loop() na janela de 5 s
 static inline void w2_gap_atualiza(uint32_t agora) {              // chamar dentro da secao critica g_iomux2
@@ -184,17 +200,27 @@ bool io2_get_di(uint8_t canal) {
     return (g_viv2 & bit) != 0;
 }
 static void ws2_envia_comando(uint8_t canal, uint8_t estado) {
+    // Limite de taxa: o MESMO comando (canal+estado) repetido em menos de 200 ms nao sai de novo (max 5/s por canal). Medido em
+    // 2026-10-31: ociosa a W1 chegou a ~520 quadros/s (antes ~5/s) porque esta funcao enviava a CADA chamada. O reforco continua
+    // (passados 200 ms o mesmo comando sai) e o reconciliador (400 ms) corrige qualquer comando perdido.
+    static uint32_t ult_ms[8] = {0}; static uint8_t ult_est[8] = {255,255,255,255,255,255,255,255};
+    uint32_t agora = millis();
+    if (canal < 8) {
+        if (ult_est[canal] == estado && (agora - ult_ms[canal]) < 200) return;
+        ult_est[canal] = estado; ult_ms[canal] = agora;
+    }
     MsgComando m;
     m.cab.tipo = MSG_COMANDO; m.cab.id_maquina = ID_MAQUINA;
     m.cab.origem = ORIGEM_WAVE1; m.cab.seq = g_ws_seq++;
     m.canal = canal; m.estado = estado;
-    esp_now_send((uint8_t*)MAC_WAVE2, (uint8_t*)&m, sizeof(m));
+    tx_send((uint8_t*)MAC_WAVE2, (uint8_t*)&m, sizeof(m));
 }
 void io2_set_do(uint8_t canal, bool estado) {
     if (canal < 1 || canal > 8) return;
     if (canal == 4 && estado && (g_io1.do_ & (1 << 3))) {
         alarme_modbus("[SEGURANCA] giro ativo ao ligar deslocamento"); return;
     }
+    if ((((g_io2.do_ >> (canal-1)) & 1) != 0) != estado) g_painel_silencio_ate = millis() + PAINEL_SILENCIO_MS;   // mudou a saida: painel em silencio
     ws2_envia_comando(canal - 1, estado ? 1 : 0);
     if (estado) g_io2.do_ |=  (1 << (canal-1));
     else        g_io2.do_ &= ~(1 << (canal-1));
@@ -412,10 +438,23 @@ void desloc_tick() {
     else if (g_desloc_dir==DESLOC_TRAS && desloc_lim_x12()) desloc_parar();
 }
 
+// DELTA MUDO (2026-11-01): com a maquina parada, o Delta e lido a cada 500 ms. Sem NENHUMA resposta por DELTA_MUDO_POLLS leituras
+// seguidas (10 s) = inversor desligado, cabo RS-485 solto ou ruido pesado. Alarme na tela (IDLE) + contador na NVS "delta" + linha
+// [DELTA] no serial; nao bloqueia nada (no processo, 6 escritas perdidas ja param o ciclo). Some sozinho quando o Delta volta.
+#define DELTA_MUDO_POLLS 20
+bool g_delta_mudo = false;
 void modbus_tick() {
     if (home_rodando()) return;
     if (g_estado_auto == AUTO_PROCESSO) return;
     vfd_poll();
+    if (g_vfd_poll_falhas >= DELTA_MUDO_POLLS) {
+        if (!g_delta_mudo) {
+            g_delta_mudo = true;
+            DBG_PRINTF("[DELTA] MUDO: %lu leituras seguidas sem resposta (rs485 ok=%lu zero=%lu curta=%lu crc=%lu)\n", (unsigned long)g_vfd_poll_falhas,
+                       (unsigned long)g_mb_ok, (unsigned long)g_mb_zero, (unsigned long)g_mb_curta, (unsigned long)g_mb_crc);
+            Preferences p; if (p.begin("delta", false)) { p.putUInt("n", p.getUInt("n", 0) + 1); p.end(); }
+        }
+    } else if (g_delta_mudo) { g_delta_mudo = false; DBG_PRINTLN("[DELTA] voltou a responder"); }
 }
 void modbus_init() { vfd_rs485_init(); }
 
@@ -531,10 +570,13 @@ static void status_enviar() {
     s.vfd_mov = g_vfd_mov; s.vfd_mov_freq = g_vfd_mov_freq;
     const char* m = "";
     if (g_estado_auto == AUTO_ERRO && g_estado.msg_alarme) m = g_estado.msg_alarme;
+    else if (g_estado_auto == AUTO_PAUSADO && g_pausa_w2)   m = g_tx_travado ? "PAUSADO por falha de radio (retoma sozinho)" : "PAUSADO por falha W2 (retoma sozinho)";
+    else if (g_estado_auto >= AUTO_CARRO_ENTRANDO && g_estado_auto <= AUTO_INICIANDO && (millis() - g_hb2) > 1500) m = "Aguardando a W2 (sem contato)";
+    else if (g_delta_mudo && g_estado_auto == AUTO_IDLE)    m = "Delta (inversor) sem resposta no RS-485: confira energia e cabo";
     else if (home_estado() != 0)                            m = home_mensagem();
     else if (g_manual_msg[0] && (millis() - g_manual_msg_ms) < 4000) m = g_manual_msg;
     strncpy(s.msg, m, sizeof(s.msg) - 1);
-    esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&s, sizeof(s));
+    tx_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&s, sizeof(s));
 }
 
 static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
@@ -761,7 +803,7 @@ static void cfg_enviar_tabela(uint8_t tabela, uint8_t i1) {
     else if (tabela == 2)            for (int i = 0; i < 4; i++)           d.v[i] = g_atraso_real[i];
     else if (tabela == 3)            { d.v[0] = (uint16_t)giro_dur_do_proc(PROC_PRE_LAVAGEM); d.v[1] = (uint16_t)giro_dur_do_proc(PROC_ESPUMA_A); d.v[2] = (uint16_t)giro_dur_do_proc(PROC_ALTA_PRESSAO); }
     else return;
-    esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&d, sizeof(d));
+    tx_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&d, sizeof(d));
 }
 
 static void cfg_processa() {
@@ -850,6 +892,10 @@ void processa_comandos() {
 // Um modelo pedido por aqui ARMA o ciclo (luz verde, espera o carro no X14) sem precisar abrir a tela AUTOMATICO.
 // Pode trocar de modelo enquanto o carro nao entrou (IDLE ou AGUARDA_CARRO).
 #define PAINEL_MASK 0x7E
+#define PAINEL_PULSO_MIN_MS 50   // largura minima do pulso do painel (modelo 1..4) para valer
+// Depois de PARAR/CANCELAR/desarmar, o painel fica em silencio por PAINEL_SILENCIO_MS: desligar as saidas gera um pulso falso
+// (visto 5x em 2026-10-29, sempre logo apos "PARADO pelo operador") que rearmava o ciclo e acendia o verde. teste_parar() tambem
+// apaga a memoria (latch) dos pulsos do painel.
 void painel_tick() {
     uint8_t lat;
     noInterrupts(); lat = g_lat1 & PAINEL_MASK; g_lat1 &= ~PAINEL_MASK; interrupts();
@@ -870,7 +916,22 @@ void painel_tick() {
 
     // ---- X1/X2/X5/X6: escolhe o modelo ----
     uint8_t modelo = (lat & 0x02) ? 1 : (lat & 0x04) ? 2 : (lat & 0x20) ? 3 : (lat & 0x40) ? 4 : 0;
+    // LARGURA MINIMA DO PULSO (2026-11-01): o pulso falso de chaveamento das saidas dura microssegundos/poucos ms; botao e controle
+    // remoto de verdade seguram o contato muito mais. O pedido so vale se o nivel ficar ativo por PAINEL_PULSO_MIN_MS (medido aqui).
+    static uint8_t pend_modelo = 0; static uint32_t t_pend = 0;
+    static const uint8_t bit_modelo[5] = { 0, 0x02, 0x04, 0x20, 0x40 };
+    if (!pend_modelo && modelo) { pend_modelo = modelo; t_pend = agora ? agora : 1; }
+    if (pend_modelo) {
+        uint32_t dur = agora - t_pend;
+        bool nivel = (le_entradas_vivo_local() & bit_modelo[pend_modelo]) != 0;
+        if (dur < PAINEL_PULSO_MIN_MS) {
+            if (!nivel) { DBG_PRINTF("[PAINEL] pulso curto descartado (modelo %u, ~%lu ms)\n", (unsigned)pend_modelo, (unsigned long)dur); pend_modelo = 0; }
+            return;                                              // ainda medindo
+        }
+        modelo = pend_modelo; pend_modelo = 0;
+    }
     if (!modelo) return;
+    if ((int32_t)(g_painel_silencio_ate - agora) > 0) return;   // silencio apos cancelar/parar (pulso do desligar das saidas)
     if (t_modelo && agora - t_modelo < 1500) return;          // trava anti-repique/ruido
     t_modelo = agora ? agora : 1;
     if ((g_estado_auto == AUTO_IDLE || g_estado_auto == AUTO_AGUARDA_CARRO) && !g_teste_rodando && !home_rodando() && !g_manual_ativo && !recuperacao_ativa() &&
@@ -879,6 +940,7 @@ void painel_tick() {
         DBG_PRINTF("[PAINEL] modelo %u pedido -> AUTO armado\n", (unsigned)modelo);
         g_ciclo_auto = true;
         auto_iniciar(modelo);
+        g_armado_painel = true;                                   // expira em 3 min sem carro (auto_tick)
     } else {
         DBG_PRINTF("[PAINEL] modelo %u ignorado (estado=%d)\n", (unsigned)modelo, (int)g_estado_auto);
     }
@@ -894,7 +956,7 @@ static void canal_envia(const uint8_t* mac, uint8_t canal, int vezes) {
     MsgCanal m = {};
     m.cab.tipo = MSG_CANAL; m.cab.id_maquina = ID_MAQUINA; m.cab.origem = ORIGEM_WAVE1; m.cab.seq = g_ws_seq++;
     m.canal = canal;
-    for (int i = 0; i < vezes; i++) { esp_now_send((uint8_t*)mac, (uint8_t*)&m, sizeof(m)); delay(30); }
+    for (int i = 0; i < vezes; i++) { tx_send((uint8_t*)mac, (uint8_t*)&m, sizeof(m)); delay(30); }
 }
 static void canal_salvar(uint8_t c) { Preferences p; if (p.begin("rede", false)) { p.putUChar("canal", c); p.end(); } }
 void canal_tick() {
@@ -930,6 +992,7 @@ void canal_tick() {
 static void on_send_cb(const esp_now_send_info_t* info, esp_now_send_status_t st) {
     (void)info;
     if (st == ESP_NOW_SEND_SUCCESS) g_tx_ok++; else g_tx_fail++;
+    g_tx_pend = 0; g_tx_cb_ms = millis();          // o radio confirmou (ok ou falha): o envio NAO esta travado
 }
 
 // Chamar no loop() logo depois de processa_comandos().
@@ -966,7 +1029,7 @@ void manual_tick() {
     if (!vivo) return;                          // nada pedido
 
     // Quer comecar um movimento: so com a maquina parada (sem ciclo, sem HOME, sem PARAR pendente)
-    if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_parar_pedido || recuperacao_ativa()) {
+    if (g_estado_auto != AUTO_IDLE || g_teste_rodando || home_rodando() || g_parar_pedido || (recuperacao_ativa() && !recuperacao_fase1())) {
         g_manual_cmd = 0;
         manual_aviso("MANUAL bloqueado: ciclo, HOME ou recuperacao em andamento");
         return;
@@ -1000,6 +1063,21 @@ void controle_init() {
     memcpy(p.lmk, ESPNOW_LMK, 16);
     memcpy(p.peer_addr, MAC_DISPLAY, 6); esp_now_add_peer(&p);
     memcpy(p.peer_addr, MAC_WAVE2, 6);   esp_now_add_peer(&p);
+}
+
+// Reinicializa SO o ESP-NOW (sem reiniciar a placa) quando o envio trava: mesma configuracao do boot (PMK, callbacks, pares).
+// O canal do Wi-Fi nao muda (fica o que ja estava).
+static void espnow_reiniciar() {
+    esp_now_deinit();
+    if (esp_now_init() != ESP_OK) { DBG_PRINTLN("[TX] esp_now_init FALHOU na reinicializacao"); return; }
+    esp_now_set_pmk(ESPNOW_PMK);
+    esp_now_register_recv_cb(on_recv_controlador);
+    esp_now_register_send_cb(on_send_cb);
+    esp_now_peer_info_t p = {}; p.channel=0; p.ifidx=WIFI_IF_STA; p.encrypt=true;
+    memcpy(p.lmk, ESPNOW_LMK, 16);
+    memcpy(p.peer_addr, MAC_DISPLAY, 6); esp_now_add_peer(&p);
+    memcpy(p.peer_addr, MAC_WAVE2, 6);   esp_now_add_peer(&p);
+    g_tx_pend = 0; g_tx_cb_ms = millis();
 }
 
 // Chamar no loop(): manda status periodico e cuida do alarme da W2.

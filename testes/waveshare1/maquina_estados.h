@@ -25,10 +25,21 @@ bool licenca_bloqueada();
 EstadoAuto g_estado_auto        = AUTO_IDLE;
 uint8_t    g_processo_atual_idx = 0;
 
+// Ciclo armado por PULSO do painel/controle remoto (X1/X2/X5/X6), nao pelo app nem pelo display: se ninguem
+// entrar com o carro em PAINEL_ARMADO_MAX_MS, desarma e apaga o verde. (2026-10-29: pulsos isolados no X1, sem
+// ninguem apertar, armaram o ciclo e o verde ficou aceso 5 min — o AGUARDA_CARRO nao tinha limite de tempo.)
+#define PAINEL_ARMADO_MAX_MS 180000UL    // 3 min
+bool            g_armado_painel = false;
+static uint32_t t_armado_painel = 0;
+
 // Timestamps / flags de controle do topo
 static uint32_t t_estado         = 0;
 static uint32_t t_x14_desligou   = 0;
 static bool     x14_estava_ativo = false;
+// Prazo nos estados CARRO_ENTRANDO / AGUARDA_POS (2026-11-01): ciclo armado SO por pulso do painel (sem reserva do app) que, depois de o carro
+// passar pelo X14, nao chega na posicao (X15) em PAINEL_ARMADO_MAX_MS (3 min) e desarmado. (Em 30/10 um ciclo assim ficou 16 min no AGUARDA_POS
+// com o verde aceso e bloqueou uma reserva paga.) Ciclos do app e do display NAO entram nesta regra.
+static inline bool painel_prazo_vencido(uint32_t agora) { return g_armado_painel && !nuvem_res_ativa() && (agora - t_x14_desligou) >= PAINEL_ARMADO_MAX_MS; }
 // CONTINUAR apos pausa: religa bombas/espumas/secador e ESPERA 2 s (restabelece a pressao) antes de
 // retomar o movimento. Espera sem bloquear o loop; PARAR/CANCELAR a interrompem (teste_parar zera).
 #define RETOMAR_PRESSAO_MS 2000
@@ -114,8 +125,53 @@ bool braco_em_home() {
     return HOME_GIRO;
 }
 
+// ---- CAIXA-PRETA: ultimos 5 erros na NVS (namespace "erro", anel). Grava so quando ha erro (raro). A W1 nao tem relogio: up_s = segundos
+// desde o boot (o horario real do erro esta no evento do backend). Lido no boot por erro_imprimir_boot().
+struct ErroReg {
+    uint32_t n, up_s;                  // n = contador total de erros; up_s = uptime ao errar
+    char     msg[64];
+    uint8_t  estado, proc, idx, modelo, rst;
+    uint8_t  sens;                     // b0 X14 b1 X15 b2 X10 b3 X12 b4 X16 b6 X0
+    uint8_t  vfd_mov; uint16_t vfd_freq;
+    uint32_t rs_ok, rs_zero, rs_curta, rs_crc;
+    uint32_t tx_ok, tx_fail, w2_gap_ms; uint8_t tx_travado;
+};
+static void erro_registrar(const char* msg) {
+    Preferences p; if (!p.begin("erro", false)) return;
+    ErroReg r = {};
+    r.n = p.getUInt("n", 0) + 1; r.up_s = millis() / 1000;
+    strncpy(r.msg, msg ? msg : "", sizeof(r.msg) - 1);
+    r.estado = (uint8_t)g_estado_auto; r.proc = (uint8_t)g_estado.processo_ativo;
+    r.idx = g_processo_atual_idx; r.modelo = g_estado.programa_sel; r.rst = g_rst_motivo;
+    r.sens = (X14 ? 1 : 0) | (X15 ? 2 : 0) | (X10 ? 4 : 0) | (X12 ? 8 : 0) | (HOME_GIRO ? 16 : 0) | (X0 ? 64 : 0);
+    r.vfd_mov = g_vfd_mov; r.vfd_freq = g_vfd_mov_freq;
+    r.rs_ok = g_mb_ok; r.rs_zero = g_mb_zero; r.rs_curta = g_mb_curta; r.rs_crc = g_mb_crc;
+    r.tx_ok = g_tx_ok; r.tx_fail = g_tx_fail; r.w2_gap_ms = millis() - g_hb2; r.tx_travado = g_tx_travado ? 1 : 0;
+    char k[8]; snprintf(k, sizeof(k), "e%u", (unsigned)(r.n % 5));
+    p.putBytes(k, &r, sizeof(r)); p.putUInt("n", r.n); p.end();
+}
+// Imprime no serial, a cada boot, os ultimos erros guardados + os contadores de silencio da W2 e de travamento do envio.
+void erro_imprimir_boot() {
+    Preferences p; if (!p.begin("erro", true)) return;
+    uint32_t n = p.getUInt("n", 0);
+    DBG_PRINTF("[BOOT] motivo do reset=%d | erros guardados: %lu\n", (int)g_rst_motivo, (unsigned long)n);
+    for (uint32_t i = 0; i < 5 && i < n; i++) {
+        uint32_t id = n - i; char k[8]; snprintf(k, sizeof(k), "e%u", (unsigned)(id % 5));
+        ErroReg r = {}; if (p.getBytesLength(k) != sizeof(r)) continue; p.getBytes(k, &r, sizeof(r));
+        DBG_PRINTF("[BOOT] erro #%lu up=%lus \"%s\" estado=%u proc=%u idx=%u modelo=%u sens=0x%02X vfd=%u@%u rs485 ok=%lu zero=%lu crc=%lu tx_ok=%lu w2_gap=%lums txtrav=%u\n",
+                   (unsigned long)r.n, (unsigned long)r.up_s, r.msg, r.estado, r.proc, r.idx, r.modelo, r.sens, r.vfd_mov, r.vfd_freq,
+                   (unsigned long)r.rs_ok, (unsigned long)r.rs_zero, (unsigned long)r.rs_crc, (unsigned long)r.tx_ok, (unsigned long)r.w2_gap_ms, r.tx_travado);
+    }
+    p.end();
+    Preferences w; if (w.begin("w2", true))  { DBG_PRINTF("[BOOT] silencios da W2: n=%lu ultimo=%lums maior=%lums\n", (unsigned long)w.getUInt("n", 0), (unsigned long)w.getUInt("ult", 0), (unsigned long)w.getUInt("max", 0)); w.end(); }
+    Preferences d; if (d.begin("delta", true)) { DBG_PRINTF("[BOOT] Delta mudo (>10 s sem resposta com a maquina parada): n=%lu\n", (unsigned long)d.getUInt("n", 0)); d.end(); }
+    Preferences m; if (m.begin("mem", true))   { DBG_PRINTF("[BOOT] memoria baixa (<40 KB): n=%lu minimo=%lu\n", (unsigned long)m.getUInt("n", 0), (unsigned long)m.getUInt("min", 0)); m.end(); }
+    Preferences t; if (t.begin("tx", true))  { DBG_PRINTF("[BOOT] travamentos do envio de radio: n=%lu\n", (unsigned long)t.getUInt("n", 0)); t.end(); }
+}
+
 // Sinaliza erro do ciclo: guarda a mensagem (literal, vida estatica) e para tudo
 static void auto_erro(const char* msg) {
+    erro_registrar(msg);             // caixa-preta (NVS), antes de qualquer mudanca de estado
     desligar_tudo();                 // para tudo UMA vez (aqui), pra o AUTO_ERRO
                                      // nao precisar spammar desligar_tudo() todo
                                      // tick (12 writes Modbus) e travar a tela
@@ -123,8 +179,129 @@ static void auto_erro(const char* msg) {
     g_estado.alarme     = true;
     g_estado_auto       = AUTO_ERRO;
     if (g_teste_rodando || g_ciclo_auto) { g_teste_erro++; g_teste_rodando = false; g_ciclo_auto = false; g_ev_tipo = 2; g_ev_modelo = g_estado.programa_sel; g_ev_seq++; }
-    backend_evt_fault(msg);
+    char ec[64];                     // o backend passa a saber em que processo/etapa/modelo parou (errorCode ate 64)
+    snprintf(ec, sizeof(ec), "%.42s|p%u i%u m%u", msg, (unsigned)g_estado.processo_ativo, (unsigned)g_processo_atual_idx, (unsigned)g_estado.programa_sel);
+    backend_evt_fault(ec);
     DBG_PRINTF("[AUTO] ERRO: %s\n", msg);
+}
+
+// ---- W2 PERDIDA: pausa segura e retoma sozinho (2026-10-31) ----
+// A W2 le os sensores X10..X17 e comanda as saidas de processo. Se ela some, a W1 so tinha o ULTIMO valor (sensores congelados)
+// e seguia o ciclo "cega" (visto em 29/10 e 30/10: silencios de 160 a 208 s). Agora, no processo, sem batida da W2 por
+// W2_STALE_PAUSA_MS a W1 entra em PAUSADO (mesma rotina do PAUSAR do operador: para o Delta e desliga bombas/solenoides),
+// mostra "PAUSADO por falha W2" e, quando a W2 volta e fica estavel por W2_VOLTA_ESTAVEL_MS, CONTINUA de onde parou
+// (religa as saidas, espera a pressao 2 s e retoma o movimento, deslocando os cronometros). Nao faz HOME nem gira sozinha alem disso.
+// Antes do processo (carro entrando / aguardando posicao / iniciando) so SEGURA: nao avanca nem acusa X15 com dado velho.
+#define W2_STALE_PAUSA_MS    1500UL      // sem batida da W2 por isso = perdida (normal: ate ~255 ms)
+#define W2_VOLTA_ESTAVEL_MS  3000UL      // W2 de volta e estavel por isso -> retoma
+#define W2_PAUSA_MAX_MS    600000UL      // 10 min pausado sem a W2 -> erro (falha a reserva e estorna)
+bool            g_pausa_w2 = false;
+static uint32_t t_w2_pausa = 0, t_w2_volta = 0, t_w2_sil_ini = 0;
+static inline bool w2_stale() { return (millis() - g_hb2) > W2_STALE_PAUSA_MS; }
+static inline bool radio_ruim() { return w2_stale() || g_tx_travado; }   // W2 muda OU o envio da W1 travado: mesma pausa segura
+
+// ---- VIGIA DO ENVIO POR RADIO (2026-10-31) ----
+// Se a W1 faz envios e o radio nao confirma nenhum por TX_TRAVADO_MS, o envio travou (caso das 17:04: a W1 recebia mas nao transmitia;
+// o display acusava "sem contato" e o Y14 nao chegava na W2). Acoes, em ordem, SEM perder a lavagem:
+//  1) reinicializa so o ESP-NOW (sem reiniciar a placa), de 5 em 5 s;
+//  2) durante o PROCESSO, g_tx_travado entra no mesmo caminho da W2 perdida: PAUSADO (retoma sozinho quando o envio normaliza);
+//  3) so se estiver PARADA (sem ciclo/HOME/manual) e 3 reinicializacoes nao resolverem: reinicia a W1 (a recuperacao de boot refaz o HOME).
+#define TX_TRAVADO_MS     3000UL
+#define TX_REINIT_INT_MS  5000UL
+static uint8_t  t_tx_reinit_n = 0;
+static uint32_t t_tx_ult_reinit = 0, t_tx_primeiro = 0;
+static void tx_nvs_conta() {                      // NVS "tx": quantas vezes o envio travou (raro)
+    Preferences p; if (!p.begin("tx", false)) return;
+    p.putUInt("n", p.getUInt("n", 0) + 1); p.end();
+}
+static void tx_watchdog_tick(uint32_t agora) {
+    bool travado = (g_tx_pend >= 8) && (agora - g_tx_cb_ms) > TX_TRAVADO_MS;
+    if (travado && !g_tx_travado) {
+        g_tx_travado = true; t_tx_primeiro = agora; t_tx_reinit_n = 0; t_tx_ult_reinit = 0;
+        DBG_PRINTF("[TX] TRAVADO (pend=%lu sem confirmacao ha %lu ms) estado=%d\n", (unsigned long)g_tx_pend, (unsigned long)(agora - g_tx_cb_ms), (int)g_estado_auto);
+        tx_nvs_conta();
+    } else if (!travado && g_tx_travado) {
+        g_tx_travado = false;
+        DBG_PRINTF("[TX] normalizado apos ~%lu ms (%u reinicializacao(oes))\n", (unsigned long)(agora - t_tx_primeiro), (unsigned)t_tx_reinit_n);
+    }
+    if (!g_tx_travado) return;
+    if (t_tx_ult_reinit == 0 || (agora - t_tx_ult_reinit) >= TX_REINIT_INT_MS) {
+        t_tx_ult_reinit = agora; t_tx_reinit_n++;
+        DBG_PRINTF("[TX] reinicializando o ESP-NOW (tentativa %u)\n", (unsigned)t_tx_reinit_n);
+        espnow_reiniciar();
+    }
+    bool parada = (g_estado_auto == AUTO_IDLE || g_estado_auto == AUTO_CONCLUIDO || g_estado_auto == AUTO_ERRO) &&
+                  !home_rodando() && !g_teste_rodando && !g_manual_ativo;
+    if (t_tx_reinit_n >= 3 && parada) {
+        DBG_PRINTLN("[TX] reinicializacoes nao resolveram e a maquina esta parada -> reiniciando a W1");
+        Serial.flush(); delay(100); ESP.restart();
+    }
+}
+static void w2_sil_salvar(uint32_t dur_ms) {      // so no FIM de um silencio (raro): NVS "w2" n/ult/max, para ler depois
+    Preferences p; if (!p.begin("w2", false)) return;
+    p.putUInt("n", p.getUInt("n", 0) + 1); p.putUInt("ult", dur_ms);
+    if (dur_ms > p.getUInt("max", 0)) p.putUInt("max", dur_ms);
+    p.end();
+}
+static void w2_pausa_tick(uint32_t agora) {
+    static bool em_sil = false;
+    bool w2s = w2_stale();                  // silencio da W2 (so ela) — diagnostico/NVS "w2"
+    bool stale = w2s || g_tx_travado;       // motivo de PAUSAR: W2 muda OU envio de radio da W1 travado
+    if (w2s && !em_sil) {
+        em_sil = true; t_w2_sil_ini = agora - W2_STALE_PAUSA_MS;
+        DBG_PRINTF("[W2] SILENCIO inicio (sem batida ha %lu ms) estado=%d\n", (unsigned long)W2_STALE_PAUSA_MS, (int)g_estado_auto);
+    } else if (!w2s && em_sil) {
+        em_sil = false; uint32_t dur = agora - t_w2_sil_ini;
+        DBG_PRINTF("[W2] SILENCIO fim: durou ~%lu ms\n", (unsigned long)dur);
+        w2_sil_salvar(dur);
+    }
+    if (g_estado_auto == AUTO_PROCESSO && stale) {
+        auto_pausar();                                   // para o Delta, desliga bombas/solenoides, guarda o movimento e o instante
+        g_pausa_w2 = true; t_w2_pausa = agora; t_w2_volta = 0;
+        DBG_PRINTLN("[W2] perdida no processo -> PAUSADO por falha W2 (retoma sozinho quando a W2 voltar)");
+    } else if (g_estado_auto == AUTO_PAUSADO && g_pausa_w2) {
+        if (stale) {
+            t_w2_volta = 0;
+            if (agora - t_w2_pausa > W2_PAUSA_MAX_MS) { g_pausa_w2 = false; auto_erro("W2 sem contato: pausa expirou (10 min)"); }
+        } else if (!_retomando) {
+            if (!t_w2_volta) t_w2_volta = agora;
+            else if (agora - t_w2_volta >= W2_VOLTA_ESTAVEL_MS) {
+                DBG_PRINTLN("[W2] voltou e estavel -> CONTINUANDO de onde parou");
+                g_pausa_w2 = false; t_w2_volta = 0;
+                auto_retomar();
+            }
+        }
+    } else if (g_estado_auto != AUTO_PAUSADO) {
+        g_pausa_w2 = false;                              // saiu da pausa por outro caminho (cancelar, erro): zera a marca
+    }
+}
+
+// ---- DURACAO MAXIMA DO CICLO (2026-11-01) ----
+// Rede de seguranca contra um ciclo que "nunca acaba" (sub-maquina presa num passo sem sensor/timeout proprio). Conta so o tempo em
+// AUTO_PROCESSO (pausa nao conta). Estourou: para tudo, sem HOME automatico (mesma regra do X15 perdido) e acusa erro.
+#define CICLO_MAX_MS 1800000UL   // 30 min em PROCESSO (uma lavagem normal leva bem menos)
+// ---- MONITOR DE MEMORIA (2026-11-01) ----
+// Heap livre a cada 10 s. Abaixo de MEM_AVISO_B: registra na NVS "mem" (min) e no serial. Abaixo de MEM_CRITICO_B com a maquina
+// PARADA: reinicia a W1 (a recuperacao de boot refaz o HOME). Nunca reinicia no meio de um ciclo.
+#define MEM_AVISO_B   40000UL
+#define MEM_CRITICO_B 20000UL
+static void mem_tick(uint32_t agora) {
+    static uint32_t t = 0, t_log = 0; static bool avisou = false;
+    if (agora - t < 10000) return;
+    t = agora;
+    uint32_t livre = ESP.getFreeHeap(), minimo = ESP.getMinFreeHeap();
+    if (agora - t_log >= 600000UL) { t_log = agora; DBG_PRINTF("[MEM] livre=%lu minimo=%lu\n", (unsigned long)livre, (unsigned long)minimo); }
+    if (livre < MEM_AVISO_B && !avisou) {
+        avisou = true;
+        DBG_PRINTF("[MEM] BAIXA: livre=%lu minimo=%lu estado=%d\n", (unsigned long)livre, (unsigned long)minimo, (int)g_estado_auto);
+        Preferences p; if (p.begin("mem", false)) { p.putUInt("n", p.getUInt("n", 0) + 1); p.putUInt("min", minimo); p.end(); }
+    } else if (livre >= MEM_AVISO_B + 5000) avisou = false;
+    bool parada = (g_estado_auto == AUTO_IDLE || g_estado_auto == AUTO_CONCLUIDO || g_estado_auto == AUTO_ERRO) &&
+                  !home_rodando() && !g_teste_rodando && !g_manual_ativo;
+    if (livre < MEM_CRITICO_B && parada) {
+        DBG_PRINTF("[MEM] CRITICA (livre=%lu) com a maquina parada -> reiniciando a W1\n", (unsigned long)livre);
+        Serial.flush(); delay(100); ESP.restart();
+    }
 }
 
 // Forward: implementadas em processos.h (incluido no fim deste arquivo)
@@ -146,6 +323,30 @@ void auto_tick() {
         DBG_PRINTF("[AUTO] estado=%d idx=%d proc=%d\n",
                       (int)g_estado_auto, g_processo_atual_idx, (int)g_estado.processo_ativo);
     }
+
+    mem_tick(agora);                     // heap baixo: avisa; critico e parada: reinicia
+    {   // duracao maxima do ciclo (so conta AUTO_PROCESSO; pausa nao conta)
+        static uint32_t t_proc_ult = 0, proc_ms = 0;
+        if (g_estado_auto == AUTO_PROCESSO) {
+            if (t_proc_ult) proc_ms += agora - t_proc_ult;
+            t_proc_ult = agora;
+            if (proc_ms >= CICLO_MAX_MS) {
+                DBG_PRINTF("[AUTO] ciclo passou de %lu min em PROCESSO -> PARA TUDO\n", (unsigned long)(CICLO_MAX_MS / 60000UL));
+                processos_reset();
+                g_estado.processo_ativo = PROC_NENHUM;
+                proc_ms = 0; t_proc_ult = 0;
+                auto_erro("Ciclo passou do tempo maximo (30 min): confira a maquina e faca o HOME");
+                return;
+            }
+        } else {
+            t_proc_ult = 0;
+            if (g_estado_auto != AUTO_PAUSADO) proc_ms = 0;
+        }
+    }
+    tx_watchdog_tick(agora);             // envio de radio travado -> reinicializa o ESP-NOW (e so pausa/reinicia se preciso)
+    w2_pausa_tick(agora);                // W2 perdida (ou envio travado) no processo -> PAUSADO (retoma sozinho)
+    if (radio_ruim() && (g_estado_auto == AUTO_CARRO_ENTRANDO || g_estado_auto == AUTO_AGUARDA_POS || g_estado_auto == AUTO_INICIANDO))
+        return;                          // sem dado confiavel da W2 antes do processo: segura (nao avanca nem acusa X15 com valor velho)
 
     // =====================================================================
     // TRAVA X15 — exige o X15 (carro na posicao) pra INICIAR o ciclo. So no
@@ -178,6 +379,12 @@ void auto_tick() {
 
         case AUTO_AGUARDA_CARRO:
             // Y11 (verde) e Y6 (entrada pneumatica) ja foram ligados em auto_iniciar
+            if (g_armado_painel && !nuvem_res_ativa() && !x14_estava_ativo && !X14 && agora - t_armado_painel >= PAINEL_ARMADO_MAX_MS) {
+                DBG_PRINTLN("[AUTO] armado pelo painel sem carro ha 3 min -> desarma (apaga o verde)");
+                g_armado_painel = false;
+                teste_parar();
+                break;
+            }
             if (X14 && !x14_estava_ativo) {
                 x14_estava_ativo = true;
                 if (g_bomba_ciclo) {      // projeto de testes: so liga a bomba se habilitada
@@ -193,6 +400,10 @@ void auto_tick() {
             break;
 
         case AUTO_CARRO_ENTRANDO:
+            if (painel_prazo_vencido(agora)) {     // ciclo armado SO por painel: 3 min sem o carro chegar na posicao
+                DBG_PRINTLN("[AUTO] armado pelo painel: carro nao chegou na posicao em 3 min -> desarma (apaga o verde)");
+                g_armado_painel = false; teste_parar(); break;
+            }
             if (agora - t_x14_desligou >= 1000) {  // 1s apos X14 desligar
                 SET_Y13(false);           // desliga bomba alta pressao
                 SET_Y6(false);            // desliga solenoide entrada
@@ -202,6 +413,10 @@ void auto_tick() {
             break;
 
         case AUTO_AGUARDA_POS: {
+            if (painel_prazo_vencido(agora)) {     // ciclo armado SO por painel: 3 min sem o carro chegar na posicao (caso de 30/10: 16 min preso)
+                DBG_PRINTLN("[AUTO] armado pelo painel: carro nao chegou na posicao em 3 min -> desarma (apaga o verde)");
+                g_armado_painel = false; teste_parar(); break;
+            }
             modbus_refresh_io2_di();      // leitura FRESCA da waveshare2 (nao confiar na cache p/ X15)
             DBG_PRINTF("[DIAG] io2.di=0x%02X X15=%d X10=%d X12=%d HOME_GIRO=%d\n",
                           g_io2.di, (int)X15, (int)X10, (int)X12, (int)HOME_GIRO);
@@ -248,7 +463,8 @@ void auto_tick() {
             modbus_refresh_io2_di();
 
             // Carro saiu da posicao no meio do processo? Se o X15 ficar ausente por
-            // 1s (debounce — o X15 e instavel), ABORTA o programa e faz HOME.
+            // 3s (debounce — o X15 e instavel; era 1s, subiu a 3s em 2026-10-29 apos abortar
+            // uma lavagem real logo ao fim do giro), PARA TUDO (sem HOME automatico).
             // NAO vale durante o giro ativo (g_giro_ativo): o carrinho fisicamente
             // nao se move nessa hora (Y14 nem esta acionado), entao perder o X15
             // ali so pode ser ruido na leitura — nao o carro saindo de verdade.
@@ -261,7 +477,7 @@ void auto_tick() {
             static uint32_t _t_x15_off = 0;
             if (!g_teste_rodando && !X15 && !g_giro_ativo) {
                 if (_t_x15_off == 0) _t_x15_off = agora;
-                if (agora - _t_x15_off >= 1000) {
+                if (agora - _t_x15_off >= 3000) {
                     // 2026-10-25: NAO faz mais HOME automatico. O X15 e instavel; num ciclo real o HOME girou o braco com o
                     // carro AINDA dentro e bateu nele. Agora so PARA TUDO e fica em erro (lampada vermelha piscando): o lavador
                     // confere o carro e aciona o HOME manualmente. (Comportamento antigo: desligar_tudo + processos_reset +
@@ -346,6 +562,12 @@ void auto_iniciar(uint8_t modelo) {
         return;
     }
     nuvem_res_limpar();                // ciclo local: sem reserva (o inicio pelo app preenche depois)
+    // REGRA: o ciclo AUTOMATICO e SEMPRE COM X10 (carro real) e BOMBA em ON, venha o pedido de onde vier (painel, controle, display ou app).
+    // Um teste a seco deixado para tras (SEM X10) fez o carrinho ignorar o X10 e bater no carro (2026-10-30). Aqui a W1 garante, nao a tela.
+    if (g_teste_seco || !g_teste_bomba) {
+        DBG_PRINTF("[AUTO] forcando CARRO REAL (X10 real) e BOMBA ON para o ciclo automatico (estava seco=%d bomba=%d)\n", (int)g_teste_seco, (int)g_teste_bomba);
+        g_teste_seco = false; g_teste_bomba = true; atrasos_aplicar();
+    }
     g_bomba_ciclo           = g_teste_bomba;   // trava a chave da bomba durante este ciclo
     g_tipo_ciclo            = g_tipo_prox;     // idem para o TIPO do ciclo (presencial/app/socio/bonus)
     g_estado.programa_sel   = modelo;
@@ -357,6 +579,8 @@ void auto_iniciar(uint8_t modelo) {
     desligar_tudo();
     SET_Y11(true);   // lampada verde
     SET_Y6(true);    // solenoide entrada pneumatica
+    if (g_estado_auto != AUTO_AGUARDA_CARRO) t_armado_painel = millis();   // trocar de modelo armado NAO renova o prazo
+    g_armado_painel = false;         // o painel marca true logo depois de chamar (controle.h painel_tick)
     g_estado_auto = AUTO_AGUARDA_CARRO;
 }
 
@@ -402,6 +626,11 @@ void teste_parar() {
     g_estado.processo_ativo = PROC_NENHUM;
     g_estado.alarme         = false;
     g_estado_auto           = AUTO_IDLE;
+    // Apaga a memoria do cancelado: ciclo armado por pulso, pulsos do painel guardados no latch e rearme logo em seguida.
+    g_armado_painel         = false;
+    g_pausa_w2              = false;
+    noInterrupts(); g_lat1 &= ~PAINEL_MASK; interrupts();
+    g_painel_silencio_ate   = millis() + PAINEL_SILENCIO_MS;
     DBG_PRINTLN("[TESTE] PARADO pelo operador");
 }
 
@@ -454,6 +683,7 @@ void auto_pausar() {
 // (auto_retomar_efetivo, chamada pelo auto_tick quando os 2 s passam).
 void auto_retomar() {
     if (_retomando) return;
+    if (radio_ruim()) { g_manual_msg = "Radio/W2 sem contato: aguarde para continuar"; g_manual_msg_ms = millis(); return; }   // nao religa saidas sem a W2
     // Solenoides ANTES da bomba de espuma (Y7 so liga com um solenoide ativo).
     if (_pausa_do1 & 0x01) SET_Y1(true);
     if (_pausa_do1 & 0x02) SET_Y2(true);
@@ -490,8 +720,17 @@ static void auto_retomar_efetivo() {
 enum { REC_AVALIAR = 0, REC_ATIVA, REC_CONCLUIDA };
 static uint8_t g_rec_estado = REC_AVALIAR;
 static bool    g_rec_home_iniciado = false;
+// Limite de tentativas (2026-11-01): em 31/10 a recuperacao falhou 29+ vezes seguidas, acionando o Delta a cada 4 s sem desistir. Agora, apos
+// REC_MAX_TENTATIVAS falhas SEGUIDAS do HOME ela DESISTE: para de comandar a maquina e fica em ERRO (vermelho piscando, mensagem na tela, evento
+// para a nuvem); o lavador limpa com PARAR TUDO e faz o HOME pelo painel. Carro reentrando (Fase 1) ou HOME ok zeram a contagem.
+#define REC_MAX_TENTATIVAS 3
+static uint8_t g_rec_tent = 0;
 
 bool recuperacao_ativa() { return g_rec_estado == REC_ATIVA; }
+// Fase 1 da recuperacao = "X15 ocupada, esperando retirar o veiculo" (HOME ainda nao iniciado). Nela o MANUAL (giro/carrinho, homem morto,
+// operador olhando) e liberado: sem isso, um braco parado na frente do X15 (que o X15 enxerga como "carro") nunca sai do lugar — o HOME e o
+// MANUAL ficavam os dois bloqueados e a maquina nao tinha como se destravar (2026-10-31). HOME/automatico continuam bloqueados com X15 ocupada.
+bool recuperacao_fase1() { return g_rec_estado == REC_ATIVA && !g_rec_home_iniciado && !home_rodando(); }
 
 static void rec_lamp_fase1() {   // vermelho piscando 0,5 Hz (1000ms on/off) — 4x mais lento; verde apagado
     static uint32_t t = 0; static bool on = false;
@@ -529,6 +768,7 @@ void recuperacao_tick() {
             home_reset(); g_rec_home_iniciado = false;
             DBG_PRINTLN("[REC] carro reentrou -> aborta home (Fase 1)");
         }
+        g_rec_tent = 0;                              // condicao mudou (carro na posicao): a contagem de falhas recomeca
         rec_lamp_fase1();
         return;
     }
@@ -543,11 +783,19 @@ void recuperacao_tick() {
     int he = home_estado();
     if (he == HOME_OK) {
         SET_Y11(false); SET_Y12(false);
-        g_rec_estado = REC_CONCLUIDA;
+        g_rec_estado = REC_CONCLUIDA; g_rec_tent = 0;
         DBG_PRINTLN("[REC] HOME concluido -> recuperacao encerrada");
     } else if (he == HOME_FALHA) {
-        g_rec_home_iniciado = false;                 // retenta no proximo tick (se X15 livre)
-        DBG_PRINTLN("[REC] HOME falhou -> vai retentar");
+        g_rec_home_iniciado = false;                 // retenta no proximo tick (se X15 livre) ... ate REC_MAX_TENTATIVAS
+        g_rec_tent++;
+        if (g_rec_tent >= REC_MAX_TENTATIVAS) {
+            DBG_PRINTF("[REC] HOME falhou %u vezes seguidas -> DESISTE (ERRO: faca o HOME pelo painel)\n", (unsigned)g_rec_tent);
+            g_rec_estado = REC_CONCLUIDA;            // para de comandar a maquina (libera PARAR TUDO / HOME / MANUAL)
+            SET_Y11(false); SET_Y12(false);
+            auto_erro("Recuperacao falhou 3x: faca o HOME pelo painel");   // ERRO + evento para a nuvem (display envia FAULT)
+        } else {
+            DBG_PRINTF("[REC] HOME falhou (%u/%u) -> vai retentar\n", (unsigned)g_rec_tent, (unsigned)REC_MAX_TENTATIVAS);
+        }
     }
 }
 

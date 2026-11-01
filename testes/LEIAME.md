@@ -31,6 +31,22 @@ Abrir a porta serial reinicia a Waveshare 1 (o botão da bomba volta a OFF).
 Aterramento (A: malha só na W1; B: malha também nos inversores) **não mudou** o resultado.
 Causa: o SAJ no barramento. Filtro de RS-485 comprado, ainda não instalado.
 
+### Rodada de 2026-10-29 (SAJ fora do RS-485, bomba ON, ciclo de teste de 80 s)
+O erro de RS-485 voltou a abortar os ciclos (de 25/10 em diante), mesmo com o SAJ fora e uma fonte dedicada só para W1/W2.
+Resolveu-se em dois passos, **só com mudança de cabo/ligação** (o driver `vfd_rs485_w1.h` não mudou desde 22/10):
+
+| Arranjo | Falha em ciclo com bomba ON | Resultado |
+|---|---|---|
+| Cabo antigo (dava a volta no painel), malha sem referência ligada ao GND do Delta | ~100% das escritas | abortava em ~10 s |
+| Cabo antigo, **GND do Delta ligado na malha** (Delta SGND → malha → ⏚ da W1) | ~55%, 66 escritas perdidas | passou no limite |
+| Cabo antigo + SAJ no RS-485 + malha no aterramento | quase 100% | abortou em 11 s |
+| **Cabo novo ~1,2 m, direto, pela frente da W1 e do Delta**, GND na malha entre os dois | **0% (5 ciclos, ~2.700 transações)** | **todos concluídos, 0 escritas perdidas** |
+
+- Fiação do arranjo bom: A/B nos bornes SG+/SG- do Delta e A+/B- da W1; a **malha** liga o **SGND do Delta** ao **⏚ da W1**; terminação de 100 Ω no Delta e jumper de 120 Ω na W1.
+- Causa mais provável: o **cabo antigo** (comprimento e rota ao redor do painel, captando o ruído do inversor e da bomba). A fonte nova dedicada não era a causa.
+- Efeito colateral do ruído: com escrita perdida, o Delta pode girar com a **frequência antiga** (ex.: 5 Hz do pulso de busca) em vez da programada.
+- **Não resolvido:** os pulsos fantasmas do painel (`[PAINEL] modelo N ignorado`) continuam (~44 por ciclo de 80 s) mesmo com o RS-485 limpo — não vêm do RS-485.
+
 ## Proteções no firmware de teste (todas validadas na bancada)
 - Espera do RS-485 de 100 para 40 ms; X16/X17 capturados no callback do ESP-NOW.
 - **Item 1** — o callback do rádio só enfileira; PARAR é flag de prioridade e cancela as esperas.

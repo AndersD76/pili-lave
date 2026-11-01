@@ -164,6 +164,8 @@ void erro_imprimir_boot() {
     }
     p.end();
     Preferences w; if (w.begin("w2", true))  { DBG_PRINTF("[BOOT] silencios da W2: n=%lu ultimo=%lums maior=%lums\n", (unsigned long)w.getUInt("n", 0), (unsigned long)w.getUInt("ult", 0), (unsigned long)w.getUInt("max", 0)); w.end(); }
+    Preferences d; if (d.begin("delta", true)) { DBG_PRINTF("[BOOT] Delta mudo (>10 s sem resposta com a maquina parada): n=%lu\n", (unsigned long)d.getUInt("n", 0)); d.end(); }
+    Preferences m; if (m.begin("mem", true))   { DBG_PRINTF("[BOOT] memoria baixa (<40 KB): n=%lu minimo=%lu\n", (unsigned long)m.getUInt("n", 0), (unsigned long)m.getUInt("min", 0)); m.end(); }
     Preferences t; if (t.begin("tx", true))  { DBG_PRINTF("[BOOT] travamentos do envio de radio: n=%lu\n", (unsigned long)t.getUInt("n", 0)); t.end(); }
 }
 
@@ -274,6 +276,34 @@ static void w2_pausa_tick(uint32_t agora) {
     }
 }
 
+// ---- DURACAO MAXIMA DO CICLO (2026-11-01) ----
+// Rede de seguranca contra um ciclo que "nunca acaba" (sub-maquina presa num passo sem sensor/timeout proprio). Conta so o tempo em
+// AUTO_PROCESSO (pausa nao conta). Estourou: para tudo, sem HOME automatico (mesma regra do X15 perdido) e acusa erro.
+#define CICLO_MAX_MS 1800000UL   // 30 min em PROCESSO (uma lavagem normal leva bem menos)
+// ---- MONITOR DE MEMORIA (2026-11-01) ----
+// Heap livre a cada 10 s. Abaixo de MEM_AVISO_B: registra na NVS "mem" (min) e no serial. Abaixo de MEM_CRITICO_B com a maquina
+// PARADA: reinicia a W1 (a recuperacao de boot refaz o HOME). Nunca reinicia no meio de um ciclo.
+#define MEM_AVISO_B   40000UL
+#define MEM_CRITICO_B 20000UL
+static void mem_tick(uint32_t agora) {
+    static uint32_t t = 0, t_log = 0; static bool avisou = false;
+    if (agora - t < 10000) return;
+    t = agora;
+    uint32_t livre = ESP.getFreeHeap(), minimo = ESP.getMinFreeHeap();
+    if (agora - t_log >= 600000UL) { t_log = agora; DBG_PRINTF("[MEM] livre=%lu minimo=%lu\n", (unsigned long)livre, (unsigned long)minimo); }
+    if (livre < MEM_AVISO_B && !avisou) {
+        avisou = true;
+        DBG_PRINTF("[MEM] BAIXA: livre=%lu minimo=%lu estado=%d\n", (unsigned long)livre, (unsigned long)minimo, (int)g_estado_auto);
+        Preferences p; if (p.begin("mem", false)) { p.putUInt("n", p.getUInt("n", 0) + 1); p.putUInt("min", minimo); p.end(); }
+    } else if (livre >= MEM_AVISO_B + 5000) avisou = false;
+    bool parada = (g_estado_auto == AUTO_IDLE || g_estado_auto == AUTO_CONCLUIDO || g_estado_auto == AUTO_ERRO) &&
+                  !home_rodando() && !g_teste_rodando && !g_manual_ativo;
+    if (livre < MEM_CRITICO_B && parada) {
+        DBG_PRINTF("[MEM] CRITICA (livre=%lu) com a maquina parada -> reiniciando a W1\n", (unsigned long)livre);
+        Serial.flush(); delay(100); ESP.restart();
+    }
+}
+
 // Forward: implementadas em processos.h (incluido no fim deste arquivo)
 void executar_processo_tick();
 void processos_reset();
@@ -294,6 +324,25 @@ void auto_tick() {
                       (int)g_estado_auto, g_processo_atual_idx, (int)g_estado.processo_ativo);
     }
 
+    mem_tick(agora);                     // heap baixo: avisa; critico e parada: reinicia
+    {   // duracao maxima do ciclo (so conta AUTO_PROCESSO; pausa nao conta)
+        static uint32_t t_proc_ult = 0, proc_ms = 0;
+        if (g_estado_auto == AUTO_PROCESSO) {
+            if (t_proc_ult) proc_ms += agora - t_proc_ult;
+            t_proc_ult = agora;
+            if (proc_ms >= CICLO_MAX_MS) {
+                DBG_PRINTF("[AUTO] ciclo passou de %lu min em PROCESSO -> PARA TUDO\n", (unsigned long)(CICLO_MAX_MS / 60000UL));
+                processos_reset();
+                g_estado.processo_ativo = PROC_NENHUM;
+                proc_ms = 0; t_proc_ult = 0;
+                auto_erro("Ciclo passou do tempo maximo (30 min): confira a maquina e faca o HOME");
+                return;
+            }
+        } else {
+            t_proc_ult = 0;
+            if (g_estado_auto != AUTO_PAUSADO) proc_ms = 0;
+        }
+    }
     tx_watchdog_tick(agora);             // envio de radio travado -> reinicializa o ESP-NOW (e so pausa/reinicia se preciso)
     w2_pausa_tick(agora);                // W2 perdida (ou envio travado) no processo -> PAUSADO (retoma sozinho)
     if (radio_ruim() && (g_estado_auto == AUTO_CARRO_ENTRANDO || g_estado_auto == AUTO_AGUARDA_POS || g_estado_auto == AUTO_INICIANDO))

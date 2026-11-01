@@ -450,10 +450,23 @@ void desloc_tick() {
     else if (g_desloc_dir==DESLOC_TRAS && desloc_lim_x12()) desloc_parar();
 }
 
+// DELTA MUDO (2026-11-01): com a maquina parada, o Delta e lido a cada 500 ms. Sem NENHUMA resposta por DELTA_MUDO_POLLS leituras
+// seguidas (10 s) = inversor desligado, cabo RS-485 solto ou ruido pesado. Alarme na tela (IDLE) + contador na NVS "delta" + linha
+// [DELTA] no serial; nao bloqueia nada (no processo, 6 escritas perdidas ja param o ciclo). Some sozinho quando o Delta volta.
+#define DELTA_MUDO_POLLS 20
+bool g_delta_mudo = false;
 void modbus_tick() {
     if (home_rodando()) return;
     if (g_estado_auto == AUTO_PROCESSO) return;
     vfd_poll();
+    if (g_vfd_poll_falhas >= DELTA_MUDO_POLLS) {
+        if (!g_delta_mudo) {
+            g_delta_mudo = true;
+            DBG_PRINTF("[DELTA] MUDO: %lu leituras seguidas sem resposta (rs485 ok=%lu zero=%lu curta=%lu crc=%lu)\n", (unsigned long)g_vfd_poll_falhas,
+                       (unsigned long)g_mb_ok, (unsigned long)g_mb_zero, (unsigned long)g_mb_curta, (unsigned long)g_mb_crc);
+            Preferences p; if (p.begin("delta", false)) { p.putUInt("n", p.getUInt("n", 0) + 1); p.end(); }
+        }
+    } else if (g_delta_mudo) { g_delta_mudo = false; DBG_PRINTLN("[DELTA] voltou a responder"); }
 }
 void modbus_init() { vfd_rs485_init(); }
 
@@ -571,6 +584,7 @@ static void status_enviar() {
     if (g_estado_auto == AUTO_ERRO && g_estado.msg_alarme) m = g_estado.msg_alarme;
     else if (g_estado_auto == AUTO_PAUSADO && g_pausa_w2)   m = g_tx_travado ? "PAUSADO por falha de radio (retoma sozinho)" : "PAUSADO por falha W2 (retoma sozinho)";
     else if (g_estado_auto >= AUTO_CARRO_ENTRANDO && g_estado_auto <= AUTO_INICIANDO && (millis() - g_hb2) > 1500) m = "Aguardando a W2 (sem contato)";
+    else if (g_delta_mudo && g_estado_auto == AUTO_IDLE)    m = "Delta (inversor) sem resposta no RS-485: confira energia e cabo";
     else if (home_estado() != 0)                            m = home_mensagem();
     else if (g_manual_msg[0] && (millis() - g_manual_msg_ms) < 4000) m = g_manual_msg;
     strncpy(s.msg, m, sizeof(s.msg) - 1);
@@ -900,6 +914,7 @@ void processa_comandos() {
 // Um modelo pedido por aqui ARMA o ciclo (luz verde, espera o carro no X14) sem precisar abrir a tela AUTOMATICO.
 // Pode trocar de modelo enquanto o carro nao entrou (IDLE ou AGUARDA_CARRO).
 #define PAINEL_MASK 0x7E
+#define PAINEL_PULSO_MIN_MS 50   // largura minima do pulso do painel (modelo 1..4) para valer
 // Depois de PARAR/CANCELAR/desarmar, o painel fica em silencio por PAINEL_SILENCIO_MS: desligar as saidas gera um pulso falso
 // (visto 5x em 2026-10-29, sempre logo apos "PARADO pelo operador") que rearmava o ciclo e acendia o verde. teste_parar() tambem
 // apaga a memoria (latch) dos pulsos do painel.
@@ -923,6 +938,20 @@ void painel_tick() {
 
     // ---- X1/X2/X5/X6: escolhe o modelo ----
     uint8_t modelo = (lat & 0x02) ? 1 : (lat & 0x04) ? 2 : (lat & 0x20) ? 3 : (lat & 0x40) ? 4 : 0;
+    // LARGURA MINIMA DO PULSO (2026-11-01): o pulso falso de chaveamento das saidas dura microssegundos/poucos ms; botao e controle
+    // remoto de verdade seguram o contato muito mais. O pedido so vale se o nivel ficar ativo por PAINEL_PULSO_MIN_MS (medido aqui).
+    static uint8_t pend_modelo = 0; static uint32_t t_pend = 0;
+    static const uint8_t bit_modelo[5] = { 0, 0x02, 0x04, 0x20, 0x40 };
+    if (!pend_modelo && modelo) { pend_modelo = modelo; t_pend = agora ? agora : 1; }
+    if (pend_modelo) {
+        uint32_t dur = agora - t_pend;
+        bool nivel = (le_entradas_vivo_local() & bit_modelo[pend_modelo]) != 0;
+        if (dur < PAINEL_PULSO_MIN_MS) {
+            if (!nivel) { DBG_PRINTF("[PAINEL] pulso curto descartado (modelo %u, ~%lu ms)\n", (unsigned)pend_modelo, (unsigned long)dur); pend_modelo = 0; }
+            return;                                              // ainda medindo
+        }
+        modelo = pend_modelo; pend_modelo = 0;
+    }
     if (!modelo) return;
     if ((int32_t)(g_painel_silencio_ate - agora) > 0) return;   // silencio apos cancelar/parar (pulso do desligar das saidas)
     if (t_modelo && agora - t_modelo < 1500) return;          // trava anti-repique/ruido

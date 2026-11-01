@@ -221,14 +221,18 @@ bool vfd_lendo_rodando() {
     return true;
 }
 
+uint32_t g_vfd_poll_falhas = 0;       // leituras de status SEGUIDAS sem NENHUMA resposta do Delta (zera na 1a que responde) - alarme de Delta mudo
 void vfd_poll() {
     uint16_t regs[2];
-    if (mb_read_regs(MB_ADDR_INVERSOR, MB_VFD_FREQ_OUT, 2, regs)) {
+    bool ok1 = mb_read_regs(MB_ADDR_INVERSOR, MB_VFD_FREQ_OUT, 2, regs);
+    if (ok1) {
         g_vfd_freq     = regs[0] / 100.0f;
         g_vfd_corrente = regs[1] / 10.0f;
     }
     uint16_t s[1];
-    if (mb_read_regs(MB_ADDR_INVERSOR, MB_VFD_STATUS, 1, s)) g_vfd_status = s[0];
+    bool ok2 = mb_read_regs(MB_ADDR_INVERSOR, MB_VFD_STATUS, 1, s);
+    if (ok2) g_vfd_status = s[0];
+    if (ok1 || ok2) g_vfd_poll_falhas = 0; else g_vfd_poll_falhas++;
 }
 
 void vfd_reset() {

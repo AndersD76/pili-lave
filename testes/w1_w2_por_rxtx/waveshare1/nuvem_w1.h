@@ -25,6 +25,11 @@ static EvtRec   g_evq[EVQ_MAX];          // fila FIFO; [0] = cabeca
 static uint8_t  g_evq_n = 0;
 static uint32_t g_evt_id = 0;            // contador de eventos (persistido junto com a fila; o display usa para nao duplicar)
 static char     g_res_ciclo[40] = "";    // reserva do ciclo EM ANDAMENTO (vazio = lavagem local)
+// 3 MIN SEM CHEGAR NA POSICAO (2026-11-01, regra do Giovani): depois de liberar a lavagem do app (placa lida ou "Ja estou na maquina") o carro tem
+// APP_POSICAO_MAX_MS para entrar (X14) e chegar na posicao (X15). Se nao chegar, a W1 CANCELA aquela lavagem e a VAGA VOLTA PARA A FILA.
+static uint32_t g_t_app_armado = 0;      // instante em que a reserva do app armou este ciclo (0 = nenhum)
+static char     g_res_cancelada[40] = ""; // reserva cancelada por esse prazo: assim que ela sair da liberacao da nuvem, a W1 "esquece" que ja a iniciou (g_res_ultima)
+#define APP_POSICAO_MAX_MS 180000UL
 static char     g_res_ultima[40] = "";   // ultima reserva INICIADA (dedup; NVS)
 // ordens recebidas do display
 static uint8_t  g_ord_lamp = LAMP_OFF, g_ord_flags = 0; static uint16_t g_ord_lic_dias = 0; static int16_t g_ord_vacuum = -1;
@@ -150,6 +155,7 @@ static void nuvem_processar_start() {
     g_ciclo_auto = true;
     auto_iniciar(g_ord_start_prog);                                                      // (zera g_res_ciclo e arma o ciclo)
     strncpy(g_res_ciclo, g_ord_start_res, sizeof(g_res_ciclo) - 1);
+    g_t_app_armado = millis() ? millis() : 1;                                            // comeca o relogio de 3 min para o carro chegar na posicao
     DBG_PRINTF("[NUVEM] START pelo app: modelo %u reserva %s\n", (unsigned)g_ord_start_prog, g_res_ciclo);
 }
 static void nuvem_processar_vacuum() {
@@ -189,6 +195,26 @@ void nuvem_tick() {
         if (!sumiu) t_sem_res = 0;
         else if (!t_sem_res) t_sem_res = agora ? agora : 1;
         else if (agora - t_sem_res > 8000) { t_sem_res = 0; DBG_PRINTF("[NUVEM] reserva %s cancelada/expirada: ciclo desarmado\n", g_res_ciclo); teste_parar(); }
+    }
+    {   // 3 MIN SEM CHEGAR NA POSICAO: ciclo do APP ainda sem processo (estados 1 a 3). Cancela aquela lavagem e a vaga volta para a fila.
+        if (g_estado_auto == AUTO_IDLE) g_t_app_armado = 0;
+        if (g_t_app_armado && nuvem_res_ativa() &&
+            (g_estado_auto == AUTO_AGUARDA_CARRO || g_estado_auto == AUTO_CARRO_ENTRANDO || g_estado_auto == AUTO_AGUARDA_POS) &&
+            (agora - g_t_app_armado) >= APP_POSICAO_MAX_MS) {
+            DBG_PRINTF("[NUVEM] reserva %s: carro nao chegou na posicao (X15) em 3 min -> cancela esta lavagem e devolve a vaga para a fila\n", g_res_ciclo);
+            backend_evt_fault("X15_POSICAO: carro nao posicionou em 3 min");              // ANTES de limpar a reserva (o evento leva o id dela); o backend reenfileira
+            g_manual_msg = "Reserva do app cancelada: carro nao posicionou em 3 min"; g_manual_msg_ms = millis();
+            strncpy(g_res_cancelada, g_res_ciclo, sizeof(g_res_cancelada) - 1);
+            g_t_app_armado = 0;
+            teste_parar();                                                                // IDLE (nao ERRO): a maquina fica livre para o proximo da fila
+        }
+        // A nuvem ainda manda a mesma liberacao por alguns segundos; enquanto ela existir a W1 NAO reinicia (g_res_ultima barra). Quando a reserva sai
+        // da liberacao (voltou para a fila, ou foi estornada), a W1 esquece que a iniciou: se o cliente chegar de novo, a mesma reserva vale outra vez.
+        if (g_res_cancelada[0] && ordens_frescas() && (g_ord_flags & 4) &&
+            (!g_ord_start_valido || strncmp(g_ord_start_res, g_res_cancelada, sizeof(g_res_cancelada)) != 0)) {
+            if (strncmp(g_res_ultima, g_res_cancelada, sizeof(g_res_ultima)) == 0) { g_res_ultima[0] = 0; nuvem_salvar_res(); }
+            g_res_cancelada[0] = 0;
+        }
     }
     {   // diagnostico: o que o display esta mandando (a cada 10 s)
         static uint32_t t_diag = 0;
