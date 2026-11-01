@@ -84,7 +84,49 @@ Cada erro sai **em linha própria**, com o instante em ms e o tipo (limite de 30
 7. **Restaurar o firmware original das duas placas** (qualquer um dos três jeitos, em `backup_atual/LEIAME.md`): `write-flash 0 backup_w1_COM24_2026-11-01.bin` (e o da W2), ou os `*.merged.bin` da pasta `backup_atual/bin/`, ou compilar e gravar `backup_atual/fonte/`. Depois religar os disjuntores.
 
 ## 7. Fase 2 — W1 e W2 de produção com o link por cabo
-(preenchida depois do estudo e da sua aprovação; **estudo entregue no relatório do bloco D**)
+**Estado: implementada e COMPILADA; NÃO gravada.** Só grave depois da Fase 1 aprovada e com o seu "grava".
+Pastas: `testes/w1_w2_por_rxtx/waveshare1/` e `.../waveshare2/` (cópias do firmware gravado em 29–31/10). Fonte única da verdade da chave: `link_cfg.h` (idêntico nas duas).
 
-**Chave de reversão prevista:** `LINK_W1_W2_UART` (`1` = cabo, `0` = ESP-NOW antigo). O código antigo de ESP-NOW entre W1 e W2 **não é apagado**: fica no caminho desativado, com comentário de como reativar. Com a chave em `0` o comportamento tem que ser idêntico ao de hoje.
+### 7.1 O que mudou (e só isso)
+| Arquivo | Situação |
+|---|---|
+| `waveshare1/controle.h` | **modificado**: só transporte W1<->W2 (57 linhas inseridas, 0 removidas; o código antigo está no `#else`) |
+| `waveshare2/waveshare2.ino` | **modificado**: só transporte + fail-safe + watchdog (96 inseridas, 0 removidas; o código antigo está no `#else`) |
+| `link_cfg.h`, `link_frame.h` (nas duas pastas, **idênticos**), `waveshare1/link_w2_uart.h` | **novos** |
+| `processos.h`, `maquina_estados.h`, `nuvem_w1.h`, `tipos_w1.h`, `protocolo_teste.h`, `vfd_rs485_w1.h`, `saj_rs485_w1.h`, `waveshare1.ino`, `comm_espnow.h`, `nvs_manager.h`, `tipos.h` | **byte a byte iguais** aos originais (`cmp`) |
+| display, câmera, backend | **não mudam** |
+
+### 7.2 Chave de reversão
+`LINK_W1_W2_UART` em `link_cfg.h`: **1 = cabo**, **0 = ESP-NOW antigo** (código preservado). Para voltar: troque o `1` por `0` nas duas pastas, recompile e regrave W1 e W2. Sem editar: `--build-property "compiler.cpp.extra_flags=-DLINK_W1_W2_UART=0"`.
+**Prova de que a chave em 0 é o firmware atual:** (a) `python prova_chave0.py waveshare1/controle.h ../waveshare1/controle.h` e o mesmo para `waveshare2.ino` resolvem os condicionais com valor 0 e comparam linha a linha com o original: **idênticos**; (b) compiladas com a chave em 0, a W1 dá **950 747 bytes / 50 420 de RAM** e a W2 **900 571 / 47 108**, os mesmos números dos firmwares atuais.
 Voltar atrás, por ordem de facilidade: (1) chave em `0` e regravar; (2) `backup_atual/` (dump ou `.bin`); (3) `git checkout backup-antes-link-uart-2026-11-01`.
+
+### 7.3 Protocolo (quadro igual ao da Fase 1; tipos de produção)
+| Tipo | Sentido | Payload | Quando |
+|---|---|---|---|
+| `LT_HB` 0x10 | W2 -> W1 | `[di_vivo][do_estado][motivo_do_reset][uptime_s (4 B)]` | a cada 200 ms |
+| `LT_EVT` 0x11 | W2 -> W1 | `[di_vivo][di_borda]` | na hora de cada borda de entrada (ISR, debounce 800 µs) |
+| `LT_CMD` 0x12 | W1 -> W2 | `[canal 0..7][estado]` | a cada ordem de saída (mesma regra de hoje: limite de 200 ms por canal, reconciliador de 400 ms, "desligar tudo" no boot) |
+| `LT_KEEP` 0x13 | W1 -> W2 | (vazio) | a cada 200 ms: sinal de vida |
+Sem confirmação por quadro (igual ao ESP-NOW de antes). Os dados atualizam **as mesmas variáveis**, na mesma seção crítica (`g_viv2`, `g_lat2`, `g_hb2`, `g_w2_do_real`, captura de X16/X17 em 100 ms), então `io2_set_do`, `io2_get_di`, `modbus_refresh_io2_di`, `comm_perdida`, o reconciliador, a pausa por falha da W2 e o `[LINK]` seguem iguais. A recepção na W1 roda no **callback da UART** (não no loop, que chega a travar ~1,1 s no RS-485).
+
+### 7.4 Segurança (igual à de hoje, nunca pior)
+- **Pausa por falha da W2 (mantida):** sem quadro da W2 por 1,5 s, a W1 pausa o ciclo e retoma sozinha ao voltar (`maquina_estados.h`, idêntico).
+- **Fail-safe da W2 (NOVO):** sem **nenhum** quadro da W1 por **2 s**, a W2 desliga as saídas sozinha (bombas, solenoides, contator do carrinho, aspirador), **menos as luzes (DO7)**. Ao voltar, o reconciliador da W1 reenvia o que ela quer ligado. Mantém o cooldown de 500 ms do Y14 e o Y15 sempre bloqueado.
+- **Watchdog de tarefa na W2 (NOVO):** 8 s, reinicia a W2 se o loop dela travar (no boot as saídas ficam desligadas).
+- A W1 continua mandando a W2 desligar tudo no boot. Nenhum laço bloqueante no loop de controle (a escrita na UART espera no máximo 5 ms pelo mutex).
+- Diagnóstico: linha `[W2LINK]` a cada 5 s no serial da W1 (quadros ok, CRC ruim, truncados, espúrios, erros da UART, maior intervalo, motivo do último reset e uptime da W2, reinícios detectados); a W2 imprime `[WAVE2LINK]` a cada 30 s e `[WAVE2] FAIL-SAFE...`.
+
+### 7.5 Migração de canal (único ponto de comportamento que muda)
+O fluxo não muda: o display migra a **câmera**, depois a **W1**, depois entrega a senha, e só então a câmera conecta na internet. **A W2 sai da conversa**: não recebe mais "vai para o canal N" e não tem canal. Na W1, a sequência é a mesma (muda, confere, salva na NVS `rede/canal`, "oi" ×4 ao display). A confirmação que era "a W2 apareceu no canal novo em 3 s" (e, se não, volta ao canal antigo) passa a ser "**ouvi o display no canal novo em até 12 s**" (e, se não, volta ao canal antigo). A janela é maior porque o display só chega ao canal novo ~1 s depois da W1, manda ordens a cada 2 s e desiste sozinho em 10 s. Display e câmera ficam intocados.
+
+## 8. Plano de teste na máquina da Fase 2 (depois do "grava", só após a Fase 1 aprovada)
+Gravar sempre com a máquina **parada e sem carro**, W1 e W2 ao mesmo tempo (as duas precisam estar no mesmo modo).
+1. **Parada, sensores chegando:** monitor da W1: `[W2LINK] ok` subindo, `crc_ruim=0`, `trunc=0`, `espurios=0`, `perdidos=0`, `gap_max` ~200 ms; `[LINK] w2_gap_max` ~200 ms; na tela TÉCNICO "W2: OK". Mexa um sensor da W2 à mão (X10, X12…) e veja o valor mudar na tela. Deixe 30 min.
+2. **Ciclo a seco** (TÉCNICO > INICIAR TESTE, sem carro): conclui; `[W2LINK]` limpo; saídas (bomba, solenoides, Y14) acionam e desligam como antes.
+3. **Ciclo com carro real:** olhe o `[W2LINK]` e confirme o **X10 em todo retorno parcial** (`CARRINHO REV_X10` seguido de giro, sem `CARRO TRAVADO`). Repetir 3 lavagens.
+4. **Cabo desconectado de propósito, com a máquina parada:** a W1 mostra "Waveshare 2 sem contato (cabo)" (alarme em 60 s) e a tela "W2: SEM CONTATO"; com um **teste em andamento** desconecte o cabo por 5 s: a W1 pausa ("PAUSADO por falha W2"), a W2 desliga as saídas em 2 s (`[WAVE2] FAIL-SAFE`, luzes continuam) e, ao reconectar, o ciclo **continua de onde parou** e o fail-safe encerra.
+5. **Inversores ligados:** repetir o item 1 por 30 min e um ciclo, vendo a taxa de erro do cabo no `[W2LINK]`.
+6. **Display e câmera, busca e migração de canal:** confirmar o reconhecimento normal do display e da câmera; fazer **a migração completa de rede** (escolher rede nova, câmera -> W1 -> senha -> internet) e a de **re-sync** com o roteador mudando de canal; ver `[CANAL] migrando ... (esperando o display no canal novo)` e depois `[CANAL] ok`. **Testar também o caso ruim:** desligar o display durante a migração e ver `[CANAL] FALHOU ... voltei ao ...` em 12 s.
+7. **Tela de Wi-Fi do display:** `Canal N  W1: ok  W2: ok` (a W2 vem do status da W1).
+8. **Voltar atrás:** chave em 0 e regravar W1 e W2, ou o backup (seção 7.2).
