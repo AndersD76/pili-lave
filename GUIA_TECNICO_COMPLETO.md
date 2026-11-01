@@ -168,6 +168,8 @@ guarda até 16 na NVS e executa as ordens (início pelo app, lâmpada, aspirador
 
 **Câmera v6** (`MSG_REDE_INFO` 22, rede Wi-Fi mostrada na tela do display) e a regra de publicação por OTA: `firmware_camera/release/LEIAME.md`. **Lacunas conhecidas do backend/PWA** (botão de cancelar só em HELD, leitura de placa com carro parado, cron de expiração, `remainingSec` sempre 0, `/admin/lavagens` lista vouchers): `testes/PENDENCIAS_NA_MAQUINA.md` seções H e I.
 
+**Link W1↔W2 por cabo (proposta, branch `link-uart-w1-w2`, 2026-11-01; ainda NÃO gravado):** o ESP-NOW entre W1 e W2 é a fonte dos silêncios da W2 observados em 29–31/10. A proposta troca só esse transporte por UART0 (TXD GPIO43 / RXD GPIO44, 115200 8N1, quadro `A5 5A | tipo | seq | len | payload | CRC16`). W2 sem rádio; rádio só na W1 (display e câmera como hoje); fail-safe na W2; chave `LINK_W1_W2_UART` (0 = ESP-NOW antigo). O display e a câmera não mudam (o display já lê a W2 pelo status da W1). Detalhes, roteiro de teste e reversão: `docs/LINK_W1_W2_UART.md`.
+
 ## 4. Firmware das Waveshares — `lava_car_485/waveshare1/` e `waveshare2/`
 
 Dois firmwares quase idênticos (endereço Modbus 1 e 2), rodando na placa Waveshare ESP32-S3-POE-ETH-8DI-8DO. Cada uma:

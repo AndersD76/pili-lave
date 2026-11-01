@@ -39,3 +39,6 @@ arduino-cli upload -p COM11 --fqbn "esp32:esp32:esp32s3:PartitionScheme=huge_app
 Gravar `lava_car_485/display`, `lava_car_485/waveshare1` e `lava_car_485/waveshare2` (FQBNs em `GUIA_TECNICO_COMPLETO.md`, seções 3 e 4) e a câmera
 (`firmware_camera`). Atenção: o antigo usa **Modbus RS-485** entre display e Waveshares, então a **fiação do RS-485** precisa estar como era antes
 (SAJ de volta no barramento fica fora: foi o que causou o ruído).
+
+## 5. Backup antes do link W1↔W2 por cabo (2026-11-01)
+A tag `backup-w1-mestre-funcionando-2026-10-24` é **mais antiga** que o que está gravado hoje (faltam as alterações de 29–31/10). Para o trabalho do link por cabo foi feita uma **fotografia exata** do que roda na máquina: tag **`backup-antes-link-uart-2026-11-01`**, que aponta para o commit com `testes/w1_w2_por_rxtx/backup_atual/` (fonte da W1, W2 e display, binários compilados e hashes). Comandos de dump da flash e de restauração (esptool 5.3.1, `read-flash`/`write-flash`): `testes/w1_w2_por_rxtx/backup_atual/LEIAME.md`.

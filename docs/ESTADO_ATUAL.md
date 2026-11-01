@@ -15,6 +15,7 @@ Os outros documentos têm o detalhe; este diz onde ele está e o que mudou por �
 - Protocolo ESP-NOW: `protocolo_teste.h` **idêntico** em `testes/display/`, `testes/waveshare1/` e `testes/display_sem_toque/`. Mensagens 30–35 (teste/config), 36–38 (W1↔display: `MSG_NV_EVT`, `MSG_NV_EVT_ACK`, `MSG_NV_ORDEM`),
   4–22 compatíveis com a câmera (canal, Wi-Fi, heartbeat 7/8, evento 9/10, scan, cadastro 13–20, re-sync 21, **rede da câmera 22**).
 - Todos no **canal 6** (o do roteador). A migração de canal é orquestrada pelo display (câmera → W1/W2 → credenciais), com rollback; a câmera v5+ pede **re-sync** ao display se o roteador mudar.
+- **Link W1↔W2 por cabo (em desenvolvimento, branch `link-uart-w1-w2`, 2026-11-01):** troca o ESP-NOW entre W1 e W2 por UART0 (TXD GPIO43 / RXD GPIO44, 115200). A W2 deixa de usar rádio e de ter canal; o rádio fica só na W1 (display e câmera como hoje). Fase 1 = firmware só de teste do cabo; Fase 2 = W1/W2 de produção com a chave `LINK_W1_W2_UART` (0 = ESP-NOW antigo) e **fail-safe da W2** (sem W1 por 2 s desliga as saídas, menos as luzes). Projeto, roteiro e reversão: `docs/LINK_W1_W2_UART.md`. **Nada gravado ainda.**
 
 ## 2. Estado em 2026-10-25/27 (validado na máquina)
 - **Teste com o app, de ponta a ponta, funcionou** (reserva RYD1E43, modelo 1): reserva paga → câmera leu a placa → luz verde → `START pelo app` → X14 → ciclo → `car_entered` e `wash_completed` no backend → COMPLETED/REDEEMED.
@@ -59,7 +60,7 @@ Os outros documentos têm o detalhe; este diz onde ele está e o que mudou por �
 - `[SEGURANCA] Y7 bloqueado` na Cor Mágica (intertravamento ignora o Y1); correção preparada mas **não gravada** por decisão do Giovani.
 
 ## 8. Ordem de leitura sugerida
-1. Este arquivo. 2. `CLAUDE.md` (regras). 3. `docs/COMBINADOS.md` (decisões). 4. `testes/PENDENCIAS_NA_MAQUINA.md` (**seções H e I** são as mais recentes). 5. `docs/PARIDADE_ANTIGO_NOVO.md` (o que o novo já faz vs o antigo).
+1. Este arquivo. 2. `CLAUDE.md` (regras). 3. `docs/COMBINADOS.md` (decisões). 4. `testes/PENDENCIAS_NA_MAQUINA.md` (**seções H e I** são as mais recentes). 5. `docs/PARIDADE_ANTIGO_NOVO.md` (o que o novo já faz vs o antigo). Link W1↔W2 por cabo (projeto e teste): `docs/LINK_W1_W2_UART.md`.
 6. `testes/LEIAME.md` (base de testes e telas). 7. `GUIA_TECNICO_COMPLETO.md` (referência técnica; seção 3.13 e as do backend). 8. `docs/BACKUP_E_RESTAURACAO.md`, `docs/TROCA_DE_DISPLAY.md`, `firmware_camera/release/LEIAME.md`.
 
 ## 9. Como compilar e gravar (resumo)
