@@ -12,7 +12,9 @@ function money(cents: number): string {
 export default async function AdminDashboard() {
   await requireAdminPage();
 
-  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  // "hoje" = meia-noite de Brasilia (UTC-3, sem horario de verao). O servidor roda em UTC: setHours(0) cortava o dia as 21h do anterior.
+  const agoraBR = new Date(Date.now() - 3 * 3600e3);
+  const hoje = new Date(Date.UTC(agoraBR.getUTCFullYear(), agoraBR.getUTCMonth(), agoraBR.getUTCDate(), 3, 0, 0, 0));
   const d7 = new Date(Date.now() - 7 * 864e5);
   const d30 = new Date(Date.now() - 30 * 864e5);
 
@@ -89,7 +91,7 @@ export default async function AdminDashboard() {
                   const p = (a.payload ?? {}) as { tipo?: string; mensagem?: string };
                   return (
                     <tr key={a.id}>
-                      <td>{a.createdAt.toLocaleString("pt-BR")}</td>
+                      <td>{a.createdAt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
                       <td>{p.tipo ?? "-"}</td>
                       <td>{p.mensagem ?? "-"}</td>
                     </tr>
