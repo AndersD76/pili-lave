@@ -1,0 +1,90 @@
+# Link W1 <-> W2 por cabo (UART0) — projeto, teste e reversão
+
+Documento **novo** (criado em 2026-11-01, branch `link-uart-w1-w2`). **Nenhum documento existente foi alterado**; as edições propostas para eles estão no relatório, sem aplicar.
+
+## 1. Por que
+Falhas no link W1<->W2 por rádio (ESP-NOW) fizeram a W1 deixar de ver o X10 (que entra pela W2) e o carrinho seguiu até travar (`CARRO TRAVADO (retorno X10)`). Evidência: silêncios da W2 de 160 a 208 s em 29/10 e 30/10, e o envio de rádio da W1 travado em 31/10 (`tx_ok` congelado). A mudança: **sai o Wi-Fi entre W1 e W2 e entra um cabo**. O rádio fica **só na W1**, que continua falando com o display e a câmera como hoje.
+
+## 2. Escopo (o que muda e o que NÃO muda)
+- **Muda só o transporte W1<->W2.** Lógica de processos, giro, carrinho, HOME, Delta/SAJ por RS-485 e intertravamentos não mudam.
+- O display e a câmera continuam por ESP-NOW, com a mesma busca e migração de canais (display -> câmera -> W1). A W2 **deixa de ser buscada/migrada por Wi-Fi** (não usa mais canal).
+- Tudo em pastas novas: `testes/w1_w2_por_rxtx/` (`teste_link/` = Fase 1, `waveshare1/` e `waveshare2/` = Fase 2). Os firmwares atuais ficam intactos.
+
+## 3. Pinos e fiação
+Cabo = **UART0** da placa (3,3 V, direto no chip, **sem isolação**):
+
+| Sinal | GPIO | Observação |
+|---|---|---|
+| **TXD** (borne) | **43** | fonte do mapeamento: PR #25 de hennejg/waveshare-ESP32-S3-io. **A documentação oficial da Waveshare NÃO dá esse mapeamento: confirmar com o loopback (`L`).** |
+| **RXD** (borne) | **44** | idem |
+
+Já usados (**não tocar**): RS-485 do Delta na W1 (TX 17, RX 18, DE/RE 21), entradas X da W2 (GPIO 4 a 11), I2C (SDA 42, SCL 41), CAN (2, 3), Ethernet (12 a 16, 39), LED 38, buzzer 46, BOOT 0, RTC INT 40, SD 45/47/48.
+Confirmado no código atual: **nada usa `Serial0`/UART0 nem os GPIO 43/44** (W1 e W2 compilam com `CDCOnBoot=cdc`, então o USB nativo é o `Serial` e a UART0 está livre).
+
+Fiação (feita pelo Giovani):
+```
+W1 TXD (borne) ──[100 a 330 Ω]── RXD (borne) W2
+W2 TXD (borne) ──[100 a 330 Ω]── RXD (borne) W1
+W1 GND  ───────────────────────── GND W2          (GND comum)
+```
+Fio **trançado**, 10 a 15 cm, longe de cabos de força/inversor. O resistor em série em **cada** linha limita corrente e amortece reflexão. **Nunca** ligar 24 V nesses bornes.
+Cuidado: o GPIO43 emite **texto de boot do ROM** por instantes depois de cada reset. O protocolo tem byte de início, tamanho, CRC, descarta lixo e ressincroniza; o teste não conta o lixo dos primeiros 3 s.
+
+## 4. Quadro (igual na Fase 1 e na Fase 2)
+```
+A5 5A | tipo | seq (2 B, little-endian) | len | payload[len] | CRC16 (2 B, little-endian)
+```
+- **CRC16-CCITT** (poly 0x1021, init 0xFFFF) sobre `tipo, seq, len, payload` (não inclui `A5 5A`). Tamanho máximo do payload: 128.
+- Receptor: procura `A5 5A`; descarta e conta o que não for quadro; confere `len <= 128`; se o quadro parar no meio por mais de 20 ms, conta **truncado** e ressincroniza; CRC errado conta **CRC ruim** e ressincroniza.
+- Fase 1 usa estes tipos: `1 OI`, `2 RESP`, `4 FASE`, `5 FASE_ACK`. A Fase 2 acrescenta os de E/S (a definir no estudo).
+
+## 5. Fase 1 — firmware só de teste (`teste_link/`)
+Pastas `w1_teste_link/` e `w2_teste_link/`; cada uma com `link_proto.h` **idêntico** (`cmp`) e um `.ino` de 8 linhas que só define `LADO` (1 = W1, 2 = W2).
+FQBN: `esp32:esp32:esp32s3:PSRAM=opi,CPUFreq=240,FlashMode=qio,FlashSize=16M,CDCOnBoot=cdc` (W1 = COM24, W2 = COM10).
+
+**Fluxo "oi" e inversão.** A W1 manda o ritmo das **fases** (cada uma dura `T_FASE_S` = 30 s e depois alterna, sem parar):
+- **Fase par:** a W1 manda `OI` (20 por segundo) e a W2 responde com `RESP` ecoando o padrão.
+- **Fase ímpar: a conversa INVERTE.** A W2 manda `OI`, a W1 responde.
+- A W1 anuncia a fase com `FASE` (a cada 100 ms até a W2 confirmar com `FASE_ACK`; depois a cada 2 s, para ressincronizar se a W2 reiniciar).
+- O payload de `OI`/`RESP` é: `[fase][pat_id][pat_len][contadores do remetente (90 B)][padrão]`. Padrões: `0x00`, `0xFF`, `0x55`, `0xAA`, incremental, pseudo-aleatório (semente = seq) e `A5 5A A5 5A…` (estressa a sincronização). O tamanho varia de 8 a 32 bytes.
+- **Cada lado manda os seus contadores dentro de cada quadro**, então **um único monitor mostra as duas visões**.
+
+**Contadores (relatório a cada 5 s, por direção, e RESUMO ao fim de cada fase).** Como *iniciador*: enviados, ok, CRC ruim, timeouts, fora de hora, eco diferente. Como *respondedor*: recebidos ok, CRC ruim, **perdidos** (saltos de seq), **duplicados**, **fora de ordem**. Comuns: truncados, **bytes espúrios** (fora de quadro, depois dos 3 s de boot; o lixo de boot é contado à parte), **erros da UART** (break, frame, paridade, estouro de FIFO, buffer cheio), **ida e volta** (mínimo, médio e máximo, da janela e da fase), **maior silêncio** entre quadros válidos, **maior rajada** de falhas seguidas.
+Cada erro sai **em linha própria**, com o instante em ms e o tipo (limite de 30 linhas por janela; o resto vira "+N suprimidas").
+
+**Veredito** (por lado, na fase atual):
+- **OK:** nenhuma falha, nenhum byte espúrio e nenhum erro de UART.
+- **ATENCAO:** há falhas, mas a taxa é **menor que 0,1 %**.
+- **RUIM:** taxa **de 0,1 % ou mais**, ou uma **rajada de 3 falhas seguidas**.
+- **SEM TRAFEGO:** nenhuma tentativa na fase.
+- **"RUIDO PROVAVEL"** é somado ao veredito sempre que houver bytes espúrios ou erros da UART **fora da janela de boot**.
+- Taxa de falha = (CRC ruim + timeouts + fora de hora + eco diferente + perdidos + duplicados + fora de ordem + truncados) / tentativas.
+- O **LED da placa (GPIO 38)** mostra o último veredito: verde (OK), amarelo (ATENÇÃO), vermelho (RUIM), azul (esperando o vizinho).
+
+**Comandos pelo monitor serial (115200):** `L` loopback na própria placa (jumper TXD↔RXD, sem a outra placa), `R` zera os contadores, `S` mostra o resumo agora. **Abrir o monitor serial reinicia a placa.**
+**Velocidade:** 115200 por constante. Para comparar a 460800 sem mexer no código, compile **as duas** placas com `--build-property "compiler.cpp.extra_flags=-DLINK_BAUD=460800UL"` (testado: a propriedade chega ao compilador; **não** use `build.extra_flags`, que pode apagar defines da placa). A mesma velocidade tem que estar nos dois lados.
+
+**Segurança da Fase 1:** nenhum sinal nas saídas. No boot cada firmware grava **uma vez** o valor "tudo desligado" no expansor PCA9554 (endereço `0x20`, I²C SDA 42 / SCL 41): registrador de saída **`0xFF`** (a lógica da produção é invertida: bit 1 = relé desligado) e direção `0x00`, confere por leitura de volta (`[EXP] ... -> OK`) e **nunca mais escreve** nas saídas. Diferença para a produção: a produção grava a direção antes da saída; aqui grava a saída **antes** e só depois a direção (estado final idêntico, mas nunca aparece um valor antigo nos relés). Sem RS-485 (GPIO 17, 18, 21 inativos), sem Wi-Fi e sem ESP-NOW.
+
+## 6. Roteiro da Fase 1 na máquina (numerado)
+> Só grave com o seu "grava" explícito. Gravar o teste **apaga o firmware de produção** dessas placas até a restauração (item 6.7): a máquina fica **sem controle** durante o teste.
+
+1. **Preparar a máquina:** desligar os **disjuntores dos inversores** (Delta e SAJ) e das **bombas**; deixar só o **24 V das placas**; **sem carro** e **sem ninguém** na área de movimento.
+2. **Salvar o backup das duas placas** (dump da flash), conforme `testes/w1_w2_por_rxtx/backup_atual/LEIAME.md` (comandos `read-flash` da COM24 e da COM10). Conferir que cada arquivo tem 16 777 216 bytes.
+3. **Ligar o cabo** (seção 3) e **gravar** primeiro a W2 e depois a W1:
+   ```
+   arduino-cli upload -p COM10 --fqbn "esp32:esp32:esp32s3:PSRAM=opi,CPUFreq=240,FlashMode=qio,FlashSize=16M,CDCOnBoot=cdc" testes\w1_w2_por_rxtx\teste_link\w2_teste_link
+   arduino-cli upload -p COM24 --fqbn "esp32:esp32:esp32s3:PSRAM=opi,CPUFreq=240,FlashMode=qio,FlashSize=16M,CDCOnBoot=cdc" testes\w1_w2_por_rxtx\teste_link\w1_teste_link
+   ```
+   (os `.bin` já compilados: `arduino-cli compile` na mesma pasta antes do `upload`).
+4. **Loopback em cada placa** (uma por vez, **sem o cabo da outra**): jumper entre os bornes TXD e RXD da placa, abrir o monitor (115200) e digitar `L`. Esperado: `[LOOPBACK] RESULTADO: OK` e, antes, `[EXP] ... -> OK`. Se der **SEM ECO**: o mapeamento GPIO43/44 não é o dos bornes ou o jumper está solto (a doc oficial não o confirma) — **pare e me avise antes de seguir**. Retirar os jumpers.
+   Depois, **o par W1 e W2** com a fiação cruzada, **parado por 10 minutos** (20 fases), com **dois monitores** (um por placa).
+5. **Inversores energizados, SEM comando de marcha:** ligar os disjuntores do Delta e do SAJ (sem dar marcha) e observar mais 10 minutos a taxa de erro. **Só ligar um inversor pelo painel dele se o Giovani decidir que é seguro.**
+6. **Critérios de aprovação** (parado **e** com os inversores energizados, 10 min cada): **zero** CRC ruim, **zero** timeouts, perdidos, duplicados, fora de ordem e truncados; **zero** byte espúrio fora dos 3 s de boot e **zero** erro de UART; veredito **OK** em todas as janelas; ida e volta máxima abaixo de 30 ms. **Se falhar:** (a) conferir cruzamento TXD/RXD, GND comum e resistores; (b) encurtar/trançar o cabo e afastá-lo da força; (c) repetir com baud menor (57600) e maior (460800) para ver a sensibilidade; (d) se ainda ruim, **não passar para a Fase 2** e me avisar.
+7. **Restaurar o firmware original das duas placas** (qualquer um dos três jeitos, em `backup_atual/LEIAME.md`): `write-flash 0 backup_w1_COM24_2026-11-01.bin` (e o da W2), ou os `*.merged.bin` da pasta `backup_atual/bin/`, ou compilar e gravar `backup_atual/fonte/`. Depois religar os disjuntores.
+
+## 7. Fase 2 — W1 e W2 de produção com o link por cabo
+(preenchida depois do estudo e da sua aprovação; **estudo entregue no relatório do bloco D**)
+
+**Chave de reversão prevista:** `LINK_W1_W2_UART` (`1` = cabo, `0` = ESP-NOW antigo). O código antigo de ESP-NOW entre W1 e W2 **não é apagado**: fica no caminho desativado, com comentário de como reativar. Com a chave em `0` o comportamento tem que ser idêntico ao de hoje.
+Voltar atrás, por ordem de facilidade: (1) chave em `0` e regravar; (2) `backup_atual/` (dump ou `.bin`); (3) `git checkout backup-antes-link-uart-2026-11-01`.
