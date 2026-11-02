@@ -9,7 +9,7 @@ Objetivo (Giovani): **nunca perder uma lavagem**. Depois de um reinício ou qued
 - **Sentido A = anti-horário. Sentido B = horário.** Deslocamento: **X12 = fim de curso sentido B (trás)**, **X13 = fim de curso sentido A (frente)**. **Y14 = contator do deslocamento**, **Y4 = contator do giro** (trava Y4↔Y14: nunca os dois).
 - **Posição 1 do braço = X16 + X17 juntos** (HOME do braço). A leitura da **posição 2 pelo X17 foi retirada** das regras até ser corrigida (pendência P1): enquanto isso a posição 2 só é conhecida pela memória gravada, não por sensor.
 - **Giro normal** (pré-lavagem, espuma A, etc.): sempre sentido A, na ida (1→2) e na volta (2→1).
-- **Giro triplo da Alta Pressão** (código + confirmado pelo Giovani para a ida): **ida, com o carrinho no X12: 1→2 em A, 2→1 em B, 1→2 em A.** A volta usa a mesma sequência de sentidos (A, B, A), começando na posição 2 (confirmar, P5).
+- **Giro triplo da Alta Pressão** (código + confirmado pelo Giovani para a ida): **ida, com o carrinho no X12: 1→2 em A, 2→1 em B, 1→2 em A.** A volta usa a mesma sequência de sentidos (A, B, A), começando na posição 2: **confirmado pelo Giovani (2026-11-02): depois que volta ao X10, faz o giro triplo.**
 - Consequência para a retirada: o sentido **não é fixo**. A retirada rumo à posição 1 usa o sentido que **encurta o caminho até a posição 1**: giro que **vai** ao 1 → continua no mesmo sentido; giro que **sai** do 1 → sentido oposto (refaz o caminho já varrido). O checkpoint grava, **antes de cada giro começar**, qual giro é, de onde para onde e em que sentido.
 
 ## 2. Sensores usados (placa)
@@ -38,8 +38,9 @@ Obs. do Giovani: **X14 e X15 estão na W2**, então a máquina precisa saber se 
 - **G9 — Retomada depois de falta de energia.** No máximo **5 minutos** sem energia (decisão do Giovani, 2026-11-02; vale para o texto das placas, seção 8). Se a **W2 ficou viva** durante a interrupção, ela informa se o **X15 ou o X14 mudaram**; qualquer saída ou entrada de carro cancela a retomada. Se nenhuma das duas placas tinha energia, vale o limite de 5 min + X15 estável 1500 ms (possível melhoria: conferir a placa lida pela câmera).
 - **G10 — Delta parado.** Antes de religar qualquer saída, conferir que o Delta está em 0 Hz (leitura Modbus). Pré-requisito: o parâmetro de perda de comunicação do Delta.
 - **G11 — Alta Pressão (Y13) só liga** com o braço confirmado no lugar e o X10 lendo o carro.
-- **G12 — Máximo de retomadas por lavagem: 2** (proposta, P3). Passou disso: cancela e estorna. O limite de 30 min do ciclo (CICLO_MAX_MS) **continua contando** o tempo total.
+- **G12 — Máximo de retomadas por lavagem: 2** (confirmado pelo Giovani em 2026-11-02). Passou disso: cancela e estorna. O limite de 30 min do ciclo (CICLO_MAX_MS) **continua contando** o tempo total.
 - **G13 — Ocorrência fora do previsto = aprendizado (item 9 do Giovani).** Se qualquer conferência falhar de um jeito que as regras não preveem: a máquina **para, faz o HOME confirmado e cancela/estorna** (comportamento seguro de hoje) e **grava um retrato completo** (todos os sensores W1/W2, etapa e giro gravados, saídas ligadas, frequência, tempos) que sobe para a nuvem como evento de **ocorrência**. Depois analisamos cada ocorrência real e criamos a regra para ela.
+- **G15 — Depois de EMERGÊNCIA a retomada pede toque no display** (confirmado em 2026-11-02, P2). Reinício só da W1 com energia mantida pode retomar sozinho; falta de energia da rede (até 5 min) também (G9).
 - **G14 — Aviso.** Cada retomada, cancelamento ou ocorrência avisa o lavador e o admin no celular.
 
 ## 4. Tabela de pontos de interrupção (rascunho)
@@ -72,14 +73,14 @@ Obs. do Giovani: **X14 e X15 estão na W2**, então a máquina precisa saber se 
 2. **Fase 1:** G2 + G3 + G4 + G5 + G6 como regras de **proteção** do ciclo normal (valem mesmo sem reinício) e retomada recomeçando a etapa.
 3. **Fase 2:** retomada no meio do movimento, por etapa, cada uma **desligada por padrão** até testada na máquina em modo SECO.
 
-## 7. Pendências (perguntas abertas ao Giovani)
+## 7. Pendências
+
+Resolvidas em 2026-11-02: P2 (emergência pede toque), P3 (máx. 2 retomadas), volta do giro triplo (confirmada), R2/R5/X13/tempo de 5 min/HOME (confirmados).
 
 - **P1** Leitura da posição 2 sem X17 (o Giovani corrige depois). Até lá a posição 2 só vale pela memória gravada.
-- **P2** Depois de **emergência**, a retomada é automática ou pede toque no display? (Recomendação: toque.)
-- **P3** Máximo de retomadas por lavagem: 2?
-- **P4** X10 sumiu sem deslocamento e não voltou, com a comunicação boa: parar e **cancelar com estorno**, ou parar e esperar o lavador?
-- **P5** A volta do giro triplo (depois de retornar ao X10 na frente) é A, B, A começando na posição 2?
-- **P6** Os sensores X14 e X15 na W2: a W2 deve guardar um diário próprio das transições (para a W1 saber se um carro saiu/entrou durante a queda só da W1)?
+- **P4 (a confirmar)** X10 sumiu sem deslocamento e não voltou, com a comunicação boa. Resposta do Giovani (a confirmar se era para este caso): *ir à posição 1 a 5 Hz e, estando em X16 + X17, seguir em sentido B horizontal até o X12* (ou seja, tratar como retirada segura, sem insistir). Falta dizer se a lavagem é cancelada e estornada depois disso.
+- **P5b (a confirmar)** Mesma resposta, se era para o **giro triplo da volta**: interrompeu, vai à posição 1 a 5 Hz e **segue para o X12 sem repetir o triplo**? Isso difere da regra G8 (que recomeça o giro).
+- **P6 (esclarecimento enviado)** A W2 guarda um diário das mudanças de X14/X15 para a W1 saber, na retomada, se um carro saiu ou entrou enquanto só a W1 estava fora.
 
 ## 8. Texto para as placas de instrução (enviar ao Claude web das placas)
 
