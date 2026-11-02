@@ -62,8 +62,12 @@ export async function POST(req: NextRequest) {
   const tecnico = r.motivo === 2 || r.motivo === 11 || r.motivo === 12;
   if (r.emCiclo && !tecnico) {
     const aviso = {
-      titulo: "A máquina parou: placa reiniciou",
-      corpo: `A placa ${r.quem} reiniciou no meio de uma lavagem (${causaDoReset(r)}). Confira a máquina e faça o HOME no display.`,
+      titulo: r.quem === "W1" ? "A máquina parou: placa reiniciou" : "A máquina pausou: placa reiniciou",
+      // W1 perdeu o ciclo (fica esperando o HOME no display). W2: a W1 pausa e retoma sozinha quando ela volta.
+      corpo:
+        r.quem === "W1"
+          ? `A placa W1 reiniciou no meio de uma lavagem (${causaDoReset(r)}). O ciclo foi perdido: confira a máquina e faça o HOME no display.`
+          : `A placa W2 reiniciou durante uma lavagem (${causaDoReset(r)}). A máquina pausa e retoma sozinha: confira se voltou a lavar.`,
       url: "/admin",
       tag: `reset-${chave}`,
     };
