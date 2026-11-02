@@ -224,7 +224,7 @@ export async function verificarEAlertar(): Promise<Diagnostico> {
     else await resolverAlerta(tipo, msgVoltou, d.machineId, d.operadorId, recentes);
   };
   await checar("MAQUINA_FALHA", d.problemas.includes("MAQUINA_FALHA"),
-    "A máquina reportou falha e parou.", "A máquina voltou a operar.");
+    "A máquina reportou falha e parou.", "A máquina saiu do estado de falha.");
   await checar("DISPLAY_OFFLINE", d.problemas.includes("DISPLAY_OFFLINE"),
     "O display parou de se comunicar (queda de internet ou energia na máquina).", "O display voltou a se comunicar.");
   await checar("CAMERA_OFFLINE", d.problemas.includes("CAMERA_OFFLINE"),
