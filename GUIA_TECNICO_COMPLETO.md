@@ -305,6 +305,7 @@ Três coisas precisam estar vivas pra uma lavagem acontecer: o **display** (exec
 
 **Limitação conhecida**: `diagnosticar()` hoje sempre olha a "máquina padrão" (`findFirst`) — não está totalmente adaptado pro cenário de múltiplas máquinas ainda.
 
+<<<<<<< HEAD
 ### 6.9d Alertas sem repetição (2026-11-02)
 `alertarAdmin(..., persistente)` e `resolverAlerta(...)` em `lib/saude.ts`. Alertas **persistentes** (display fora, câmera fora, máquina em falha) avisam **uma vez** quando o problema começa e **uma vez** quando acaba (`Event alerta_resolvido`, com a duração); enquanto durar não repetem (antes repetiam a cada ~10 min no painel e no push). O estado vem do último evento `alerta_admin`/`alerta_resolvido` do tipo+máquina (sem tabela nova); `verificarEAlertar` faz uma única consulta de alertas recentes (30 dias) por chamada. Alertas de **evento** (ex.: `POSICAO_X15`) seguem com a janela de 10 min. A rota `/api/machine/fault` abre o aviso `MAQUINA_FALHA` como persistente. O painel `/admin` lista `alerta_admin` e `alerta_resolvido` ("✓ voltou").
 
@@ -315,6 +316,16 @@ Três coisas precisam estar vivas pra uma lavagem acontecer: o **display** (exec
 - **Sócio e bônus**: o firmware (W1) manda `source` = `"socio"`/`"bonus"` no `wash-complete` (antes só `"remote"`). O backend cria a `LavagemPresencial` com **valor 0** (não entra no "deve repassar" do lavador) e um `Event lavagem_tipo` `{lavagemId, machineId, programId, tipo}` (sem coluna nova, sem migration). O resumo conta sócios/bônus por esses eventos e subtrai de Presencial. Ordem: backend primeiro (aceita os novos `source`), depois o firmware.
 - **Correção de defeito em `wash-complete`**: sem `reservationId` (presencial/sócio/bônus), a rota procurava "a última reserva COMPLETED da máquina" e devolvia `dedup` antes de registrar a lavagem presencial; bastava a máquina ter UMA lavagem de app concluída. Agora a checagem de retransmissão só vale quando a máquina manda o id. **Lavagens presenciais anteriores à correção podem ter ficado sem registro** em máquinas com lavagem de app.
 - Os alertas não são apagados por nenhum código.
+=======
+### 6.9b Registro de reinícios das placas (`lib/resets.ts`, `/api/machine/reset-log`) — 2026-11-02
+A W1 (e a W2, que avisa a W1 por `MSG_W2_BOOT`) guarda na NVS cada reinício: motivo (`esp_reset_reason`), estado da máquina antes (retrato na memória RTC), tempo ligada antes e se estava em ciclo. A cada reconexão o histórico sobe como **evento tipo 4** (W1 → display → câmera → `POST /api/machine/reset-log`, `x-device-key`), um por vez, sem expulsar eventos de lavagem. O texto vai compacto em `info` (`"W1;m=6;e=5;u=1234;n=12;c=1;s=0"`) e a chave única (`key`, `"W1-12"`) torna o reenvio idempotente.
+- **Sem tabela nova**: cada reinício vira um `Event` com `type = "machine_reset"` e `payload = { chave, machineId, quem, motivo, motivoNome, estado, estadoNome, emCiclo, upAntSeg, total, deliberado }`. Não precisa de migration.
+- **Resposta sempre 200** para corpo/`info` ilegível (`ok:false`): o display só tira o evento da fila com o 200 da câmera, e um 4xx travaria a fila de eventos de lavagem atrás dele. Só falha de autenticação devolve erro.
+- **Aviso imediato**: reinício com `emCiclo` (carro presente: estados 2, 3, 4, 5 ou 8) avisa por push o lavador da máquina (`operadorId`) e os admins. Reset técnico (botão EN, USB, JTAG) nunca avisa. Reinício com a máquina parada só fica registrado.
+- Painel: seção **"Reinícios das placas (30 dias)"** no fim de `/admin/maquinas` (contagem W1/W2/no meio de lavagem + últimos 40).
+- A hora mostrada é a de **chegada** na nuvem (a máquina não tem relógio).
+- Ordem de implantação (importante): backend → câmera (OTA) → W1/W2. Uma câmera antiga não reconhece o tipo 4 e não confirma; o display reenvia a cabeça da fila e os eventos de lavagem atrás dela esperariam.
+>>>>>>> 9f40be9 (Registro de reinicios das placas W1/W2: endpoint /api/machine/reset-log, aviso ao lavador e secao no admin)
 
 ### 6.10 Notificações push (`lib/push.ts`)
 Web Push com chaves VAPID. `avisarCliente()` manda pra todos os aparelhos inscritos de um usuário (limpa inscrições mortas automaticamente); `avisarAdmins()` manda pra todos os admins. Nunca derruba o fluxo principal se falhar — push é extra.

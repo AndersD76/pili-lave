@@ -3,6 +3,7 @@ import { requireAdminPage } from "@/lib/admin";
 import { AdminNav } from "../nav";
 import MaquinasTabs from "./MaquinasTabs";
 import { divisaoCompleta, participacoesDaMaquina } from "@/lib/comissao";
+import { ESTADOS_AUTO, MOTIVOS_RESET } from "@/lib/resets";
 
 export const dynamic = "force-dynamic";
 
@@ -274,6 +275,22 @@ export default async function AdminMaquinas() {
     };
   });
 
+  // Reinícios das placas (W1/W2) enviados pela máquina — últimos 30 dias, para o admin ver a saúde elétrica/de firmware.
+  type PayloadReset = {
+    machineId?: string; quem?: string; motivo?: number; motivoNome?: string; estado?: number | null; estadoNome?: string | null;
+    emCiclo?: boolean; upAntSeg?: number | null; total?: number | null; deliberado?: number;
+  };
+  const reiniciosBrutos = await prisma.event.findMany({
+    where: { type: "machine_reset", createdAt: { gte: new Date(Date.now() - 30 * 86_400_000) } },
+    orderBy: { createdAt: "desc" },
+    take: 300,
+  });
+  const reinicios = reiniciosBrutos.map((e) => ({ at: e.createdAt, p: (e.payload ?? {}) as PayloadReset }));
+  const nomeMaquina = new Map(machines.map((m) => [m.id, `${m.station.city} — máq. ${m.numero}`]));
+  const resetsW1 = reinicios.filter((r) => r.p.quem === "W1").length;
+  const resetsW2 = reinicios.filter((r) => r.p.quem === "W2").length;
+  const resetsEmCiclo = reinicios.filter((r) => r.p.emCiclo).length;
+
   const lavadoresProps = lavadores.map((l) => ({ id: l.id, label: l.name ?? l.phone }));
   const participantesPossiveisProps = participantesPossiveis.map((u) => ({ id: u.id, label: u.name ?? u.phone }));
 
@@ -331,6 +348,64 @@ export default async function AdminMaquinas() {
           precosPorUnidade={precosPorUnidadeProps}
         />
       </div>
+
+      <h2 className="section-title" style={{ marginTop: 40 }}>Reinícios das placas (30 dias)</h2>
+      <div className="stats">
+        <div className="stat">
+          <div className="lab">W1 (controladora)</div>
+          <div className="val">{resetsW1}</div>
+        </div>
+        <div className="stat">
+          <div className="lab">W2 (entradas/saídas)</div>
+          <div className="val">{resetsW2}</div>
+        </div>
+        <div className={"stat" + (resetsEmCiclo > 0 ? " alerta" : "")}>
+          <div className="lab">No meio de uma lavagem</div>
+          <div className="val">{resetsEmCiclo}</div>
+        </div>
+      </div>
+      <p style={{ opacity: 0.7, fontSize: 13, margin: "12px 0" }}>
+        A hora é a de chegada na nuvem (a máquina guarda o histórico e envia quando há internet). &quot;Energia ligada&quot; é a máquina religada, por exemplo depois do botão de emergência.
+      </p>
+      {reinicios.length === 0 ? (
+        <p style={{ opacity: 0.7 }}>Nenhum reinício registrado nos últimos 30 dias.</p>
+      ) : (
+        <div className="tbl-wrap">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Quando</th>
+                <th>Máquina</th>
+                <th>Placa</th>
+                <th>Motivo</th>
+                <th>Estado antes</th>
+                <th>Ligada antes</th>
+                <th>Total da placa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reinicios.slice(0, 40).map((r, i) => (
+                <tr key={i}>
+                  <td>{fmtData(r.at)}</td>
+                  <td>{nomeMaquina.get(r.p.machineId ?? "") ?? "—"}</td>
+                  <td>{r.p.quem ?? "—"}</td>
+                  <td>
+                    {r.p.deliberado === 1 ? "reiniciada de propósito (memória baixa)"
+                      : r.p.deliberado === 2 ? "reiniciada de propósito (rádio travado)"
+                      : r.p.motivoNome ?? MOTIVOS_RESET[r.p.motivo ?? -1] ?? "—"}
+                  </td>
+                  <td style={r.p.emCiclo ? { color: "var(--erro, #e5484d)", fontWeight: 600 } : undefined}>
+                    {r.p.estadoNome ?? (r.p.estado != null ? ESTADOS_AUTO[r.p.estado] : null) ?? "desconhecido"}
+                    {r.p.emCiclo ? " (ciclo interrompido)" : ""}
+                  </td>
+                  <td>{r.p.upAntSeg ? `${Math.floor(r.p.upAntSeg / 60)} min` : "—"}</td>
+                  <td>{r.p.total ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </main>
   );
 }

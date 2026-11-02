@@ -177,6 +177,15 @@ Ao clicar em uma máquina você vê **só os dados dela**:
 
 Abaixo ficam os números gerais do negócio ("Resumo do negócio"). O antigo item **Alertas** do menu foi incorporado aqui. O **menu de cima** também destaca em qual página você está (linha vermelha embaixo do nome).
 
+### Reinícios das placas (fim da página Máquinas)
+
+Embaixo das abas aparece **"Reinícios das placas (30 dias)"**: quantas vezes a placa controladora (**W1**) e a das entradas/saídas (**W2**) reiniciaram, e quantas dessas foram **no meio de uma lavagem**. A tabela mostra quando, em qual máquina, por quê (queda de tensão, travou e o watchdog reiniciou, erro interno, "energia ligada" = a máquina foi religada, por exemplo depois do botão de emergência), em que estado a máquina estava e há quanto tempo estava ligada.
+
+- Reinício com a máquina **parada** ou que voltou ao normal só fica registrado.
+- Reinício **no meio de uma lavagem** é uma parada: você e o lavador da máquina recebem na hora um aviso no celular ("A máquina parou: placa reiniciou"). Confira a máquina e faça o **HOME no display**.
+- Muitos "queda de tensão" apontam para fonte ou ruído elétrico; muitos "travou" apontam para o programa. Se a mesma máquina reinicia toda semana, avise o suporte.
+- A hora é a de chegada na nuvem: a máquina guarda o histórico e envia quando volta a ter internet.
+
 ---
 
 ## Resumo rápido
