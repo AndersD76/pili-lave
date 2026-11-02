@@ -183,8 +183,9 @@ Embaixo das abas aparece **"Reinícios das placas (30 dias)"**: quantas vezes a 
 
 - Reinício com a máquina **parada** ou que voltou ao normal só fica registrado.
 - Reinício **no meio de uma lavagem** é uma parada: você e o lavador da máquina recebem na hora um aviso no celular ("A máquina parou: placa reiniciou"). Confira a máquina e faça o **HOME no display**.
+- Se a placa que reiniciou foi a **W1** e havia uma lavagem do app em andamento, ela é **cancelada e o valor é devolvido ao saldo do cliente automaticamente**, e ele recebe um aviso. Não é reagendada: se quiser, o cliente reserva de novo pelo app. Se a que reiniciou foi a **W2**, a máquina pausa e retoma sozinha, e nada é cancelado.
 - Muitos "queda de tensão" apontam para fonte ou ruído elétrico; muitos "travou" apontam para o programa. Se a mesma máquina reinicia toda semana, avise o suporte.
-- A hora é a de chegada na nuvem: a máquina guarda o histórico e envia quando volta a ter internet.
+- A hora é a do reinício (a máquina pega a hora na internet). Se ela ainda estava sem relógio, aparece a hora em que o aviso chegou na nuvem.
 
 ---
 

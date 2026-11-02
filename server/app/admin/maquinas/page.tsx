@@ -278,14 +278,17 @@ export default async function AdminMaquinas() {
   // Reinícios das placas (W1/W2) enviados pela máquina — últimos 30 dias, para o admin ver a saúde elétrica/de firmware.
   type PayloadReset = {
     machineId?: string; quem?: string; motivo?: number; motivoNome?: string; estado?: number | null; estadoNome?: string | null;
-    emCiclo?: boolean; upAntSeg?: number | null; total?: number | null; deliberado?: number;
+    emCiclo?: boolean; upAntSeg?: number | null; total?: number | null; deliberado?: number; quandoReset?: string | null;
   };
   const reiniciosBrutos = await prisma.event.findMany({
     where: { type: "machine_reset", createdAt: { gte: new Date(Date.now() - 30 * 86_400_000) } },
     orderBy: { createdAt: "desc" },
     take: 300,
   });
-  const reinicios = reiniciosBrutos.map((e) => ({ at: e.createdAt, p: (e.payload ?? {}) as PayloadReset }));
+  const reinicios = reiniciosBrutos.map((e) => {
+    const p = (e.payload ?? {}) as PayloadReset;
+    return { at: p.quandoReset ? new Date(p.quandoReset) : e.createdAt, p };
+  });
   const nomeMaquina = new Map(machines.map((m) => [m.id, `${m.station.city} — máq. ${m.numero}`]));
   const resetsW1 = reinicios.filter((r) => r.p.quem === "W1").length;
   const resetsW2 = reinicios.filter((r) => r.p.quem === "W2").length;
@@ -365,7 +368,7 @@ export default async function AdminMaquinas() {
         </div>
       </div>
       <p style={{ opacity: 0.7, fontSize: 13, margin: "12px 0" }}>
-        A hora é a de chegada na nuvem (a máquina guarda o histórico e envia quando há internet). &quot;Energia ligada&quot; é a máquina religada, por exemplo depois do botão de emergência.
+        A hora é a do reinício (relógio da máquina, ajustado pela internet); se a máquina ainda estava sem relógio, é a hora de chegada na nuvem. &quot;Energia ligada&quot; é a máquina religada, por exemplo depois do botão de emergência.
       </p>
       {reinicios.length === 0 ? (
         <p style={{ opacity: 0.7 }}>Nenhum reinício registrado nos últimos 30 dias.</p>

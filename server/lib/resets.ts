@@ -5,7 +5,8 @@
  * (evento tipo 4 → display → câmera → POST /api/machine/reset-log). O texto "info" é compacto:
  *   "W1;m=6;e=5;u=1234;n=12;c=1;s=0"
  *   m = esp_reset_reason, e = estado da máquina ANTES do reset (255 = desconhecido), u = segundos ligada antes,
- *   n = total de reinícios daquela placa, c = 1 se estava em ciclo (carro presente), s = restart deliberado (1 memória, 2 rádio).
+ *   n = total de reinícios daquela placa, c = 1 se estava em ciclo (carro presente), s = restart deliberado (1 memória, 2 rádio),
+ *   t = hora do reset (epoch s, UTC; só quando a máquina já tinha o relógio, que vem da internet via câmera).
  */
 
 export const MOTIVOS_RESET: Record<number, string> = {
@@ -45,6 +46,8 @@ export type ResetInfo = {
   upAntSeg: number | null;
   total: number | null;
   deliberado: number;
+  /** Hora do reset (epoch s, UTC) segundo o relógio da máquina; null = máquina sem relógio na hora. */
+  quandoEpoch: number | null;
 };
 
 /** Lê o texto compacto enviado pela W1. Devolve null se não for reconhecível. */
@@ -69,6 +72,7 @@ export function interpretarReset(info: string): ResetInfo | null {
     upAntSeg: campos.u !== undefined && campos.u > 0 ? campos.u : null,
     total: campos.n ?? null,
     deliberado: campos.s ?? 0,
+    quandoEpoch: campos.t !== undefined && campos.t > 1_700_000_000 ? campos.t : null,
   };
 }
 

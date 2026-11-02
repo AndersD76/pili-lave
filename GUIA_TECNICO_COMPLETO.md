@@ -322,8 +322,10 @@ A W1 (e a W2, que avisa a W1 por `MSG_W2_BOOT`) guarda na NVS cada reinício: mo
 - **Sem tabela nova**: cada reinício vira um `Event` com `type = "machine_reset"` e `payload = { chave, machineId, quem, motivo, motivoNome, estado, estadoNome, emCiclo, upAntSeg, total, deliberado }`. Não precisa de migration.
 - **Resposta sempre 200** para corpo/`info` ilegível (`ok:false`): o display só tira o evento da fila com o 200 da câmera, e um 4xx travaria a fila de eventos de lavagem atrás dele. Só falha de autenticação devolve erro.
 - **Aviso imediato**: reinício com `emCiclo` (carro presente: estados 2, 3, 4, 5 ou 8) avisa por push o lavador da máquina (`operadorId`) e os admins. Reset técnico (botão EN, USB, JTAG) nunca avisa. Reinício com a máquina parada só fica registrado.
+- **Cancela e estorna (regra do Giovani, 2026-11-02)**: reinício da **W1** em ciclo cancela as reservas ACTIVE/ENTERED da máquina que **começaram antes do reset** (`FAILED`; pedido `CANCELED` e valor devolvido à carteira com `WalletTx ADJUST`) e avisa o cliente. Não reagenda: ele reserva de novo pelo app. Só age com a **hora do reset** (`t`, relógio da máquina) plausível (não no futuro, até 7 dias); sem hora só registra e avisa. Reinício da **W2** não cancela (a W1 pausa e retoma). Gera `Event reservation_reset_cancel`. Testado no banco local (11 casos).
+- **Relógio da máquina**: a câmera pega a hora por NTP (`pool.ntp.org`/`time.google.com`) e manda `MSG_HORA` (epoch UTC) à W1 a cada 30 s; a W1 carimba cada reinício de trás para frente (hora atual − tempo ligada). Sem hora, o campo `t` some.
 - Painel: seção **"Reinícios das placas (30 dias)"** no fim de `/admin/maquinas` (contagem W1/W2/no meio de lavagem + últimos 40).
-- A hora mostrada é a de **chegada** na nuvem (a máquina não tem relógio).
+- A hora mostrada é a do reinício (relógio da máquina via NTP); sem relógio na hora, é a de chegada na nuvem.
 - Ordem de implantação (importante): backend → câmera (OTA) → W1/W2. Uma câmera antiga não reconhece o tipo 4 e não confirma; o display reenvia a cabeça da fila e os eventos de lavagem atrás dela esperariam.
 >>>>>>> 9f40be9 (Registro de reinicios das placas W1/W2: endpoint /api/machine/reset-log, aviso ao lavador e secao no admin)
 
