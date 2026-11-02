@@ -154,6 +154,7 @@ static inline void w2_amostra_home(uint8_t di, uint32_t agora) {   // chamar DEN
     else     { g_x17_up = false; }
 }
 static volatile uint32_t g_hb2=0;
+static volatile bool g_w2boot_novo = false; static MsgW2Boot g_w2boot_rx;   // W2 avisou que reiniciou (na versao do cabo ainda nao ha quadro LT_ para isso: fica sempre falso)
 // Diagnostico do enlace (resumo [LINK] a cada 5 s no serial):
 static uint32_t          g_w2_prev_ms = 0, g_w2_gap_max = 0;      // maior intervalo entre pacotes da W2
 static volatile uint32_t g_tx_ok = 0, g_tx_fail = 0;              // entrega dos envios por radio (display e W2)

@@ -182,3 +182,20 @@ Fontes: testes/waveshare1 e testes/w1_w2_por_rxtx/waveshare1 (edições idêntic
 - [ ] **Pulso de vida em IO1** (GPIO1, borne do conector de expansão): multímetro VDC (ou LED + 330 Ω) entre IO1 e GND alterna ~0 V ↔ ~3,3 V a cada 3 s, com a máquina parada e em ciclo. Se não mexer, o borne não é o GPIO1: avisar antes de ligar qualquer supervisor.
 - Detalhes e pendências do supervisor externo: docs/SUPERVISOR_HARDWARE.md.
 - [ ] **Delta: parar na perda de comunicação Modbus** (parâmetros de tempo limite/tratamento de falha de comunicação do MS300; confirmar no manual). Pré-requisito do supervisor externo; detalhes em docs/SUPERVISOR_HARDWARE.md seção 6.
+
+## L. Registro permanente de reinícios + envio para a nuvem (2026-11-02) — compilado, NÃO gravado, NÃO enviado
+Pedido do Giovani: guardar o histórico de reinícios (W1 e W2) e mandar para a nuvem a cada reconexão, para o admin ver; reinício no meio de lavagem avisa o lavador na hora.
+**Peças e onde estão**
+- W1: `testes/waveshare1/reset_log_w1.h` (novo) + edições em controle.h, maquina_estados.h, nuvem_w1.h, protocolo_teste.h, tipos_w1.h, waveshare1.ino (cópia do cabo `w1_w2_por_rxtx/waveshare1` igual, mas SEM o aviso de boot da W2: pelo cabo ele precisa de um quadro LT_ novo, pendente no projeto do link). Build 957.011 B (produção) / 960.111 B (cabo).
+- W2: `testes/waveshare2/waveshare2.ino` manda `MSG_W2_BOOT` (motivo + id do boot) 1x/s nos primeiros 20 s depois de cada boot. Build 900.827 B.
+- Câmera: `firmware_camera/src/main.cpp` entende o evento tipo 4 e faz POST em `/api/machine/reset-log` (corpo `{key, info}`). Build OK (`pio run`).
+- Display: NÃO muda (repassa eventos de forma genérica).
+- Backend: branch local `backend-reset-log` (commit 9f40be9, em worktree no scratchpad, **não enviada**): `server/app/api/machine/reset-log/route.ts`, `server/lib/resets.ts`, seção no `server/app/admin/maquinas/page.tsx`, guias. Sem tabela nova (usa `Event` type `machine_reset`), sem migration.
+**ORDEM DE IMPLANTAÇÃO (obrigatória)**: 1) backend na main (só com "pode subir") e conferir `/api/health`; 2) câmera por OTA; 3) W2 e W1. Câmera antiga + W1 nova = a câmera não confirma o tipo 4, o display reenvia a cabeça da fila e os eventos de lavagem atrás dela ficam esperando.
+**Roteiro de validação**
+- [ ] Boot da W1 no monitor serial: linhas `[RST] W1 reiniciou: motivo=...` e `[RST] totais: ...`. Primeira energização: motivo POWERON, estado desconhecido (o hard reset do boot não aparece como falha).
+- [ ] Apertar RESET (EN) da W1 com a máquina em ciclo SECO: o serial mostra `estado_antes=5 ... EM CICLO` (valida o retrato da RTC). Não vai para a nuvem (reset técnico).
+- [ ] Religar a W1 por energia: motivo POWERON, vai para a nuvem após 15 s ligada (se houver internet); aparece em Admin > Máquinas > "Reinícios das placas".
+- [ ] Teste completo do aviso: ciclo SECO em andamento e desligar/religar a energia da **W2**: a W1 pausa, a W2 volta e avisa; deve chegar o push "A máquina parou: placa reiniciou" no lavador e no admin, e a linha na tabela com "ciclo interrompido".
+- [ ] Sem internet (câmera fora): os registros ficam e sobem quando voltar. Nenhum evento de lavagem fica preso atrás deles.
+- [ ] Depois de enviado, o mesmo reinício não aparece duas vezes no admin.

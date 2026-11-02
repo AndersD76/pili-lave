@@ -173,7 +173,7 @@ void nuvem_tick() {
     uint32_t agora = millis();
     if (g_rx_ack_novo) {                                   // display confirmou o evento da cabeca
         uint32_t id = g_rx_ack_id; g_rx_ack_novo = false;
-        if (g_evq_n && g_evq[0].id == id) { evq_pop(); DBG_PRINTF("[EVT] display confirmou id=%lu (%u restam)\n", (unsigned long)id, (unsigned)g_evq_n); }
+        if (g_evq_n && g_evq[0].id == id) { char rk[40] = ""; if (g_evq[0].tipo == 4) strncpy(rk, g_evq[0].res, sizeof(rk) - 1); evq_pop(); if (rk[0]) rst_evento_confirmado(rk); DBG_PRINTF("[EVT] display confirmou id=%lu (%u restam)\n", (unsigned long)id, (unsigned)g_evq_n); }
     }
     if (g_rx_ord_novo) {                                   // ordens da nuvem (vindas pelo display)
         MsgNvOrdem o; memcpy(&o, (const void*)&g_rx_ord, sizeof(o)); g_rx_ord_novo = false;

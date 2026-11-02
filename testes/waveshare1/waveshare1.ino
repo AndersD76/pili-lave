@@ -23,6 +23,7 @@
 #include "controle.h"
 #include "maquina_estados.h"   // inclui processos.h no fim
 #include "nuvem_w1.h"          // heartbeat/eventos/licenca/lampada/aspirador direto com a camera
+#include "reset_log_w1.h"      // registro permanente dos reinicios (W1 e W2) + envio para a nuvem
 
 // ===================== HARD RESET no boot (via firmware) =====================
 #define HARD_RESET_APAGA_NVS 0
@@ -37,6 +38,7 @@ static void hard_reset_fase1(const char* nome) {
         nvs_flash_erase(); nvs_flash_init();
 #endif
         Serial.printf("[%s] HARD RESET: motivo=%d -> reiniciando o chip inteiro (uma vez)\n", nome, (int)r);
+        rst_hard_boot_marca((uint8_t)r);   // 2o boot: o motivo que vale e o do 1o (nao e falha)
         Serial.flush(); delay(100);
         esp_restart();
     }
@@ -59,6 +61,7 @@ void setup() {
     Serial.begin(115200);
     delay(200);
     g_rst_motivo = (uint8_t)esp_reset_reason();   // motivo deste boot (vai no status p/ a tela de testes)
+    rst_rtc_iniciar();   // registro de reinicios: le o retrato da RTC (estado antes do reset) ANTES do hard reset do boot
     hard_reset_fase1("WAVE1-MESTRE");
     hard_reset_radio();
     i2c_recupera_barramento(I2C_SDA, I2C_SCL);
@@ -80,6 +83,7 @@ void setup() {
     giro_cfg_carregar();        // tempo do giro por processo (NVS)
     erro_imprimir_boot();       // caixa-preta: ultimos erros, silencios da W2 e travamentos do envio (serial)
     nuvem_carregar();           // fila de eventos, licenca e tempo ligada (NVS)
+    rst_boot_registrar();       // registra ESTE boot (motivo, estado antes, uptime antes) e imprime o historico
     lav_carregar();             // planilha de lavagens (NVS)
     cfg_carregar();             // velocidades, esperas por slot e atrasos (NVS)
     comm_hard_reset_saidas();   // item 5: desliga as saidas locais E manda a W2 desligar as dela (apos um reset da W1 ela
@@ -128,5 +132,6 @@ void loop() {
         if (millis() - t_vida >= VIDA_MEIO_PERIODO_MS) { t_vida = millis(); nivel_vida = !nivel_vida; digitalWrite(VIDA_PIN, nivel_vida); }
     }
 
+    rst_tick();            // retrato RTC do estado (para o proximo reset), W2 reiniciou?, envio do historico
     led_tick();
 }

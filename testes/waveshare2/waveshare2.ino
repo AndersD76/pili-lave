@@ -25,6 +25,7 @@
 #define HARD_RESET_APAGA_NVS 0
 #define HR_MARCA 0x50494C49UL
 RTC_NOINIT_ATTR static uint32_t g_hr_marca;
+RTC_NOINIT_ATTR static uint8_t  g_hr_orig;   // motivo do 1o boot (o hard reset do boot e deliberado; o 2o boot reporta o motivo do 1o)
 static void hard_reset_fase1(const char* nome) {
     esp_reset_reason_t r = esp_reset_reason();
     bool energizou = (r == ESP_RST_POWERON || r == ESP_RST_BROWNOUT || r == ESP_RST_UNKNOWN);
@@ -34,6 +35,7 @@ static void hard_reset_fase1(const char* nome) {
         nvs_flash_erase(); nvs_flash_init();
 #endif
         Serial.printf("[%s] HARD RESET: motivo=%d -> reiniciando o chip inteiro (uma vez)\n", nome, (int)r);
+        g_hr_orig = (uint8_t)r;
         Serial.flush(); delay(100);
         esp_restart();
     }
@@ -62,10 +64,11 @@ static const uint8_t MAC_WAVE2[6]   = {0x02,0x00,0x00,ID_MAQUINA,0x01,0x03};
 static const uint8_t ESPNOW_PMK[16] = {'P','I','L','I','-','p','m','k',ID_MAQUINA,0,0,0,0,0,0,0};
 static const uint8_t ESPNOW_LMK[16] = {'P','I','L','I','-','l','m','k',ID_MAQUINA,0,0,0,0,0,0,0};
 
-enum : uint8_t { MSG_EVENTO=1, MSG_HEARTBEAT=2, MSG_COMANDO=3, MSG_CANAL=4 };
+enum : uint8_t { MSG_EVENTO=1, MSG_HEARTBEAT=2, MSG_COMANDO=3, MSG_CANAL=4, MSG_W2_BOOT=40 };
 typedef struct __attribute__((packed)) { uint8_t tipo,id_maquina,origem,seq; } CabEspNow;
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t di_vivo,di_borda; uint32_t t_us; } MsgEvento;
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t di_vivo,do_estado; } MsgHeartbeat;
+typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t motivo; uint16_t boot_id; uint32_t up_s; } MsgW2Boot;   // W2 -> W1: "reiniciei" (igual ao protocolo_teste.h da W1)
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal,estado; } MsgComando;
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal; } MsgCanal;
 
@@ -141,6 +144,14 @@ static bool escreve_do(uint8_t canal, bool ligar) {
 
 // ===================== ESP-NOW ===============================================
 static uint8_t g_seq = 0;
+// REGISTRO DE REINICIOS (2026-11-02): depois de cada boot a W2 avisa a W1 (motivo do reset + id do boot) por ~20 s; a W1 guarda o historico e manda para a nuvem.
+static uint8_t g_w2_motivo = 0; static uint16_t g_w2_boot_id = 0;
+static void w2_boot_info() {
+    esp_reset_reason_t r = esp_reset_reason();
+    if (r == ESP_RST_SW && g_hr_marca == HR_MARCA && g_hr_orig != 0) { g_w2_motivo = g_hr_orig; g_hr_orig = 0; }   // 2o boot do hard reset: vale o motivo do 1o
+    else g_w2_motivo = (uint8_t)r;
+    g_w2_boot_id = (uint16_t)esp_random();
+}
 static Preferences g_prefs;
 static uint8_t     g_canal_atual = ESPNOW_CANAL;
 
@@ -197,6 +208,7 @@ void setup() {
     Serial.begin(115200);
     delay(200);
     hard_reset_fase1("WAVE2");
+    w2_boot_info();
     hard_reset_radio();
     pinMode(RS485_DE_RE, OUTPUT);
     digitalWrite(RS485_DE_RE, LOW);
@@ -238,5 +250,12 @@ void loop() {
     }
     static uint32_t t_hb = 0;
     if (millis() - t_hb >= HEARTBEAT_MS) { t_hb = millis(); envia_heartbeat(); }
+    static uint32_t t_boot = 0;
+    if (millis() < 20000UL && millis() - t_boot >= 1000) {   // aviso de boot: 1x por segundo nos primeiros 20 s
+        t_boot = millis();
+        MsgW2Boot b = {}; b.cab.tipo = MSG_W2_BOOT; b.cab.id_maquina = ID_MAQUINA; b.cab.origem = ORIGEM_WAVE2; b.cab.seq = g_seq++;
+        b.motivo = g_w2_motivo; b.boot_id = g_w2_boot_id; b.up_s = millis() / 1000UL;
+        esp_now_send((uint8_t*)MAC_WAVE1, (uint8_t*)&b, sizeof(b));
+    }
     led_tick();
 }

@@ -121,7 +121,7 @@ static void hardResetRadio() { WiFi.persistent(false); WiFi.mode(WIFI_OFF); dela
 #define MSG_WIFI_CFG  6   // display -> câmera: credenciais (SSID/senha/URL/key)
 #define MSG_HB_STATE  7   // display -> câmera: estado da máquina p/ heartbeat
 #define MSG_HB_RESP   8   // câmera -> display: resposta do backend
-#define MSG_EVT       9   // display -> câmera: evento p/ a nuvem (car-entered/wash-complete/fault)
+#define MSG_EVT       9   // display -> câmera: evento p/ a nuvem (car-entered/wash-complete/fault; 4 = reinício de placa)
 #define MSG_EVT_ACK  10   // câmera -> display: confirmação do evento (200 OK)
 #define MSG_SCAN_REQ 11   // display -> câmera: "escaneia as redes e me diga"
 #define MSG_SCAN_RESP 12  // câmera -> display: uma página da lista de redes encontradas
@@ -485,12 +485,13 @@ static void processarEvento() {
 
   const char* path = (ev.evt_tipo == 1) ? "/api/machine/car-entered"
                    : (ev.evt_tipo == 2) ? "/api/machine/wash-complete"
-                   : (ev.evt_tipo == 3) ? "/api/machine/fault" : nullptr;
+                   : (ev.evt_tipo == 3) ? "/api/machine/fault"
+                   : (ev.evt_tipo == 4) ? "/api/machine/reset-log" : nullptr;   // 4 = reinicio de placa (W1/W2): historico para o admin
   if (!path) { g_evt_pende = false; return; }
 
   String body = "{";
   bool sep = false;
-  if (strlen(ev.res)) { body += String("\"reservationId\":\"") + ev.res + "\""; sep = true; }
+  if (ev.evt_tipo != 4 && strlen(ev.res)) { body += String("\"reservationId\":\"") + ev.res + "\""; sep = true; }
   if (ev.evt_tipo == 2 && ev.prog >= 1 && ev.prog <= 4) {
     if (sep) body += ",";
     body += String("\"programId\":") + ev.prog; sep = true;
@@ -499,6 +500,9 @@ static void processarEvento() {
   if (ev.evt_tipo == 3 && strlen(ev.errcode)) {   // fault: código/msg do erro
     if (sep) body += ",";
     body += String("\"errorCode\":\"") + ev.errcode + "\"";
+  }
+  if (ev.evt_tipo == 4) {   // reinicio: key = chave unica ("W1-12", volta no ACK e evita duplicar no backend); info = "W1;m=6;e=5;u=1234;n=12;c=1;s=0"
+    body += String("\"key\":\"") + ev.res + "\",\"info\":\"" + ev.errcode + "\"";
   }
   body += "}";
 

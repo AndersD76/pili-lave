@@ -234,6 +234,7 @@ static void tx_watchdog_tick(uint32_t agora) {
                   !home_rodando() && !g_teste_rodando && !g_manual_ativo;
     if (t_tx_reinit_n >= 3 && parada) {
         DBG_PRINTLN("[TX] reinicializacoes nao resolveram e a maquina esta parada -> reiniciando a W1");
+        rst_sw_motivo(2);   // RST_SW_TX
         Serial.flush(); delay(100); ESP.restart();
     }
 }
@@ -300,6 +301,7 @@ static void mem_tick(uint32_t agora) {
                   !home_rodando() && !g_teste_rodando && !g_manual_ativo;
     if (livre < MEM_CRITICO_B && parada) {
         DBG_PRINTF("[MEM] CRITICA (livre=%lu) com a maquina parada -> reiniciando a W1\n", (unsigned long)livre);
+        rst_sw_motivo(1);   // RST_SW_MEM
         Serial.flush(); delay(100); ESP.restart();
     }
 }
