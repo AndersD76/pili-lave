@@ -44,9 +44,16 @@ static void lf_w1_on_frame(uint8_t tipo, uint16_t seq, const uint8_t* pl, uint8_
         g_lf_hb++;
         if (len >= 7) {                               // diagnostico: motivo do reset e uptime da W2 (uptime que volta = a W2 reiniciou)
             uint32_t up = pl[3] | ((uint32_t)pl[4] << 8) | ((uint32_t)pl[5] << 16) | ((uint32_t)pl[6] << 24);
-            if (g_w2_up_s > 5 && up + 2 < g_w2_up_s) g_w2_reinicios++;
+            if (g_w2_up_s > 5 && up + 2 < g_w2_up_s) {   // a W2 reiniciou: aviso para o registro de reinicios (reset_log_w1.h), como o antigo MSG_W2_BOOT
+                g_w2_reinicios++;
+                g_w2boot_rx.motivo = pl[2]; g_w2boot_rx.boot_id = (uint16_t)g_w2_reinicios; g_w2boot_rx.up_s = up; g_w2boot_novo = true;
+            }
             g_w2_rst = pl[2]; g_w2_up_s = up;
         }
+    } else if (tipo == LT_DIARIO && len >= 11) {      // = MSG_W2_DIARIO: bordas de X14/X15 enquanto so a W1 estava fora
+        g_w2d_rx.boot_id = (uint16_t)(pl[0] | ((uint16_t)pl[1] << 8)); g_w2d_rx.nivel = pl[2];
+        g_w2d_rx.x14_bordas = (uint16_t)(pl[3] | ((uint16_t)pl[4] << 8)); g_w2d_rx.x15_bordas = (uint16_t)(pl[5] | ((uint16_t)pl[6] << 8));
+        g_w2d_rx.up_s = pl[7] | ((uint32_t)pl[8] << 8) | ((uint32_t)pl[9] << 16) | ((uint32_t)pl[10] << 24); g_w2d_novo = true;
     }
 }
 static void lf_w1_rx_cb() {

@@ -196,6 +196,29 @@ static void envia_heartbeat() {
     lf_enviar(LT_HB, pl, 7);
     led_pisca(0,30,0);
 }
+// DIARIO DO X14/X15 (2026-11-02): conta as bordas (debounce 100 ms) e manda LT_DIARIO a cada 5 s. So observa: nao muda nada na W2.
+static uint16_t g_dia_x14 = 0, g_dia_x15 = 0, g_dia_boot_id = 0;
+static void w2_diario_tick() {
+    static uint8_t aceito = 0; static bool ini = false; static uint32_t t_chg[2] = {0, 0}, t_tx = 0;
+    if (!ini) g_dia_boot_id = (uint16_t)esp_random();
+    uint8_t di = le_entradas_vivo();
+    uint8_t b = (uint8_t)(((di >> 4) & 1) | (((di >> 5) & 1) << 1));       // bit0 = X14 (carro entrando), bit1 = X15 (carro na posicao)
+    if (!ini) { aceito = b; ini = true; }
+    for (uint8_t i = 0; i < 2; i++) {
+        if (((b >> i) & 1) != ((aceito >> i) & 1)) {
+            if (!t_chg[i]) t_chg[i] = millis() | 1;
+            else if (millis() - t_chg[i] >= 100) { aceito ^= (uint8_t)(1 << i); t_chg[i] = 0; if (i == 0) g_dia_x14++; else g_dia_x15++; }
+        } else t_chg[i] = 0;
+    }
+    if (millis() - t_tx >= 5000) {
+        t_tx = millis();
+        uint32_t up = millis() / 1000UL; uint8_t pl[11];
+        pl[0] = (uint8_t)(g_dia_boot_id & 0xFF); pl[1] = (uint8_t)(g_dia_boot_id >> 8); pl[2] = aceito;
+        pl[3] = (uint8_t)(g_dia_x14 & 0xFF); pl[4] = (uint8_t)(g_dia_x14 >> 8); pl[5] = (uint8_t)(g_dia_x15 & 0xFF); pl[6] = (uint8_t)(g_dia_x15 >> 8);
+        pl[7] = (uint8_t)(up & 0xFF); pl[8] = (uint8_t)((up >> 8) & 0xFF); pl[9] = (uint8_t)((up >> 16) & 0xFF); pl[10] = (uint8_t)((up >> 24) & 0xFF);
+        lf_enviar(LT_DIARIO, pl, 11);
+    }
+}
 static void link_w2_setup() {
     Serial.setTxTimeoutMs(0);                         // monitor USB fechado nao pode travar a W2
     g_lf_boot_ms = millis();
@@ -334,5 +357,8 @@ void loop() {
     }
     static uint32_t t_hb = 0;
     if (millis() - t_hb >= HEARTBEAT_MS) { t_hb = millis(); envia_heartbeat(); }
+#if LINK_W1_W2_UART
+    w2_diario_tick();                                 // diario do X14/X15 para a W1 (LT_DIARIO a cada 5 s)
+#endif
     led_tick();
 }

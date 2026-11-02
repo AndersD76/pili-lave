@@ -7,6 +7,9 @@
 //   LT_EVT  0x11  W2 -> W1  na hora de cada borda de entrada:  [di_vivo][di_borda]
 //   LT_CMD  0x12  W1 -> W2  a cada ordem de saida:  [canal 0..7][estado 0/1]       (mesma semantica do antigo MsgComando)
 //   LT_KEEP 0x13  W1 -> W2  a cada 200 ms, sem payload: sinal de vida (a W2 desliga as saidas se ele sumir por 2 s)
+//   LT_DIARIO 0x14 W2 -> W1 a cada 5 s (2026-11-02): [boot_id (2 B)][nivel: bit0 X14, bit1 X15][bordas X14 (2 B)][bordas X15 (2 B)][uptime_s (4 B)] = 11 B.
+//        Diario das mudancas de X14/X15 (debounce 100 ms) para a W1 saber, depois de um reinicio SO dela, se um carro saiu/entrou (regra G9).
+//        O reinicio da W2 NAO precisa de quadro proprio: a W1 ja o enxerga pelo uptime do LT_HB que volta a zero (o motivo vem no mesmo LT_HB).
 // Sem confirmacao por quadro (igual ao ESP-NOW antigo): o reconciliador da W1 compara o comandado com o do_estado do heartbeat.
 //
 // Receptor: procura A5 5A; descarta e conta o que nao for quadro (o GPIO43 de cada placa cospe texto de boot do ROM por instantes depois de
@@ -19,7 +22,7 @@
 #define LF_SYNC2       0x5A
 #define LF_MAXP        32
 #define LF_TMO_BYTE_MS 20
-enum : uint8_t { LT_HB = 0x10, LT_EVT = 0x11, LT_CMD = 0x12, LT_KEEP = 0x13 };
+enum : uint8_t { LT_HB = 0x10, LT_EVT = 0x11, LT_CMD = 0x12, LT_KEEP = 0x13, LT_DIARIO = 0x14 };
 
 static inline uint16_t lf_crc_upd(uint16_t crc, uint8_t b) {
     crc ^= (uint16_t)b << 8;

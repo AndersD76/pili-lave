@@ -76,6 +76,7 @@ static volatile uint32_t g_u_brk = 0, g_u_frm = 0, g_u_par = 0, g_u_fifo = 0, g_
 static uint8_t  g_fase = 0;                               // numero da fase (par: W1 inicia; impar: W2 inicia)
 static bool     g_fase_ativa = false;
 static uint32_t g_fase_t0 = 0;
+static uint16_t g_seq_fase = 0;                           // seq dos quadros T_FASE (separada da dos OIs, para nao criar 'buracos' na contagem de perdidos)
 static uint16_t g_seq_tx = 0;                             // seq dos OIs que ESTE lado envia
 static int32_t  g_seq_rx_ult = -1;                        // ultimo seq de OI visto (como respondedor)
 static bool     g_pend = false; static uint16_t g_pend_seq = 0; static uint32_t g_pend_us = 0, g_pend_ms = 0; static bool g_pend_falha = false;
@@ -435,9 +436,9 @@ static void link_loop() {
 
     if (sou_w1()) {                                       // W1 manda o ritmo das fases
         if (!g_fase_ativa) {
-            if (agora - g_t_fase_tx >= 100) { g_t_fase_tx = agora; uint8_t a = g_fase; quadro_enviar(T_FASE, g_seq_tx++, &a, 1); }
+            if (agora - g_t_fase_tx >= 100) { g_t_fase_tx = agora; uint8_t a = g_fase; quadro_enviar(T_FASE, g_seq_fase++, &a, 1); }
         } else {
-            if (agora - g_t_keep >= 2000) { g_t_keep = agora; uint8_t a = g_fase; quadro_enviar(T_FASE, g_seq_tx++, &a, 1); }   // mantem a W2 sincronizada
+            if (agora - g_t_keep >= 2000) { g_t_keep = agora; uint8_t a = g_fase; quadro_enviar(T_FASE, g_seq_fase++, &a, 1); }   // mantem a W2 sincronizada (seq PROPRIA: antes usava a seq dos OIs e o receptor contava 'faltaram 1' a cada 2 s)
             if (agora - g_fase_t0 >= (uint32_t)T_FASE_S * 1000UL) { fase_encerrar(); g_fase++; g_fase_ativa = false; g_t_fase_tx = 0; }
         }
     }
