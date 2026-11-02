@@ -245,6 +245,9 @@ static void rst_enviar_tick(uint32_t agora) {
     static uint32_t t = 0;
     if (agora - t < 2000) return; t = agora;
     if (agora < 15000) return;                                      // boot recente (possivel laco de reinicio): so conta, nao envia
+    // SO ENVIA DEPOIS QUE A CAMERA NOVA APARECE: ela manda MSG_HORA (hora NTP) e e a unica que conhece o evento tipo 4 e o endpoint novo. Uma camera
+    // ANTIGA ignora o tipo 4 sem confirmar; o display reenviaria a cabeca da fila para sempre e os eventos de lavagem (debito/estorno) ficariam presos atras.
+    if (!g_hora_tem) return;
     if (g_evq_n > EVQ_MAX / 2) return;                              // fila de lavagem apertada: eventos de lavagem tem prioridade
     for (uint8_t k = 0; k < g_evq_n; k++) if (g_evq[k].tipo == 4) return;   // um por vez
     // 1) o registro principal mais antigo ainda nao enviado (reinicios antes das ocorrencias)

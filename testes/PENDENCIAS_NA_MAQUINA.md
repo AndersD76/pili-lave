@@ -220,3 +220,7 @@ Só observa e registra; **nenhuma decisão de movimento mudou**. Regras em `docs
 - W1 (`maquina_estados.h` e `nuvem_w1.h`, produção e cabo): ao concluir um ciclo local, o evento `wash-complete` leva `source` = `"socio"` (g_tipo_ciclo 2), `"bonus"` (3) ou `"remote"` (presencial). Builds: 960.695 B (produção) / 963.763 B (cabo). Display e câmera repassam o campo `source` sem mudança.
 - **Ordem**: backend primeiro (aceita `socio`/`bonus`; um backend antigo trataria `socio` como reserva de app e poderia confundir), depois a W1.
 - [ ] Validação: escolher na tela "sócio" (ou "bônus") para o próximo ciclo, concluir um ciclo local; no admin (Máquinas > resumo) aparece em Sócios (ou Bônus) com R$ 0,00 e Presencial não aumenta.
+
+### L.5 Trava de segurança do envio à nuvem (2026-11-02, dia da gravação)
+- Uma **câmera antiga** não conhece o evento tipo 4: não confirma, e o display reenviaria a cabeça da fila para sempre, **prendendo atrás dele os eventos de lavagem** (débito/estorno). Por isso a W1 só envia reinícios/ocorrências/retratos **depois de receber `MSG_HORA`** da câmera nova (`if (!g_hora_tem) return;` em `rst_enviar_tick`). Até lá o registro fica na NVS e no serial. Builds: W1 960.711 B / cabo 963.779 B.
+- Ordem de implantação continua: backend com o endpoint `reset-log` → câmera nova (OTA) → W1 já gravada começa a enviar sozinha. A W1 e a W2 podem ser gravadas antes sem risco.
