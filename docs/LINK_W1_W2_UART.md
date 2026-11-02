@@ -130,3 +130,11 @@ Gravar sempre com a máquina **parada e sem carro**, W1 e W2 ao mesmo tempo (as 
 6. **Display e câmera, busca e migração de canal:** confirmar o reconhecimento normal do display e da câmera; fazer **a migração completa de rede** (escolher rede nova, câmera -> W1 -> senha -> internet) e a de **re-sync** com o roteador mudando de canal; ver `[CANAL] migrando ... (esperando o display no canal novo)` e depois `[CANAL] ok`. **Testar também o caso ruim:** desligar o display durante a migração e ver `[CANAL] FALHOU ... voltei ao ...` em 12 s.
 7. **Tela de Wi-Fi do display:** `Canal N  W1: ok  W2: ok` (a W2 vem do status da W1).
 8. **Voltar atrás:** chave em 0 e regravar W1 e W2, ou o backup (seção 7.2).
+
+## Resultado do loopback na máquina (2026-11-02) — APROVADO nas duas placas
+Sketches `w1_teste_link` (COM24) e `w2_teste_link` (COM10), cada placa sozinha, jumper entre os bornes **TXD e RXD**, comando `L`:
+- **W1:** 100 quadros enviados, `ok=100 crc_ruim=0 eco_diferente=0 sem_eco=0 bytes_estranhos=0` → `RESULTADO: OK`.
+- **W2:** idem, `ok=100`, tudo zero → `RESULTADO: OK`.
+- Conclusão: **os bornes TXD e RXD das duas placas são mesmo GPIO 43 / GPIO 44 (UART0)** e o hardware está bom. O mapeamento do PR #25 de hennejg/waveshare-ESP32-S3-io, que a documentação oficial não confirma, está **validado** nas duas placas.
+- Gravações: upload verificado ("Hash of data verified"), `UploadSpeed=230400`. Observação do dia: a **leitura** (`read-flash`) da W1 cai com "Packet content transfer stopped" em trechos com muitos bytes `0xC0` (SLIP do stub do esptool 5.3.1); a gravação não é afetada. Cópia completa da W1 feita com o script de pedaços + `--no-stub` nos trechos difíceis (arquivo fora do git: `Documents\pili_backups_flash_2026-11-02\backup_w1_COM24_2026-11-02.bin`).
+- Próximo: par W1+W2 com a fiação cruzada, parado por 10 min (item 4 do roteiro), depois a Fase 2.
