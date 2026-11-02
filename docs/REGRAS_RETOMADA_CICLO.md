@@ -31,10 +31,11 @@ Obs. do Giovani: **X14 e X15 estão na W2**, então a máquina precisa saber se 
 - **G2 — Retomar exige carro; HOME exige carro ausente.** Retomada: **X15 lendo carro, estável 1500 ms**. HOME: X15 **sem carro**, estável 1500 ms, depois faz o HOME (regra que já existe).
 - **G3 — X10 é pré-requisito.** Em toda etapa com carro (exceto o modo SECO, X10 simulado) o **X10 lê o carro antes de começar cada processo** e continua lendo. Girar, terminar o giro e **perder o X10 não significa que saiu do carro**.
 - **G4 — Só sai do X10 andando.** Perder o X10 só vale se o carrinho **andou pelo menos 3 s** (Y14 ligado, X0 pulsando). Se saiu antes: **parar e esperar o X10 voltar** (1500 ms); voltou, continua o ciclo.
-- **G5 — X10 sumiu sem deslocamento.** Parar o movimento, esperar 1500 ms. Voltou: continua. Não voltou: conferir a comunicação (W2 viva? leitura atualizada?) antes de concluir que é real. Comunicação ok e X10 ausente: erro (resposta final em P4). **Reiniciar a placa só como último recurso e no máximo 1 vez por lavagem**, nunca como primeira resposta.
+- **G5 — X10 sumiu sem deslocamento (sem 3 s de Y14).** Pausar o movimento e esperar 1500 ms. Voltou: continua. Não voltou: conferir a comunicação (W2 viva? leitura atualizada?); comunicação boa e X10 ausente: **ERRO** (confirmado em 2026-11-02). "Erro" = o `auto_erro` padrão: para, evento de falha para a nuvem (o backend cancela e **estorna** a lavagem do app) e HOME pelo painel. **Reiniciar a placa não é a resposta** (decisão do Giovani: dar erro).
 - **G6 — X13 só com X10 ausente.** X13 com X10 ainda lido é contradição: parar, esperar 1500 ms; persistiu: erro. X13 sem X10: coerente; começa a voltar (sentido B) até reencontrar o X10 e continua a rotina.
 - **G7 — Carrinho parado na frente sem ver o X10 (após reinício):** esperar 1500 ms. X10 não voltou: voltar para trás (sentido B) até rever o X10 e continuar o ciclo. Chegou ao **X12 sem rever o X10: erro, aborta a lavagem** (cancela e estorna).
-- **G8 — Giro interrompido: voltar sempre à posição 1.** Ir a **X16 + X17** em **5 Hz** (evita passar do ponto) no sentido da seção 1, e só então recomeçar o giro e o ciclo. No giro normal e no triplo.
+- **G8 — Giro interrompido: voltar sempre à posição 1.** Ir a **X16 + X17** em **5 Hz** (evita passar do ponto) no sentido da seção 1, e só então recomeçar o giro e o ciclo. No giro normal e no triplo da **ida**.
+- **G8b — Exceção: giro triplo da VOLTA interrompido** (confirmado pelo Giovani em 2026-11-02): vai à posição 1 a 5 Hz e, em X16 + X17, **segue com o carrinho em sentido B até o X12 sem repetir o triplo**.
 - **G9 — Retomada depois de falta de energia.** No máximo **5 minutos** sem energia (decisão do Giovani, 2026-11-02; vale para o texto das placas, seção 8). Se a **W2 ficou viva** durante a interrupção, ela informa se o **X15 ou o X14 mudaram**; qualquer saída ou entrada de carro cancela a retomada. Se nenhuma das duas placas tinha energia, vale o limite de 5 min + X15 estável 1500 ms (possível melhoria: conferir a placa lida pela câmera).
 - **G10 — Delta parado.** Antes de religar qualquer saída, conferir que o Delta está em 0 Hz (leitura Modbus). Pré-requisito: o parâmetro de perda de comunicação do Delta.
 - **G11 — Alta Pressão (Y13) só liga** com o braço confirmado no lugar e o X10 lendo o carro.
@@ -52,7 +53,8 @@ Obs. do Giovani: **X14 e X15 estão na W2**, então a máquina precisa saber se 
 | **Giro 2→1 do triplo (ida)**, sentido B | idem | continuar em B até X16+X17 (5 Hz), recomeçar o giro seguinte |
 | Giro terminou na **posição 2**, carrinho **parado**, andou **< 3 s** | X10 lendo carro | seguir **para frente** até sair do X10 (≥ 3 s, G4) e continuar o processo |
 | **Carrinho andando para frente**, X10 já perdido (≥ 3 s) ou parado na frente | X15 com carro | G7: esperar 1500 ms; voltar (B) até o X10 e continuar |
-| **Giro 2→1** (depois de voltar ao X10) | X10 lendo | G8: continuar até X16 + X17 a 5 Hz, e então o carrinho volta ao X12 |
+| **Giro triplo da volta** (depois de voltar ao X10) | X10 lendo | G8b: ir à posição 1 a 5 Hz e seguir o carrinho em B até o X12, **sem repetir o triplo** |
+| **Giro 2→1 normal** (depois de voltar ao X10) | X10 lendo | G8: continuar até X16 + X17 a 5 Hz, e então o carrinho volta ao X12 |
 | Na **posição 1**, giro terminado, lendo X10 | X10, X16+X17 | seguir o processo (retorno do carrinho) até o **X12** |
 | Retorno final em andamento | X10 / X12 | seguir até o X12 |
 | Qualquer outro / sensor incoerente | — | G13: ocorrência + HOME + cancela/estorna |
@@ -75,12 +77,10 @@ Obs. do Giovani: **X14 e X15 estão na W2**, então a máquina precisa saber se 
 
 ## 7. Pendências
 
-Resolvidas em 2026-11-02: P2 (emergência pede toque), P3 (máx. 2 retomadas), volta do giro triplo (confirmada), R2/R5/X13/tempo de 5 min/HOME (confirmados).
+Todas as perguntas do rascunho foram respondidas em 2026-11-02 (P2 toque após emergência, P3 máx. 2 retomadas, P4 = erro padrão, P5 volta do triplo A, B, A e G8b, P6 diário da W2 para X14/X15: **sim**).
 
-- **P1** Leitura da posição 2 sem X17 (o Giovani corrige depois). Até lá a posição 2 só vale pela memória gravada.
-- **P4 (a confirmar)** X10 sumiu sem deslocamento e não voltou, com a comunicação boa. Resposta do Giovani (a confirmar se era para este caso): *ir à posição 1 a 5 Hz e, estando em X16 + X17, seguir em sentido B horizontal até o X12* (ou seja, tratar como retirada segura, sem insistir). Falta dizer se a lavagem é cancelada e estornada depois disso.
-- **P5b (a confirmar)** Mesma resposta, se era para o **giro triplo da volta**: interrompeu, vai à posição 1 a 5 Hz e **segue para o X12 sem repetir o triplo**? Isso difere da regra G8 (que recomeça o giro).
-- **P6 (esclarecimento enviado)** A W2 guarda um diário das mudanças de X14/X15 para a W1 saber, na retomada, se um carro saiu ou entrou enquanto só a W1 estava fora.
+- **P1 (do Giovani)** Leitura da posição 2 sem X17: o Giovani corrige depois. Até lá a posição 2 só vale pela memória gravada.
+- **Diário do X14/X15 na W2 (P6):** a W2 anota toda mudança do X14/X15 enquanto a W1 está fora; na retomada a W1 pergunta; qualquer saída/entrada de carro cancela a retomada.
 
 ## 8. Texto para as placas de instrução (enviar ao Claude web das placas)
 
