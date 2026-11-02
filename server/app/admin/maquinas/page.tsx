@@ -3,7 +3,7 @@ import { requireAdminPage } from "@/lib/admin";
 import { AdminNav } from "../nav";
 import MaquinasTabs from "./MaquinasTabs";
 import { divisaoCompleta, participacoesDaMaquina } from "@/lib/comissao";
-import { ESTADOS_AUTO, MOTIVOS_RESET } from "@/lib/resets";
+import { ESTADOS_AUTO, MOTIVOS_RESET, NOMES_OCORRENCIA } from "@/lib/resets";
 
 export const dynamic = "force-dynamic";
 
@@ -278,7 +278,7 @@ export default async function AdminMaquinas() {
   // Reinícios das placas (W1/W2) enviados pela máquina — últimos 30 dias, para o admin ver a saúde elétrica/de firmware.
   type PayloadReset = {
     machineId?: string; quem?: string; motivo?: number; motivoNome?: string; estado?: number | null; estadoNome?: string | null;
-    emCiclo?: boolean; upAntSeg?: number | null; total?: number | null; deliberado?: number; quandoReset?: string | null;
+    emCiclo?: boolean; upAntSeg?: number | null; total?: number | null; deliberado?: number; quandoReset?: string | null; chave?: string; cicloNvs?: boolean;
   };
   const reiniciosBrutos = await prisma.event.findMany({
     where: { type: "machine_reset", createdAt: { gte: new Date(Date.now() - 30 * 86_400_000) } },
@@ -293,6 +293,39 @@ export default async function AdminMaquinas() {
   const resetsW1 = reinicios.filter((r) => r.p.quem === "W1").length;
   const resetsW2 = reinicios.filter((r) => r.p.quem === "W2").length;
   const resetsEmCiclo = reinicios.filter((r) => r.p.emCiclo).length;
+
+  // Fase 0 da retomada: retrato da etapa de cada interrupção e ocorrências observadas (só registro).
+  type PayloadEtapa = {
+    chaveReset?: string; procNome?: string; giro?: number; giroDesc?: string; slot?: number; sub?: number;
+    entradasAtivas?: string[]; dx14?: number | null; dx15?: number | null; hz10?: number;
+  };
+  type PayloadOcorrencia = {
+    chave?: string; machineId?: string; tipo?: number; tipoNome?: string; estadoNome?: string | null; total?: number | null;
+    valor?: number | null; quandoOcorrencia?: string | null;
+  };
+  const desde30 = new Date(Date.now() - 30 * 86_400_000);
+  const [etapasBrutas, ocorrenciasBrutas] = await Promise.all([
+    prisma.event.findMany({ where: { type: "machine_etapa", createdAt: { gte: desde30 } }, orderBy: { createdAt: "desc" }, take: 400 }),
+    prisma.event.findMany({ where: { type: "machine_ocorrencia", createdAt: { gte: desde30 } }, orderBy: { createdAt: "desc" }, take: 100 }),
+  ]);
+  const etapaPorChave = new Map<string, PayloadEtapa>();
+  for (const e of etapasBrutas) {
+    const pe = (e.payload ?? {}) as PayloadEtapa;
+    if (pe.chaveReset) etapaPorChave.set(pe.chaveReset, pe);
+  }
+  const descEtapa = (e?: PayloadEtapa): string => {
+    if (!e) return "—";
+    const partes = [e.procNome ?? "?"];
+    if (e.giro) partes.push(`giro ${e.giro}/3`);
+    if (e.giroDesc) partes.push(e.giroDesc);
+    if (e.entradasAtivas?.length) partes.push(`sensores: ${e.entradasAtivas.join(" ")}`);
+    if (e.dx14 != null || e.dx15 != null) partes.push(`bordas X14/X15 na queda: ${e.dx14 ?? "?"}/${e.dx15 ?? "?"}`);
+    return partes.join(" · ");
+  };
+  const ocorrencias = ocorrenciasBrutas.map((e) => {
+    const po = (e.payload ?? {}) as PayloadOcorrencia;
+    return { at: po.quandoOcorrencia ? new Date(po.quandoOcorrencia) : e.createdAt, p: po, etapa: etapaPorChave.get(po.chave ?? "") };
+  });
 
   const lavadoresProps = lavadores.map((l) => ({ id: l.id, label: l.name ?? l.phone }));
   const participantesPossiveisProps = participantesPossiveis.map((u) => ({ id: u.id, label: u.name ?? u.phone }));
@@ -382,6 +415,7 @@ export default async function AdminMaquinas() {
                 <th>Placa</th>
                 <th>Motivo</th>
                 <th>Estado antes</th>
+                <th>Etapa</th>
                 <th>Ligada antes</th>
                 <th>Total da placa</th>
               </tr>
@@ -400,9 +434,48 @@ export default async function AdminMaquinas() {
                   <td style={r.p.emCiclo ? { color: "var(--erro, #e5484d)", fontWeight: 600 } : undefined}>
                     {r.p.estadoNome ?? (r.p.estado != null ? ESTADOS_AUTO[r.p.estado] : null) ?? "desconhecido"}
                     {r.p.emCiclo ? " (ciclo interrompido)" : ""}
+                    {r.p.cicloNvs ? " (ciclo em andamento antes da queda de energia)" : ""}
                   </td>
+                  <td style={{ fontSize: 13 }}>{descEtapa(etapaPorChave.get(r.p.chave ?? ""))}</td>
                   <td>{r.p.upAntSeg ? `${Math.floor(r.p.upAntSeg / 60)} min` : "—"}</td>
                   <td>{r.p.total ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <h2 className="section-title" style={{ marginTop: 40 }}>Ocorrências observadas (30 dias)</h2>
+      <p style={{ opacity: 0.7, fontSize: 13, margin: "12px 0" }}>
+        Contradições entre sensores que a máquina apenas <b>registra</b> (ainda não age sobre elas). Servem para ajustar as regras de retomada do ciclo. Cada tipo é registrado no máximo a cada 5 min por máquina.
+      </p>
+      {ocorrencias.length === 0 ? (
+        <p style={{ opacity: 0.7 }}>Nenhuma ocorrência registrada nos últimos 30 dias.</p>
+      ) : (
+        <div className="tbl-wrap">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Quando</th>
+                <th>Máquina</th>
+                <th>Ocorrência</th>
+                <th>Estado</th>
+                <th>Valor</th>
+                <th>Total do tipo</th>
+                <th>Etapa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ocorrencias.slice(0, 40).map((o, i) => (
+                <tr key={i}>
+                  <td>{fmtData(o.at)}</td>
+                  <td>{nomeMaquina.get(o.p.machineId ?? "") ?? "—"}</td>
+                  <td>{o.p.tipoNome ?? NOMES_OCORRENCIA[o.p.tipo ?? -1] ?? "—"}</td>
+                  <td>{o.p.estadoNome ?? "—"}</td>
+                  <td>{o.p.valor != null ? `${o.p.valor} ms de deslocamento` : "—"}</td>
+                  <td>{o.p.total ?? "—"}</td>
+                  <td style={{ fontSize: 13 }}>{descEtapa(o.etapa)}</td>
                 </tr>
               ))}
             </tbody>

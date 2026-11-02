@@ -186,6 +186,11 @@ Embaixo das abas aparece **"Reinícios das placas (30 dias)"**: quantas vezes a 
 - Se a placa que reiniciou foi a **W1** e havia uma lavagem do app em andamento, ela é **cancelada e o valor é devolvido ao saldo do cliente automaticamente**, e ele recebe um aviso. Não é reagendada: se quiser, o cliente reserva de novo pelo app. Se a que reiniciou foi a **W2**, a máquina pausa e retoma sozinha, e nada é cancelado.
 - Muitos "queda de tensão" apontam para fonte ou ruído elétrico; muitos "travou" apontam para o programa. Se a mesma máquina reinicia toda semana, avise o suporte.
 - A hora é a do reinício (a máquina pega a hora na internet). Se ela ainda estava sem relógio, aparece a hora em que o aviso chegou na nuvem.
+- A coluna **Etapa** mostra em que ponto da lavagem a máquina estava (processo, giro, sensores acesos). Se a energia caiu, aparece "ciclo em andamento antes da queda de energia". Os números "bordas X14/X15" mostram se o sensor de carro mudou enquanto só a W1 estava fora (útil para saber se um carro saiu ou entrou).
+
+### Ocorrências observadas
+
+Logo abaixo aparece **"Ocorrências observadas (30 dias)"**: situações em que dois sensores se contradizem (por exemplo, o X10 apagou sem a máquina andar). Por enquanto a máquina **só anota**, não age. Servem para afinar as regras de retomada da lavagem depois de uma queda. Se uma mesma ocorrência se repetir muito numa máquina, avise o suporte.
 
 ---
 

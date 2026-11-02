@@ -329,6 +329,13 @@ A W1 (e a W2, que avisa a W1 por `MSG_W2_BOOT`) guarda na NVS cada reinício: mo
 - Ordem de implantação (importante): backend → câmera (OTA) → W1/W2. Uma câmera antiga não reconhece o tipo 4 e não confirma; o display reenvia a cabeça da fila e os eventos de lavagem atrás dela esperariam.
 >>>>>>> 9f40be9 (Registro de reinicios das placas W1/W2: endpoint /api/machine/reset-log, aviso ao lavador e secao no admin)
 
+### 6.9c Fase 0 da retomada do ciclo: retrato da etapa e ocorrências (2026-11-02)
+Especificação das regras em `docs/REGRAS_RETOMADA_CICLO.md`. A Fase 0 **só observa e registra**, sem mudar nenhuma decisão de movimento. A mesma via do registro de reinícios (evento tipo 4, `POST /api/machine/reset-log`, `{key, info}`) leva mais dois tipos de texto, distinguidos pelo prefixo de `info`:
+- **Retrato da etapa** `J;p=7;q=12;i=3;g=2;d=1;m=4;x=a5f0;y=03c0;h=150;a=1;b=0` (`key "J<quem>-<seq>"`): `p` processo, `q` sub-estado, `i` índice da etapa, `g` giro triplo (0 = nenhum, 1..3), `d` giro (0 A→pos 2, 1 A→pos 1, 2 B→pos 2, 3 B→pos 1, 4 sem giro), `m` modelo, `x`/`y` entradas/saídas em hexadecimal (bit 0-7 = X0..X7 da W1, bit 8-15 = X10..X17 da W2), `h` frequência ×10 Hz, `a`/`b` bordas de X14/X15 na W2 enquanto só a W1 estava fora (255 = desconhecido). Vira `Event machine_etapa`, ligado ao reinício/ocorrência por `chaveReset` (mesma chave com "W" no lugar de "J").
+- **Ocorrência observada** `O;o=1;e=5;n=3;v=1200;t=<epoch>` (`key "W3-<seq>"`): O1 X10 apagou sem 3 s de deslocamento, O2 X13 com X10, O3 X12 e X13 juntos, O4 X15 sem carro durante o ciclo, O5 X10 apagou durante o giro (todas estáveis por 1500 ms, só em ciclo real, no máximo 1 por tipo a cada 5 min). Vira `Event machine_ocorrencia`. Não cancela nem avisa.
+- O reinício principal ganha `cicloNvs` (`k=1`): a máquina perdeu a energia e, pelo checkpoint da NVS, havia um ciclo em andamento. **Só registro**: o cancelamento com estorno continua restrito ao reinício da W1 com `c=1` (estado conhecido).
+- Painel: `/admin/maquinas` mostra a **Etapa** de cada reinício e a seção **"Ocorrências observadas (30 dias)"**. Idempotente pela chave; 200 também para texto ilegível. Testado no banco local (retrato, ocorrência, duplicados, texto ilegível, renderização).
+
 ### 6.10 Notificações push (`lib/push.ts`)
 Web Push com chaves VAPID. `avisarCliente()` manda pra todos os aparelhos inscritos de um usuário (limpa inscrições mortas automaticamente); `avisarAdmins()` manda pra todos os admins. Nunca derruba o fluxo principal se falhar — push é extra.
 

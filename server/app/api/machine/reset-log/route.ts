@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireMachine } from "@/lib/device";
 import { avisarAdmins, avisarCliente } from "@/lib/push";
-import { causaDoReset, interpretarReset } from "@/lib/resets";
+import { causaDoReset, horaPlausivel, interpretarEtapa, interpretarOcorrencia, interpretarReset } from "@/lib/resets";
 
 const Body = z.object({
   key: z.string().min(1).max(40), // chave única do reinício na placa ("W1-12"): torna o reenvio idempotente
@@ -34,6 +34,9 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ ok: false, ignorado: "corpo inválido" });
   const { key, info } = parsed.data;
 
+  // Fase 0 da retomada: retrato da etapa ("J;...") e ocorrências observadas ("O;..."): só registro, não cancela nem avisa.
+  if (info.startsWith("J;") || info.startsWith("O;")) return registrarFase0(auth.machine.id, key, info);
+
   const r = interpretarReset(info);
   if (!r) return NextResponse.json({ ok: false, ignorado: "info não reconhecida" });
 
@@ -59,6 +62,7 @@ export async function POST(req: NextRequest) {
       payload: {
         chave,
         machineId: auth.machine.id,
+        cicloNvs: r.cicloNvs,
         quem: r.quem,
         motivo: r.motivo,
         motivoNome: r.motivoNome,
@@ -144,4 +148,36 @@ export async function POST(req: NextRequest) {
   if (auth.machine.operadorId) void avisarCliente(auth.machine.operadorId, { ...aviso, url: "/app" });
 
   return NextResponse.json({ ok: true, canceladas, estornoCents });
+}
+
+/**
+ * Retrato da etapa (J) ou ocorrência observada (O). A chave do retrato é "J<quem>-<seq>": o evento principal correspondente tem a mesma
+ * chave com "W" no lugar do "J" (`chaveReset`), para o painel juntar os dois. Idempotente. Responde 200 também para conteúdo ilegível.
+ */
+async function registrarFase0(machineId: string, key: string, info: string) {
+  const chave = `${machineId}:${key}`;
+  const ja = await prisma.event.findFirst({
+    where: { type: { in: ["machine_etapa", "machine_ocorrencia"] }, payload: { path: ["chave"], equals: chave } },
+    select: { id: true },
+  });
+  if (ja) return NextResponse.json({ ok: true, duplicado: true });
+
+  if (info.startsWith("J;")) {
+    const e = interpretarEtapa(info);
+    if (!e) return NextResponse.json({ ok: false, ignorado: "etapa não reconhecida" });
+    await prisma.event.create({
+      data: { type: "machine_etapa", payload: { chave, chaveReset: `${machineId}:W${key.slice(1)}`, machineId, ...e } as object },
+    });
+    return NextResponse.json({ ok: true });
+  }
+  const o = interpretarOcorrencia(info);
+  if (!o) return NextResponse.json({ ok: false, ignorado: "ocorrência não reconhecida" });
+  const quando = horaPlausivel(o.quandoEpoch);
+  await prisma.event.create({
+    data: {
+      type: "machine_ocorrencia",
+      payload: { chave, machineId, ...o, quandoOcorrencia: quando ? quando.toISOString() : null } as object,
+    },
+  });
+  return NextResponse.json({ ok: true });
 }
