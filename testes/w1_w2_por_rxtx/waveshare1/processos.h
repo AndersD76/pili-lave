@@ -1336,6 +1336,8 @@ void processos_shift_timers(uint32_t delta) {
     _cf_t_pulso  += delta;
     _cr_t        += delta;   // carrinho REV ate X10
     _cr_t_x10_on += delta;
+    _cr_t_pulso  += delta;   // watchdogs do X0 (carro travado): sem isto uma pausa > 4 s dava CARRO TRAVADO ao retomar
+    _cx_t_pulso  += delta;
     _cx_t        += delta;   // carrinho REV ate X12
     _cx_t_ramp   += delta;   // rampa de desaceleracao do retorno (ao achar o X12)
     _cf_t_ramp   += delta;   // rampa de desaceleracao do avanco (apos perder X10)

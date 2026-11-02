@@ -46,7 +46,8 @@ static inline bool painel_prazo_vencido(uint32_t agora) { return g_armado_painel
 #define RETOMAR_PRESSAO_MS 2000
 static bool     _retomando = false;
 static uint32_t _ret_t0    = 0;
-bool            g_pausa_x10 = false;   // PAUSADO por falta do X10 durante o giro (ver x10_pausa_tick)
+bool            g_pausa_x10 = false;   // PAUSADO por falta do X10 no meio de uma etapa (ver x10_pausa_tick)
+bool            g_x10_segura = false;  // sem X10 antes de iniciar a etapa: a etapa NAO comeca (G3)
 static void auto_retomar_efetivo();
 
 // -----------------------------------------------------------------------
@@ -526,6 +527,7 @@ void auto_tick() {
                 auto_erro("RS-485: Delta sem resposta (6 escritas perdidas seguidas)");
                 break;
             }
+            if (g_x10_segura) break;      // G3: sem X10 a etapa nao comeca (x10_pausa_tick libera)
             executar_processo_tick();     // avanca a sub-maquina
             break;
         }
@@ -736,32 +738,50 @@ static void auto_retomar_efetivo() {
     DBG_PRINTF("[AUTO] RETOMADO (pausa=%ums deslocada)\n", (unsigned)delta);
 }
 
-// ---- PAUSA POR X10 NO GIRO (2026-11-02) ----
-// O X10 (carro sob a mesa) some durante um giro (carro saiu/foi movido, sensor): PARA o motor e DESLIGA as bombas (auto_pausar), espera o X10
-// voltar (1500 ms estavel) e RETOMA sozinho (religa as saidas, 2 s de pressao). Giro 1->2: a retomada rebobina ate a posicao 1 e refaz o giro
-// (processos.h, giro_rewind_tick). Sem X10 por X10_PAUSA_MAX_MS: ERRO (cancela e estorna). Nao vale no SECO nem nos testes tecnicos.
-#define X10_PERDIDO_MS     500UL      // X10 apagado por isso, durante o giro, para pausar (filtra o fantasma do jato de agua)
-#define X10_VOLTA_MS       1500UL     // X10 de volta e estavel por isso -> retoma
-#define X10_PAUSA_MAX_MS   60000UL    // 60 s pausado sem X10 -> erro
+// ---- X10 EM TODAS AS ETAPAS (regras G3/G4/G5 de docs/REGRAS_RETOMADA_CICLO.md, 2026-11-02) ----
+// Vale no ciclo com carro real (nao no SECO nem nos testes tecnicos). 'X10 ausente indevido' = X10 apagado sem o carrinho ter andado 3 s (Y14) desde
+// a ultima vez que o X10 foi visto com o carrinho parado (mesma conta da ocorrencia O1). Sair do X10 andando (>= 3 s) e normal e nao pausa.
+//  G3: antes de INICIAR cada etapa o X10 tem que ler o carro: sem ele a etapa NAO comeca (g_x10_segura) ate o X10 ficar estavel 1500 ms.
+//  G4/G5: no meio de uma etapa, X10 ausente indevido por 500 ms -> PAUSA (motor parado, bombas/solenoides desligados). X10 de volta e estavel
+//         1500 ms -> RETOMA sozinho (religa as saidas, 2 s de pressao, re-emite o movimento). Giro 1->2: rebobina ate a posicao 1 e refaz o giro.
+//  Sem X10 por 60 s (segurando ou pausado): ERRO (cancela e estorna).
+#define X10_PERDIDO_MS     500UL      // X10 apagado por isso para pausar (filtra o fantasma do jato de agua)
+#define X10_VOLTA_MS       1500UL     // X10 de volta e estavel por isso -> retoma / libera a etapa
+#define X10_PAUSA_MAX_MS   60000UL    // 60 s sem X10 -> erro
 bool giro_x10_pausa_marcar();
+int  proc_estado();
 void x10_pausa_tick(uint32_t agora) {
-    static uint32_t t_sem = 0, t_pausa = 0, t_volta = 0, t_msg = 0;
+    static uint32_t t_sem = 0, t_pausa = 0, t_volta = 0, t_msg = 0, t_ult = 0, y14_ms = 0, t_ok = 0, t_seg = 0;
+    uint32_t dt = t_ult ? agora - t_ult : 0; t_ult = agora; if (dt > 1000) dt = 0;
+    bool y14 = (g_io2.do_ & 0x08) != 0;
+    if (y14) y14_ms += dt; else if (X10) y14_ms = 0;           // deslocamento acumulado desde a ultima vez que o X10 foi visto com o carrinho parado
+    bool indevido = !X10 && y14_ms < 3000UL;
     bool vale = !g_teste_seco && !g_teste_rodando;
-    if (g_estado_auto == AUTO_PROCESSO && vale && g_giro_ativo) {
-        if (X10) t_sem = 0;
-        else {
+    if (g_estado_auto == AUTO_PROCESSO && vale) {
+        if (!g_x10_segura && indevido && proc_estado() == 0) {   // G3: a etapa ainda nao comecou
+            g_x10_segura = true; t_seg = agora ? agora : 1; t_ok = 0; t_sem = 0;
+            DBG_PRINTLN("[X10] sem X10 antes de iniciar a etapa: aguardando (nada liga ate o X10 voltar)");
+        }
+        if (g_x10_segura) {
+            if (X10) { if (!t_ok) t_ok = agora ? agora : 1; else if ((int32_t)(agora - t_ok) >= (int32_t)X10_VOLTA_MS) { g_x10_segura = false; DBG_PRINTLN("[X10] voltou e estavel: a etapa comeca"); } }
+            else t_ok = 0;
+            if ((int32_t)(agora - t_msg) >= 1000) { t_msg = agora; g_manual_msg = X10 ? "X10 voltou: iniciando..." : "Aguardando X10 (carro sob a mesa)"; g_manual_msg_ms = millis(); }
+            if (g_x10_segura && (int32_t)(agora - t_seg) >= (int32_t)X10_PAUSA_MAX_MS) { g_x10_segura = false; auto_erro("Sem X10 (carro sob a mesa) por 60 s - lavagem cancelada"); return; }
+        } else if (indevido) {                                     // G4/G5: no meio da etapa
             if (!t_sem) t_sem = agora ? agora : 1;
             if ((int32_t)(agora - t_sem) >= (int32_t)X10_PERDIDO_MS) {
                 t_sem = 0;
                 auto_pausar();                                  // para o Delta, desliga bombas/solenoides, guarda o movimento e o instante
-                bool rew = giro_x10_pausa_marcar();
-                if (rew) _pausa_mov = 0;                        // vai rebobinar: a retomada NAO re-emite o movimento antigo
+                bool rew = giro_x10_pausa_marcar();             // giro 1->2: a retomada rebobina (e nao re-emite o movimento antigo)
+                if (rew) _pausa_mov = 0;
                 g_pausa_x10 = true; t_pausa = agora; t_volta = 0;
-                DBG_PRINTF("[X10] perdido durante o giro -> PAUSADO (motor parado, bombas desligadas)%s\n", rew ? "; ao voltar: rebobina ate a posicao 1 e refaz o giro" : "");
+                DBG_PRINTF("[X10] ausente no meio da etapa (deslocamento %lu ms) -> PAUSADO (motor parado, bombas desligadas)%s\n", (unsigned long)y14_ms, rew ? "; ao voltar: rebobina ate a posicao 1 e refaz o giro" : "");
             }
+        } else {
+            t_sem = 0;
         }
     } else if (g_estado_auto != AUTO_PAUSADO) {
-        t_sem = 0;
+        t_sem = 0; g_x10_segura = false;
     }
     if (g_estado_auto == AUTO_PAUSADO && g_pausa_x10) {
         if ((int32_t)(agora - t_msg) >= 1000) { t_msg = agora; g_manual_msg = X10 ? "X10 voltou: retomando..." : "PAUSADO: sem X10 (carro sob a mesa)"; g_manual_msg_ms = millis(); }
