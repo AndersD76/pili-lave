@@ -10,7 +10,8 @@ import { precoEfetivo } from "@/lib/precos";
 const Body = z.object({
   reservationId: z.string().optional(),
   /** "remote" = terminou pelos botões físicos X1-X6, sem reserva de app —
-   *  lavagem PAGA EM DINHEIRO na hora (ver MSG_EVT no firmware). */
+   *  lavagem PAGA EM DINHEIRO na hora (ver MSG_EVT no firmware).
+   *  "socio" / "bonus" (firmware de 2026-11-02): mesma coisa, mas a lavagem NÃO foi paga na hora (sócio mensalista ou bônus de promoção). */
   source: z.string().optional(),
   programId: z.number().int().min(1).max(4).optional(),
 });
@@ -32,7 +33,10 @@ export async function POST(req: NextRequest) {
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   const wanted = parsed.success ? parsed.data.reservationId : undefined;
-  const remoto = parsed.success && parsed.data.source === "remote";
+  // tipo da lavagem local, quando o firmware informa: remote = presencial (dinheiro), socio, bonus
+  const TIPOS_LOCAIS: Record<string, "PRESENCIAL" | "SOCIO" | "BONUS"> = { remote: "PRESENCIAL", socio: "SOCIO", bonus: "BONUS" };
+  const tipoLocal = parsed.success && parsed.data.source ? TIPOS_LOCAIS[parsed.data.source] : undefined;
+  const remoto = tipoLocal !== undefined;
   const programIdRemoto = parsed.success ? parsed.data.programId : undefined;
 
   // Mesmo caso do car-entered: o id que o display manda pode ser de uma
@@ -51,11 +55,15 @@ export async function POST(req: NextRequest) {
       : null);
 
   if (!reservation) {
-    // retransmissão de um complete já processado?
-    const done = await prisma.reservation.findFirst({
-      where: { machineId: auth.machine.id, status: "COMPLETED", ...(wanted ? { id: wanted } : {}) },
-      orderBy: { completedAt: "desc" },
-    });
+    // retransmissão de um complete já processado? SÓ dá para saber quando a máquina manda o id da reserva. Sem id (lavagem presencial / sócio /
+    // bônus) NÃO se pode procurar "a última concluída da máquina": antes isso devolvia "dedup" para qualquer presencial assim que a máquina tivesse
+    // UMA lavagem de app concluída, e a lavagem presencial nunca era registrada (corrigido em 2026-11-02).
+    const done = wanted
+      ? await prisma.reservation.findFirst({
+          where: { machineId: auth.machine.id, status: "COMPLETED", id: wanted },
+          orderBy: { completedAt: "desc" },
+        })
+      : null;
     if (done) return NextResponse.json({ ok: true, reservationId: done.id, dedup: true });
 
     // Presencial (paga em dinheiro nos botões X1-X6, sem reserva nenhuma) —
@@ -63,11 +71,18 @@ export async function POST(req: NextRequest) {
     // retransmissão rara duplicando o registro é aceitável, é só um
     // contador pro lavador, não mexe em saldo/débito de ninguém).
     if (remoto && programIdRemoto) {
-      const amountCents = await precoEfetivo(programIdRemoto, auth.machine.stationId);
-      await prisma.lavagemPresencial.create({
+      // sócio e bônus não geram dinheiro na hora: contam como lavagem, mas com valor 0 (não entram no "deve repassar" do lavador)
+      const amountCents = tipoLocal === "PRESENCIAL" ? await precoEfetivo(programIdRemoto, auth.machine.stationId) : 0;
+      const lav = await prisma.lavagemPresencial.create({
         data: { machineId: auth.machine.id, programId: programIdRemoto, amountCents },
       });
-      return NextResponse.json({ ok: true, presencial: true });
+      if (tipoLocal !== "PRESENCIAL") {
+        // o tipo fica num Event (sem coluna nova): o resumo da máquina conta sócios e bônus por aqui
+        await prisma.event.create({
+          data: { type: "lavagem_tipo", payload: { lavagemId: lav.id, machineId: auth.machine.id, programId: programIdRemoto, tipo: tipoLocal } },
+        });
+      }
+      return NextResponse.json({ ok: true, presencial: true, tipo: tipoLocal });
     }
 
     await prisma.event.create({

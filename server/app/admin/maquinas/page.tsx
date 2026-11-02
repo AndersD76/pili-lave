@@ -105,6 +105,15 @@ export default async function AdminMaquinas() {
       })
     )
   );
+  // Sócios e bônus (firmware de 2026-11-02): a lavagem fica em LavagemPresencial com valor 0 e o tipo num Event "lavagem_tipo".
+  const tiposPorMaquina = await Promise.all(
+    machines.map((m) =>
+      prisma.event.findMany({
+        where: { type: "lavagem_tipo", createdAt: { gte: m.lastPaymentDate ?? new Date(0) }, payload: { path: ["machineId"], equals: m.id } },
+        select: { payload: true },
+      })
+    )
+  );
   // Aspirador desde o último fechamento — sempre pago pela carteira (nunca
   // em espécie), por isso entra só do lado "app" na divisão por escopo.
   const vacuumPorMaquina = await Promise.all(
@@ -173,6 +182,39 @@ export default async function AdminMaquinas() {
       divisaoAspirador = { participantes: porParticipante, totalAppCents };
     }
 
+    // RESUMO do fim da aba da máquina: lavagens por tipo x origem (presencial, app, sócios, bônus) e o relatório do lavador.
+    const sociosPorProg = new Map<number, number>();
+    const bonusPorProg = new Map<number, number>();
+    for (const ev of tiposPorMaquina[i]) {
+      const pl = (ev.payload ?? {}) as { programId?: number; tipo?: string };
+      if (!pl.programId) continue;
+      const alvo = pl.tipo === "SOCIO" ? sociosPorProg : pl.tipo === "BONUS" ? bonusPorProg : null;
+      if (alvo) alvo.set(pl.programId, (alvo.get(pl.programId) ?? 0) + 1);
+    }
+    const appPorProg = new Map(porProgramaPorMaquina[i].map((g) => [g.programId, { qtd: g._count._all, cents: g._sum.amountCents ?? 0 }]));
+    const presPorProg = new Map(presencialPorProgramaPorMaquina[i].map((g) => [g.programId, { qtd: g._count._all, cents: g._sum.amountCents ?? 0 }]));
+    const linhasResumo = programas.map((pr) => {
+      const pres = presPorProg.get(pr.id);
+      const so = sociosPorProg.get(pr.id) ?? 0;
+      const bo = bonusPorProg.get(pr.id) ?? 0;
+      const presencial = Math.max(0, (pres?.qtd ?? 0) - so - bo); // sócio/bônus também ficam em LavagemPresencial
+      const app = appPorProg.get(pr.id)?.qtd ?? 0;
+      const cents = (pres?.cents ?? 0) + (appPorProg.get(pr.id)?.cents ?? 0);
+      return { programa: pr.nome, presencial, app, socios: so, bonus: bo, total: presencial + app + so + bo, cents };
+    });
+    const totaisResumo = linhasResumo.reduce(
+      (t, l) => ({ presencial: t.presencial + l.presencial, app: t.app + l.app, socios: t.socios + l.socios, bonus: t.bonus + l.bonus, total: t.total + l.total, cents: t.cents + l.cents }),
+      { presencial: 0, app: 0, socios: 0, bonus: 0, total: 0, cents: 0 }
+    );
+    const lavadorDivisao = divisao?.participantes.find((p) => p.tipo === "LAVADOR");
+    const resumo = {
+      linhas: linhasResumo.map((l) => ({ ...l, valor: money(l.cents) })),
+      totais: { ...totaisResumo, valor: money(totaisResumo.cents) },
+      lavador: lavadorDivisao
+        ? { nome: userLabelMap.get(lavadorDivisao.userId ?? "") ?? "—", saldoCents: lavadorDivisao.saldoCents, saldo: money(Math.abs(lavadorDivisao.saldoCents)) }
+        : null,
+    };
+
     return {
       id: m.id,
       numero: m.numero,
@@ -189,6 +231,7 @@ export default async function AdminMaquinas() {
       vacuumPriceCents: m.vacuumPriceCents,
       vacuumDurationMin: m.vacuumDurationMin,
       valorDesdeFechamento: money(totalDesdeFechamentoPorMaquina[i]),
+      resumo,
       participantes: TIPOS_PARTICIPACAO.map((tipo) => {
         const p = participacoesPorMaquina[i].find((x) => x.tipo === tipo);
         return { tipo, userId: p?.userId ?? "", percentual: p?.percentual ?? 0 };

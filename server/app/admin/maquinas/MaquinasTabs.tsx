@@ -44,6 +44,13 @@ type DivisaoAspirador = {
   participantes: DivisaoAspiradorParticipante[];
 };
 
+type ResumoLinha = { programa: string; presencial: number; app: number; socios: number; bonus: number; total: number; valor: string };
+type Resumo = {
+  linhas: ResumoLinha[];
+  totais: { presencial: number; app: number; socios: number; bonus: number; total: number; valor: string };
+  lavador: { nome: string; saldoCents: number; saldo: string } | null;
+};
+
 type Maquina = {
   id: string;
   numero: number;
@@ -65,6 +72,7 @@ type Maquina = {
   divisao: Divisao | null;
   divisaoAspirador: DivisaoAspirador | null;
   historico: Lavagem[];
+  resumo: Resumo;
 };
 
 const NOME_TIPO: Record<number, string> = { 1: "Tipo 1", 2: "Tipo 2", 3: "Tipo 3", 4: "Tipo 4" };
@@ -450,6 +458,67 @@ function PainelMaquina({ m, lavadores, participantesPossiveis }: { m: Maquina; l
             </tbody>
           </table>
         </div>
+      )}
+
+      <h4 className="section-title" style={{ margin: "30px 0 10px" }}>
+        Resumo (desde o último fechamento)
+      </h4>
+      <div className="tbl-wrap">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Tipo de lavagem</th><th>Presencial</th><th>App</th><th>Sócios</th><th>Bônus</th><th>Total</th><th>Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {m.resumo.linhas.map((l) => (
+              <tr key={l.programa}>
+                <td>{l.programa}</td><td>{l.presencial}</td><td>{l.app}</td><td>{l.socios}</td><td>{l.bonus}</td>
+                <td style={{ fontWeight: 700 }}>{l.total}</td><td>{l.valor}</td>
+              </tr>
+            ))}
+            <tr>
+              <td style={{ fontWeight: 700 }}>Total</td>
+              <td style={{ fontWeight: 700 }}>{m.resumo.totais.presencial}</td>
+              <td style={{ fontWeight: 700 }}>{m.resumo.totais.app}</td>
+              <td style={{ fontWeight: 700 }}>{m.resumo.totais.socios}</td>
+              <td style={{ fontWeight: 700 }}>{m.resumo.totais.bonus}</td>
+              <td style={{ fontWeight: 700 }}>{m.resumo.totais.total}</td>
+              <td style={{ fontWeight: 700 }}>{m.resumo.totais.valor}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p style={{ color: "var(--aco-d)", fontSize: 12, margin: "8px 0 0" }}>
+        Sócios e bônus passam a ser contados quando a máquina informar o tipo da lavagem (atualização do firmware). Até lá eles entram em Presencial.
+        Sócios e bônus não geram dinheiro na hora, então têm valor R$ 0,00.
+      </p>
+
+      <h4 className="section-title" style={{ margin: "26px 0 10px" }}>Relatório do lavador (a pagar / a receber)</h4>
+      {m.resumo.lavador ? (
+        <div className="stats">
+          <div className={"stat" + (m.resumo.lavador.saldoCents < 0 ? " alerta" : "")}>
+            <div className="lab">Lavador: {m.resumo.lavador.nome}</div>
+            <div className="val">
+              {m.resumo.lavador.saldoCents === 0
+                ? "Sem saldo"
+                : m.resumo.lavador.saldoCents > 0
+                  ? `A receber ${m.resumo.lavador.saldo}`
+                  : `Deve repassar ${m.resumo.lavador.saldo}`}
+            </div>
+            <div className="sub">
+              {m.resumo.lavador.saldoCents < 0
+                ? "ele ficou com o dinheiro do presencial e deve a parte dos outros participantes"
+                : m.resumo.lavador.saldoCents > 0
+                  ? "o admin deve esse valor ao lavador"
+                  : "nada a acertar com o lavador desde o último fechamento"}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <p style={{ color: "var(--aco-d)", fontSize: 14 }}>
+          Nenhum lavador cadastrado como participante desta máquina: não há acerto a calcular.
+        </p>
       )}
     </div>
   );
