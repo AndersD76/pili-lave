@@ -302,7 +302,7 @@ static uint32_t    g_manual_msg_ms = 0;
 #define MANUAL_MAX_MS      20000              // teto de seguranca por acionamento
 
 #define HOME_FREQ_HZ10   400
-#define HOME_TIMEOUT_MS  25000
+#define HOME_TIMEOUT_MS  60000   // era 25000: com o braco longe do zero a busca em baixa velocidade (rampa ate o piso) levava ~18 s so para chegar perto; 2026-11-02 falhou aos 24,7 s com o braco ainda em movimento
 #define HOME_TIMEOUT_DESLOC_MS 50000
 #define HOME_X0_WD_MS    4000
 #define HOME_DESAC_FLOOR  50
