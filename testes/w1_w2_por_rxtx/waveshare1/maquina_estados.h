@@ -146,7 +146,7 @@ static void erro_registrar(const char* msg) {
     r.sens = (X14 ? 1 : 0) | (X15 ? 2 : 0) | (X10 ? 4 : 0) | (X12 ? 8 : 0) | (HOME_GIRO ? 16 : 0) | (X0 ? 64 : 0);
     r.vfd_mov = g_vfd_mov; r.vfd_freq = g_vfd_mov_freq;
     r.rs_ok = g_mb_ok; r.rs_zero = g_mb_zero; r.rs_curta = g_mb_curta; r.rs_crc = g_mb_crc;
-    r.tx_ok = g_tx_ok; r.tx_fail = g_tx_fail; r.w2_gap_ms = millis() - g_hb2; r.tx_travado = g_tx_travado ? 1 : 0;
+    r.tx_ok = g_tx_ok; r.tx_fail = g_tx_fail; r.w2_gap_ms = hb2_idade_ms(); r.tx_travado = g_tx_travado ? 1 : 0;
     char k[8]; snprintf(k, sizeof(k), "e%u", (unsigned)(r.n % 5));
     p.putBytes(k, &r, sizeof(r)); p.putUInt("n", r.n); p.end();
 }
@@ -197,7 +197,7 @@ static void auto_erro(const char* msg) {
 #define W2_PAUSA_MAX_MS    600000UL      // 10 min pausado sem a W2 -> erro (falha a reserva e estorna)
 bool            g_pausa_w2 = false;
 static uint32_t t_w2_pausa = 0, t_w2_volta = 0, t_w2_sil_ini = 0;
-static inline bool w2_stale() { return (millis() - g_hb2) > W2_STALE_PAUSA_MS; }
+static inline bool w2_stale() { return (hb2_idade_ms()) > W2_STALE_PAUSA_MS; }
 static inline bool radio_ruim() { return w2_stale() || g_tx_travado; }   // W2 muda OU o envio da W1 travado: mesma pausa segura
 
 // ---- VIGIA DO ENVIO POR RADIO (2026-10-31) ----
@@ -779,6 +779,20 @@ void recuperacao_tick() {
 
     // ---- recuperacao ativa: decide a fase pelo X15 ----
     if (!home_rodando()) modbus_refresh_io2_di();    // fora do home, leitura fresca aqui
+    // REAVALIACAO DO ZERO (2026-11-02, achado na maquina): a decisao "fora do zero" e tomada UMA vez, no boot. Se naquele instante os sensores estavam
+    // sem energia/ainda sem leitura (ordem de ligar dos 24 V), a W1 ficava presa pedindo HOME com o braco ja no zero. Enquanto ESPERA o botao HOME, se
+    // X16 (HOME_GIRO) + X12 (carrinho recuado) ficarem ativos e ESTAVEIS por 1500 ms, o zero esta confirmado pelos sensores: encerra a recuperacao.
+    {
+        static uint32_t t_zero = 0;
+        if (!g_rec_home_pedido && !g_rec_home_iniciado && !home_rodando() && HOME_GIRO && X12) {
+            if (!t_zero) t_zero = millis() ? millis() : 1;
+            else if (millis() - t_zero >= 1500UL) {
+                t_zero = 0; g_rec_estado = REC_CONCLUIDA; g_rec_tent = 0; SET_Y11(false); SET_Y12(false);
+                DBG_PRINTLN("[REC] sensores confirmam o ZERO (X16 + X12 estaveis por 1500 ms): recuperacao encerrada sem HOME");
+                return;
+            }
+        } else t_zero = 0;
+    }
     bool carro = X15;
 
     if (carro) {

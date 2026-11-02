@@ -154,6 +154,10 @@ static inline void w2_amostra_home(uint8_t di, uint32_t agora) {   // chamar DEN
     else     { g_x17_up = false; }
 }
 static volatile uint32_t g_hb2=0;
+// IDADE do ultimo quadro da W2 (ms). g_hb2 e gravado pela TAREFA de recepcao (callback da UART / do ESP-NOW) e lido pelo laco principal: se a tarefa grava um instante
+// um pouco MAIS NOVO que o millis() ja lido pelo laco, 'millis() - g_hb2' da negativo e, sem sinal, vira ~4 bilhoes: comm_perdida() dava TRUE com o link perfeito
+// (achado na maquina em 2026-11-02: HOME FALHOU: comunicacao com 29 ms desde o ultimo quadro). Diferenca negativa = 'acabou de chegar' = 0.
+static inline uint32_t hb2_idade_ms() { int32_t d = (int32_t)(millis() - g_hb2); return d < 0 ? 0 : (uint32_t)d; }
 static volatile bool g_hora_tem = false; static volatile uint32_t g_hora_epoch = 0, g_hora_ms = 0;   // relogio vindo da camera (MSG_HORA); 0/false = sem hora
 static volatile bool g_w2d_novo = false; static MsgW2Diario g_w2d_rx;   // diario do X14/X15 da W2 (o callback so copia; reset_log_w1.h processa)
 static volatile bool g_w2boot_novo = false; static MsgW2Boot g_w2boot_rx;   // W2 avisou que reiniciou (na versao do cabo ainda nao ha quadro LT_ para isso: fica sempre falso)
@@ -249,12 +253,12 @@ void alarme_modbus(const char* msg) {
 
 // ---- Watchdog de comunicacao com a Waveshare 2 ----
 bool comm_perdida() {
-    return (millis() - g_hb2) > COMM_TIMEOUT_MS;
+    return (hb2_idade_ms()) > COMM_TIMEOUT_MS;
 }
 #define WAVE2_ALARME_MS 60000UL
 static bool g_alarme_wave2_ativo = false;
 static void wave2_alarme_tick() {
-    bool perdida = (millis() - g_hb2) > WAVE2_ALARME_MS;
+    bool perdida = (hb2_idade_ms()) > WAVE2_ALARME_MS;
     if (perdida) {
 #if LINK_W1_W2_UART
         if (g_estado_auto != AUTO_ERRO) alarme_modbus("Waveshare 2 sem contato (cabo)");
@@ -393,7 +397,7 @@ void home_tick() {
         if (millis() - g_home_t0 > HOME_TIMEOUT_MS) {
             home_parar_tudo(); g_home_estado=HOME_FALHA; g_home_msg="HOME FALHOU: giro nao achado"; return;
         }
-        if (comm_perdida()) { home_parar_tudo(); g_home_estado=HOME_FALHA; g_home_msg="HOME FALHOU: comunicacao"; return; }
+        if (comm_perdida()) { home_parar_tudo(); g_home_estado=HOME_FALHA; g_home_msg="HOME FALHOU: comunicacao"; ocr_externa(6, (uint16_t)min<uint32_t>(hb2_idade_ms(), 65000UL)); return; }   // 2026-11-02: registra a ocorrencia (sem quadro da W2 por mais de COMM_TIMEOUT_MS durante o HOME)
         return;
     }
     static uint32_t t_le = 0;
@@ -567,7 +571,7 @@ static void status_enviar() {
     s.home_estado  = (uint8_t)home_estado();
     s.bomba_on     = (g_teste_bomba ? 1 : 0) | (g_teste_seco ? 0 : 2);   // bit0 = bomba ON, bit1 = CARRO REAL
     s.rodando      = g_teste_rodando ? 1 : 0;
-    s.w2_ok        = ((millis() - g_hb2) <= COMM_TIMEOUT_MS) ? 1 : 0;
+    s.w2_ok        = ((hb2_idade_ms()) <= COMM_TIMEOUT_MS) ? 1 : 0;
     s.io1_di = g_io1.di; s.io2_di = g_io2.di;
     s.vfd_freq_x100 = (uint16_t)(g_vfd_freq * 100);
     s.ciclos_ok = g_teste_ok; s.ciclos_erro = g_teste_erro;
@@ -590,7 +594,7 @@ static void status_enviar() {
     const char* m = "";
     if (g_estado_auto == AUTO_ERRO && g_estado.msg_alarme) m = g_estado.msg_alarme;
     else if (g_estado_auto == AUTO_PAUSADO && g_pausa_w2)   m = g_tx_travado ? "PAUSADO por falha de radio (retoma sozinho)" : "PAUSADO por falha W2 (retoma sozinho)";
-    else if (g_estado_auto >= AUTO_CARRO_ENTRANDO && g_estado_auto <= AUTO_INICIANDO && (millis() - g_hb2) > 1500) m = "Aguardando a W2 (sem contato)";
+    else if (g_estado_auto >= AUTO_CARRO_ENTRANDO && g_estado_auto <= AUTO_INICIANDO && (hb2_idade_ms()) > 1500) m = "Aguardando a W2 (sem contato)";
     else if (g_delta_mudo && g_estado_auto == AUTO_IDLE)    m = "Delta (inversor) sem resposta no RS-485: confira energia e cabo";
     else if (recuperacao_mensagem())                        m = recuperacao_mensagem();
     else if (home_estado() != 0)                            m = home_mensagem();
@@ -1034,7 +1038,7 @@ void canal_tick() {
         DBG_PRINTF("[CANAL] migrando %u -> %u (esperando a W2)\n", (unsigned)g_can_ant, (unsigned)n);
         return;
     }
-    if (g_hb2 != g_can_hb_antes && (millis() - g_hb2) < 600) {                              // W2 apareceu no canal novo
+    if (g_hb2 != g_can_hb_antes && (hb2_idade_ms()) < 600) {                              // W2 apareceu no canal novo
         canal_salvar(g_can_dest);
         canal_envia(MAC_DISPLAY, g_can_dest, 4);                                            // "oi" para o display
         DBG_PRINTF("[CANAL] ok: no canal %u (salvo)\n", (unsigned)g_can_dest);
@@ -1180,7 +1184,7 @@ void controle_tick() {
     static uint32_t t_rec = 0;
     if (millis() - t_rec >= 400) {
         t_rec = millis();
-        if ((millis() - g_hb2) <= COMM_TIMEOUT_MS) {
+        if ((hb2_idade_ms()) <= COMM_TIMEOUT_MS) {
             uint8_t cmd = (uint8_t)g_io2.do_, real = g_w2_do_real;
             uint8_t dif = (cmd ^ real) & (uint8_t)~(1 << 4);
             for (uint8_t ch = 0; ch < 8; ch++) {

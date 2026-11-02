@@ -322,6 +322,18 @@ static void ocr_tick(uint32_t agora) {
     }
 }
 
+// Ocorrencia registrada por OUTRO trecho do firmware (ex.: O6 = HOME falhou por comunicacao com a W2; valor = ms sem quadro). No maximo 1 por minuto por tipo.
+void ocr_externa(uint8_t tipo, uint16_t valor) {
+    static uint32_t ult[8] = {};
+    uint32_t agora = millis();
+    if (tipo >= 8) return;
+    if (ult[tipo] && agora - ult[tipo] < 60000UL) return;
+    ult[tipo] = agora ? agora : 1;
+    RstEtapa et; rst_capturar(et);
+    rst_adicionar(3, tipo, (uint8_t)g_estado_auto, RST_F_SNAP | RST_F_EST_OK, 0, 0, agora / 1000UL, &et, valor);
+    rst_salvar();
+}
+
 // Chamado a cada volta do loop: retrato RTC (para o proximo reset), checkpoint da NVS, W2, ocorrencias e envio.
 void rst_tick() {
     uint32_t agora = millis(), s = agora / 1000UL;
