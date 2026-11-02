@@ -241,7 +241,7 @@ Só observa e registra; **nenhuma decisão de movimento mudou**. Regras em `docs
 - Display ↔ W1: `[NUVEM] ordens ... idade=1s` (ESP-NOW ok).
 
 **Pendências**
-- [ ] **IO1 NÃO CONFIRMADO**: multímetro em IO1/GND leu 0,02 V fixo (esperado alternar 0↔3,3 V a cada 3 s). O código roda (conferido); provável que o borne "IO1" não seja o GPIO 1 (a doc da Waveshare não lista os pinos desse conector). Plano: sketch de leitura (só entradas) que diz qual GPIO cai quando o borne vai ao GND. Só importa para o supervisor externo.
+- [x] **IO1 CONFIRMADO em 2026-11-02 (informado pelo Giovani depois, na máquina: 'o IO1 está funcionando')**. Medida original, que não se reproduziu:  multímetro em IO1/GND leu 0,02 V fixo (esperado alternar 0↔3,3 V a cada 3 s). O código roda (conferido); provável que o borne "IO1" não seja o GPIO 1 (a doc da Waveshare não lista os pinos desse conector). Plano: sketch de leitura (só entradas) que diz qual GPIO cai quando o borne vai ao GND. Só importa para o supervisor externo.
 - [ ] **Câmera**: conferir energia/Wi-Fi; depois do OTA a W1 mostra `flags=4` (nuvem online) e passa a enviar o histórico de reinícios.
 - [ ] **Religar disjuntores** (inversores/bombas) e validar: HOME obrigatório pelo display, ciclo em SECO, depois ciclo real. Conferir no serial `[DELTA] voltou a responder`, `[RS485] ok`.
 - [ ] Conferir no admin (Máquinas > Reinícios das placas) quando a câmera nova enviar.
