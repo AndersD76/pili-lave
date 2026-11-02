@@ -515,7 +515,7 @@ void auto_tick() {
                 String resId = nvs_get_last_res_id();
                 bool veio_do_app = resId.length() > 0;
                 if (veio_do_app) backend_evt_wash_complete(g_estado.programa_sel, "");
-                else              backend_evt_wash_complete(g_estado.programa_sel, "remote");
+                else              backend_evt_wash_complete(g_estado.programa_sel, g_tipo_ciclo == 2 ? "socio" : g_tipo_ciclo == 3 ? "bonus" : "remote");   // 2026-11-02: o backend conta socios e bonus (valor 0); "remote" = presencial em dinheiro
                 // Quebra por origem, só pra lista da tela (ver nvs_manager.h)
                 if (veio_do_app) nvs_inc_prog_app(g_estado.programa_sel);
                 else              nvs_inc_prog_pres(g_estado.programa_sel);

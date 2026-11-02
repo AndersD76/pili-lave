@@ -215,3 +215,8 @@ Só observa e registra; **nenhuma decisão de movimento mudou**. Regras em `docs
 - [ ] Validação (máquina em SECO, depois ciclo real): o serial da W1 mostra `[RST] ... etapa: proc=... giro=...` depois de um reinício em ciclo; `[OCR] O1 ...` quando houver ocorrência; `[RST] #N: bordas durante a queda da W1: X14=.. X15=..` depois do boot; no admin, a coluna "Etapa" e a seção "Ocorrências observadas".
 - [ ] Conferir se O1..O5 disparam em ciclo NORMAL (sem falha): se disparar sempre, anotar o `valor`/etapa: é a calibração das regras (não é defeito da máquina).
 - Limite conhecido: sem a hora (câmera sem internet) as ocorrências sobem com a hora de chegada.
+
+### L.4 Sócio e bônus no wash-complete (2026-11-02) — compilado, NÃO gravado
+- W1 (`maquina_estados.h` e `nuvem_w1.h`, produção e cabo): ao concluir um ciclo local, o evento `wash-complete` leva `source` = `"socio"` (g_tipo_ciclo 2), `"bonus"` (3) ou `"remote"` (presencial). Builds: 960.695 B (produção) / 963.763 B (cabo). Display e câmera repassam o campo `source` sem mudança.
+- **Ordem**: backend primeiro (aceita `socio`/`bonus`; um backend antigo trataria `socio` como reserva de app e poderia confundir), depois a W1.
+- [ ] Validação: escolher na tela "sócio" (ou "bônus") para o próximo ciclo, concluir um ciclo local; no admin (Máquinas > resumo) aparece em Sócios (ou Bônus) com R$ 0,00 e Presencial não aumenta.

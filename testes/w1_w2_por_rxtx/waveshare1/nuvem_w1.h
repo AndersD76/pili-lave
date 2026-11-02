@@ -73,7 +73,8 @@ void backend_evt_car_entered() {
 }
 void backend_evt_wash_complete(uint8_t programId, const String& source) {
     EvtRec e = {}; e.tipo = 2; e.prog = programId;
-    if (source == "remote" || g_res_ciclo[0] == 0) strncpy(e.source, "remote", sizeof(e.source) - 1);   // local: sem reserva
+    if (source == "socio" || source == "bonus") strncpy(e.source, source.c_str(), sizeof(e.source) - 1);   // sem dinheiro na hora (backend conta, valor 0)
+    else if (source == "remote" || g_res_ciclo[0] == 0) strncpy(e.source, "remote", sizeof(e.source) - 1);   // local: sem reserva
     else                                           strncpy(e.res, g_res_ciclo, sizeof(e.res) - 1);        // app: reserva
     evq_push(e);
     DBG_PRINTF("[EVT] wash-complete enfileirado prog=%u src=%s\n", (unsigned)programId, e.source[0] ? e.source : "app");
