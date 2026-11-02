@@ -201,7 +201,7 @@ void nuvem_tick() {
         if (g_estado_auto == AUTO_IDLE) g_t_app_armado = 0;
         if (g_t_app_armado && nuvem_res_ativa() &&
             (g_estado_auto == AUTO_AGUARDA_CARRO || g_estado_auto == AUTO_CARRO_ENTRANDO || g_estado_auto == AUTO_AGUARDA_POS) &&
-            (agora - g_t_app_armado) >= APP_POSICAO_MAX_MS) {
+            (int32_t)(agora - g_t_app_armado) >= (int32_t)APP_POSICAO_MAX_MS) {   // COM SINAL: g_t_app_armado pode ser mais novo que 'agora' (setado neste mesmo tick por nuvem_processar_start)
             DBG_PRINTF("[NUVEM] reserva %s: carro nao chegou na posicao (X15) em 3 min -> cancela esta lavagem e devolve a vaga para a fila\n", g_res_ciclo);
             backend_evt_fault("X15_POSICAO: carro nao posicionou em 3 min");              // ANTES de limpar a reserva (o evento leva o id dela); o backend reenfileira
             g_manual_msg = "Reserva do app cancelada: carro nao posicionou em 3 min"; g_manual_msg_ms = millis();
