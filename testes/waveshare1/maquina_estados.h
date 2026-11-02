@@ -39,6 +39,7 @@ static bool     x14_estava_ativo = false;
 // Prazo nos estados CARRO_ENTRANDO / AGUARDA_POS (2026-11-01): ciclo armado SO por pulso do painel (sem reserva do app) que, depois de o carro
 // passar pelo X14, nao chega na posicao (X15) em PAINEL_ARMADO_MAX_MS (3 min) e desarmado. (Em 30/10 um ciclo assim ficou 16 min no AGUARDA_POS
 // com o verde aceso e bloqueou uma reserva paga.) Ciclos do app e do display NAO entram nesta regra.
+#define X10_ESPERA_MAX_MS 60000UL   // sem X10 por 60 s antes de iniciar o processo -> erro
 static inline bool painel_prazo_vencido(uint32_t agora) { return g_armado_painel && !nuvem_res_ativa() && (agora - t_x14_desligou) >= PAINEL_ARMADO_MAX_MS; }
 // CONTINUAR apos pausa: religa bombas/espumas/secador e ESPERA 2 s (restabelece a pressao) antes de
 // retomar o movimento. Espera sem bloquear o loop; PARAR/CANCELAR a interrompem (teste_parar zera).
@@ -372,16 +373,23 @@ void auto_tick() {
         } else {
             _t_x15_zero = 0;              // X15 voltou -> reinicia o debounce
         }
-        // X10 (carro sob a mesa) OBRIGATORIO no ciclo com carro real (2026-11-02: sem carro, com o X15 acionado a mao, o processo rodou ate o
-        // CARRO TRAVADO no retorno do X10). Sem X10 por 1500 ms seguidos nos 6 s da luz vermelha -> erro ANTES de ligar qualquer bomba/movimento.
-        // No SECO (teste tecnico, X10 simulado) nao se aplica.
-        static uint32_t _t_x10_ok = 0;
-        if ((int32_t)(_t_x10_ok - t_estado) < 0) _t_x10_ok = t_estado;     // (re)inicia a contagem a cada entrada neste estado
-        if (g_teste_seco || X10) _t_x10_ok = agora;
-        else if ((int32_t)(agora - _t_x10_ok) >= 1500) {
-            _t_x10_ok = 0;
-            auto_erro("Sem carro sob a mesa (X10) — ciclo nao iniciado");
-            return;
+        // X10 (carro sob a mesa) OBRIGATORIO no ciclo com carro real. Sem X10 o ciclo ESPERA (como numa pausa): a luz vermelha NAO conta, nada se
+        // move e nenhuma bomba liga; quando o X10 aparece, os 6 s recomecam e o ciclo segue. Se o X10 nao vier em X10_ESPERA_MAX_MS: ERRO.
+        // No SECO (teste tecnico, X10 simulado) nao se aplica. (2026-11-02: sem carro, com o X15 acionado a mao, o processo rodou ate travar.)
+        static uint32_t _t_x10_ini = 0;               // instante em que comecou a esperar o X10 (0 = nao esta esperando)
+        static uint32_t _t_x10_msg = 0;
+        if (g_teste_seco || X10) {
+            if (_t_x10_ini) { DBG_PRINTLN("[AUTO] X10 voltou: o ciclo segue (6 s da luz vermelha recomecam)"); t_estado = agora; }
+            _t_x10_ini = 0;
+        } else {
+            if (!_t_x10_ini) { _t_x10_ini = agora ? agora : 1; DBG_PRINTLN("[AUTO] sem X10 (carro sob a mesa): aguardando antes de iniciar o processo"); }
+            t_estado = agora;                         // segura a contagem dos 6 s
+            if ((int32_t)(agora - _t_x10_msg) >= 1000) { _t_x10_msg = agora; g_manual_msg = "Aguardando X10 (carro sob a mesa)"; g_manual_msg_ms = millis(); }
+            if ((int32_t)(agora - _t_x10_ini) >= (int32_t)X10_ESPERA_MAX_MS) {
+                _t_x10_ini = 0;
+                auto_erro("Sem carro sob a mesa (X10) apos 60 s - ciclo nao iniciado");
+                return;
+            }
         }
     }
 
