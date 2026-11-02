@@ -103,6 +103,7 @@ export const NOMES_OCORRENCIA: Record<number, string> = {
   3: "X12 e X13 juntos",
   4: "X15 sem carro durante o ciclo",
   5: "X10 apagou durante o giro",
+  6: "HOME falhou: sem comunicação com a W2",
 };
 
 /** d: 0 giro A (anti-horário) rumo à posição 2, 1 A rumo à 1, 2 B (horário) rumo à 2, 3 B rumo à 1, 4 sem giro. */
