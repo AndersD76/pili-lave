@@ -224,3 +224,24 @@ Só observa e registra; **nenhuma decisão de movimento mudou**. Regras em `docs
 ### L.5 Trava de segurança do envio à nuvem (2026-11-02, dia da gravação)
 - Uma **câmera antiga** não conhece o evento tipo 4: não confirma, e o display reenviaria a cabeça da fila para sempre, **prendendo atrás dele os eventos de lavagem** (débito/estorno). Por isso a W1 só envia reinícios/ocorrências/retratos **depois de receber `MSG_HORA`** da câmera nova (`if (!g_hora_tem) return;` em `rst_enviar_tick`). Até lá o registro fica na NVS e no serial. Builds: W1 960.711 B / cabo 963.779 B.
 - Ordem de implantação continua: backend com o endpoint `reset-log` → câmera nova (OTA) → W1 já gravada começa a enviar sozinha. A W1 e a W2 podem ser gravadas antes sem risco.
+
+## M. Gravação na máquina em 2026-11-02 (resultado)
+**Gravado e verificado ("Hash of data verified")**
+- **W2 e W1: versão de PRODUÇÃO POR CABO** (`testes/w1_w2_por_rxtx/waveshare2` e `waveshare1`, UploadSpeed 230400) com watchdogs, HOME obrigatório, registro de reinícios/Fase 0, sócio/bônus, LT_DIARIO (diário do X14/X15) e aviso de reinício da W2 pelo uptime do LT_HB.
+- **Display (COM11):** `testes/display` com `PartitionScheme=huge_app,PSRAM=opi,FlashSize=16M` (a tabela de partição que já estava nele: nvs 0x9000/20 KB, app0 0x10000/3 MB, spiffs, coredump). A configuração dele (NVS) foi preservada. Compilação a frio levou 17 min (travou uma vez, foi refeita com `--build-path` novo).
+- **Câmera v7 publicada por OTA** (`camera.bin` = firmware_camera compilado, 1.211.504 B; `camera-version.json` = 7; sha256 conferido no servidor). Ela se atualiza em até 10 min **depois de conectar na internet**. Na gravação a câmera ainda estava offline (a W1 mostra `[NUVEM] ... flags=0`).
+- **Backend** em produção: reset-log (reinícios, retrato, ocorrências, estorno por reinício da W1), resumo/Visão geral, alertas sem repetição, texto do "voltou".
+
+**Cópias de segurança (fora do git):** pasta `Documentos\pili_backups_flash_2026-11-02` (W1 16 MB, display 4 MB; a W2 não teve cópia completa: o firmware antigo dela está em `backup_atual/bin/w2`).
+
+**Validações feitas**
+- Loopback TXD/RXD: **OK nas duas placas** (GPIO43/44).
+- Par por cabo, 10 min parado: zero CRC/timeout/truncado/espúrio/erro de UART, ida e volta máx. 26,5 ms. Os "perdidos" do teste eram artefato do sketch (T_FASE consumia a seq dos OIs; corrigido).
+- Tráfego real em produção por cabo: ~13.000 quadros em 44 min, **tudo zero**, silêncio máx. 200 ms.
+- Display ↔ W1: `[NUVEM] ordens ... idade=1s` (ESP-NOW ok).
+
+**Pendências**
+- [ ] **IO1 NÃO CONFIRMADO**: multímetro em IO1/GND leu 0,02 V fixo (esperado alternar 0↔3,3 V a cada 3 s). O código roda (conferido); provável que o borne "IO1" não seja o GPIO 1 (a doc da Waveshare não lista os pinos desse conector). Plano: sketch de leitura (só entradas) que diz qual GPIO cai quando o borne vai ao GND. Só importa para o supervisor externo.
+- [ ] **Câmera**: conferir energia/Wi-Fi; depois do OTA a W1 mostra `flags=4` (nuvem online) e passa a enviar o histórico de reinícios.
+- [ ] **Religar disjuntores** (inversores/bombas) e validar: HOME obrigatório pelo display, ciclo em SECO, depois ciclo real. Conferir no serial `[DELTA] voltou a responder`, `[RS485] ok`.
+- [ ] Conferir no admin (Máquinas > Reinícios das placas) quando a câmera nova enviar.
