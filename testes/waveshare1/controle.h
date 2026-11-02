@@ -582,6 +582,7 @@ static void status_enviar() {
     const char* m = "";
     if (g_estado_auto == AUTO_ERRO && g_estado.msg_alarme) m = g_estado.msg_alarme;
     else if (g_estado_auto == AUTO_PAUSADO && g_pausa_w2)   m = g_tx_travado ? "PAUSADO por falha de radio (retoma sozinho)" : "PAUSADO por falha W2 (retoma sozinho)";
+    else if (g_estado_auto == AUTO_PAUSADO && g_pausa_x10)  m = "PAUSADO: sem X10 (carro sob a mesa) - retoma sozinho";
     else if (g_estado_auto >= AUTO_CARRO_ENTRANDO && g_estado_auto <= AUTO_INICIANDO && (hb2_idade_ms()) > 1500) m = "Aguardando a W2 (sem contato)";
     else if (g_delta_mudo && g_estado_auto == AUTO_IDLE)    m = "Delta (inversor) sem resposta no RS-485: confira energia e cabo";
     else if (recuperacao_mensagem())                        m = recuperacao_mensagem();

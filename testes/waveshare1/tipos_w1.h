@@ -115,6 +115,7 @@ void nuvem_res_limpar();
 bool nuvem_res_ativa();
 extern bool g_armado_painel;   // ciclo armado por PULSO do painel/controle remoto (expira sem carro; ver auto_tick)
 extern bool g_pausa_w2;        // true = o ciclo esta PAUSADO porque a W2 sumiu (retoma sozinho quando ela voltar)
+extern bool g_pausa_x10;       // true = o ciclo esta PAUSADO porque o X10 (carro sob a mesa) sumiu durante o giro (retoma sozinho quando voltar)
 bool recuperacao_fase1();      // recuperacao de boot esperando retirar o veiculo (X15 ocupada): libera o MANUAL
 String nvs_get_last_res_id();
 bool licenca_bloqueada();

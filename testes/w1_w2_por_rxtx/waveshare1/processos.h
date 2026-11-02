@@ -216,9 +216,63 @@ static int giro_parar_e_confirmar(int ret_final) {
     return SUB_RUN;
 }
 
+// ---- REBOBINAR APOS PAUSA POR X10 (regra G8 de docs/REGRAS_RETOMADA_CICLO.md, 2026-11-02) ----
+// X10 perdido NO MEIO de um giro 1->2: a retomada NAO continua de onde parou. Volta a posicao 1 (X16+X17 juntos) a 5 Hz no sentido OPOSTO do
+// giro e RECOMECA o giro. Giro 2->1 (dest_home) ou ja parando: a retomada normal serve (ele ja vai para a posicao 1).
+#define GIRO_REWIND_HZ10    50        // 5 Hz
+#define GIRO_REWIND_MAX_MS  30000UL   // nao achou X16+X17 em 30 s -> erro
+bool g_giro_rewind = false;
+static uint8_t  _gr_st = 0;
+static uint32_t _gr_t = 0, _gr_t0 = 0, _gr_t17 = 0, _gr_t16 = 0;
+bool giro_x10_pausa_marcar() {   // chamado ao PAUSAR por X10; true = a retomada deve rebobinar (e nao re-emitir o movimento)
+    g_giro_rewind = g_giro_ativo && !_giro_dest_home && _giro_fase == GIRO_FASE_GIRO;
+    _gr_st = 0;
+    return g_giro_rewind;
+}
+static int giro_rewind_tick() {
+    uint32_t agora = millis();
+    bool x17r = (g_viv2 & 0x40) != 0, x16r = (g_viv2 & 0x80) != 0;
+    if (x17r) { if (!_gr_t17) _gr_t17 = agora ? agora : 1; } else _gr_t17 = 0;
+    if (x16r) { if (!_gr_t16) _gr_t16 = agora ? agora : 1; } else _gr_t16 = 0;
+    bool combo = x17r && x16r && (agora - _gr_t17 >= SENSOR_HOME_DEBOUNCE_MS) && (agora - _gr_t16 >= SENSOR_HOME_DEBOUNCE_MS);
+    switch (_gr_st) {
+        case 0:   // para e espera o inversor zerar (regra: parar -> esperar -> comandar)
+            vfd_stop(); _gr_t = agora; _gr_t0 = agora; _gr_st = 1;
+            DBG_PRINTF("[GIRO] REBOBINANDO ate a posicao 1 (X16+X17) a 5 Hz, sentido %s\n", _giro_fwd ? "anti-horario" : "horario");
+            break;
+        case 1:
+            if (agora - _gr_t < VFD_SETTLE_MS) break;
+            if (combo) { _gr_st = 3; break; }   // ja esta na posicao 1
+            SET_Y4(true);
+            if (!vfd_run_garantido(!_giro_fwd, GIRO_REWIND_HZ10)) {
+                g_giro_rewind = false; g_giro_ativo = false; SET_Y4(false);
+                if (!g_parar_pedido) auto_erro("RS-485: Delta nao recebeu o comando de rebobinar o giro");
+                return SUB_ERR;
+            }
+            _gr_t = agora; _gr_st = 2;
+            break;
+        case 2:
+            if (combo) { vfd_stop(); DBG_PRINTLN("[GIRO] rebobinou: posicao 1 (X16+X17) -> refazendo o giro"); _gr_st = 3; break; }
+            if (agora - _gr_t0 > GIRO_REWIND_MAX_MS) {
+                vfd_stop(); SET_Y4(false); g_giro_rewind = false; g_giro_ativo = false;
+                _giro_msg = "ERRO: nao voltou a posicao 1 (X16+X17)";
+                DBG_PRINTLN("[GIRO] REBOBINAR: nao achou X16+X17 em 30 s -> ERRO");
+                return SUB_ERR;
+            }
+            if (agora - _gr_t >= 500) { _gr_t = agora; if (_giro_fwd) vfd_run_rev(GIRO_REWIND_HZ10); else vfd_run_fwd(GIRO_REWIND_HZ10); }
+            break;
+        case 3:   // recomeca o MESMO giro da posicao 1 (giro_iniciar para o motor, espera o settle e liga de novo)
+            g_giro_rewind = false;
+            giro_iniciar(_giro_fwd, _giro_freq, false);
+            break;
+    }
+    return SUB_RUN;
+}
+
 // Chamado a cada ciclo do laco principal. SEMPRE retorna imediatamente.
 static int giro_tick() {
     uint32_t agora = millis();
+    if (g_giro_rewind) return giro_rewind_tick();   // retomada apos pausa por X10: rebobina antes de refazer o giro
 
     if (_giro_fase == GIRO_FASE_PARANDO) {
         if (agora - _giro_t_parar >= GIRO_PARAR_INTERVALO_MS) {

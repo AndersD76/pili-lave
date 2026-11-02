@@ -46,6 +46,7 @@ static inline bool painel_prazo_vencido(uint32_t agora) { return g_armado_painel
 #define RETOMAR_PRESSAO_MS 2000
 static bool     _retomando = false;
 static uint32_t _ret_t0    = 0;
+bool            g_pausa_x10 = false;   // PAUSADO por falta do X10 durante o giro (ver x10_pausa_tick)
 static void auto_retomar_efetivo();
 
 // -----------------------------------------------------------------------
@@ -311,6 +312,8 @@ static void mem_tick(uint32_t agora) {
 void executar_processo_tick();
 void processos_reset();
 void processos_shift_timers(uint32_t delta);   // desloca cronometros (usado ao retomar da pausa)
+void x10_pausa_tick(uint32_t agora);
+extern bool g_giro_rewind;
 extern bool g_giro_ativo;   // true enquanto um giro roda (definido em processos.h)
 
 // =======================================================================
@@ -348,6 +351,7 @@ void auto_tick() {
     }
     tx_watchdog_tick(agora);             // envio de radio travado -> reinicializa o ESP-NOW (e so pausa/reinicia se preciso)
     w2_pausa_tick(agora);                // W2 perdida (ou envio travado) no processo -> PAUSADO (retoma sozinho)
+    x10_pausa_tick(agora);               // X10 perdido durante o giro -> PAUSADO (retoma sozinho, rebobina o giro 1->2)
     if (radio_ruim() && (g_estado_auto == AUTO_CARRO_ENTRANDO || g_estado_auto == AUTO_AGUARDA_POS || g_estado_auto == AUTO_INICIANDO))
         return;                          // sem dado confiavel da W2 antes do processo: segura (nao avanca nem acusa X15 com valor velho)
 
@@ -704,6 +708,7 @@ void auto_pausar() {
 // (auto_retomar_efetivo, chamada pelo auto_tick quando os 2 s passam).
 void auto_retomar() {
     if (_retomando) return;
+    if (g_pausa_x10 && !X10) { g_manual_msg = "Sem X10 (carro sob a mesa): coloque o carro para continuar"; g_manual_msg_ms = millis(); return; }
     if (radio_ruim()) { g_manual_msg = "Radio/W2 sem contato: aguarde para continuar"; g_manual_msg_ms = millis(); return; }   // nao religa saidas sem a W2
     // Solenoides ANTES da bomba de espuma (Y7 so liga com um solenoide ativo).
     if (_pausa_do1 & 0x01) SET_Y1(true);
@@ -729,6 +734,51 @@ static void auto_retomar_efetivo() {
     g_estado_auto     = AUTO_PROCESSO;
     g_estado.em_pausa = false;
     DBG_PRINTF("[AUTO] RETOMADO (pausa=%ums deslocada)\n", (unsigned)delta);
+}
+
+// ---- PAUSA POR X10 NO GIRO (2026-11-02) ----
+// O X10 (carro sob a mesa) some durante um giro (carro saiu/foi movido, sensor): PARA o motor e DESLIGA as bombas (auto_pausar), espera o X10
+// voltar (1500 ms estavel) e RETOMA sozinho (religa as saidas, 2 s de pressao). Giro 1->2: a retomada rebobina ate a posicao 1 e refaz o giro
+// (processos.h, giro_rewind_tick). Sem X10 por X10_PAUSA_MAX_MS: ERRO (cancela e estorna). Nao vale no SECO nem nos testes tecnicos.
+#define X10_PERDIDO_MS     500UL      // X10 apagado por isso, durante o giro, para pausar (filtra o fantasma do jato de agua)
+#define X10_VOLTA_MS       1500UL     // X10 de volta e estavel por isso -> retoma
+#define X10_PAUSA_MAX_MS   60000UL    // 60 s pausado sem X10 -> erro
+bool giro_x10_pausa_marcar();
+void x10_pausa_tick(uint32_t agora) {
+    static uint32_t t_sem = 0, t_pausa = 0, t_volta = 0, t_msg = 0;
+    bool vale = !g_teste_seco && !g_teste_rodando;
+    if (g_estado_auto == AUTO_PROCESSO && vale && g_giro_ativo) {
+        if (X10) t_sem = 0;
+        else {
+            if (!t_sem) t_sem = agora ? agora : 1;
+            if ((int32_t)(agora - t_sem) >= (int32_t)X10_PERDIDO_MS) {
+                t_sem = 0;
+                auto_pausar();                                  // para o Delta, desliga bombas/solenoides, guarda o movimento e o instante
+                bool rew = giro_x10_pausa_marcar();
+                if (rew) _pausa_mov = 0;                        // vai rebobinar: a retomada NAO re-emite o movimento antigo
+                g_pausa_x10 = true; t_pausa = agora; t_volta = 0;
+                DBG_PRINTF("[X10] perdido durante o giro -> PAUSADO (motor parado, bombas desligadas)%s\n", rew ? "; ao voltar: rebobina ate a posicao 1 e refaz o giro" : "");
+            }
+        }
+    } else if (g_estado_auto != AUTO_PAUSADO) {
+        t_sem = 0;
+    }
+    if (g_estado_auto == AUTO_PAUSADO && g_pausa_x10) {
+        if ((int32_t)(agora - t_msg) >= 1000) { t_msg = agora; g_manual_msg = X10 ? "X10 voltou: retomando..." : "PAUSADO: sem X10 (carro sob a mesa)"; g_manual_msg_ms = millis(); }
+        if (!X10) {
+            t_volta = 0;
+            if ((int32_t)(agora - t_pausa) >= (int32_t)X10_PAUSA_MAX_MS) { g_pausa_x10 = false; g_giro_rewind = false; auto_erro("Sem X10 (carro sob a mesa) por 60 s - lavagem cancelada"); }
+        } else if (!_retomando) {
+            if (!t_volta) t_volta = agora ? agora : 1;
+            else if ((int32_t)(agora - t_volta) >= (int32_t)X10_VOLTA_MS) {
+                DBG_PRINTLN("[X10] voltou e estavel -> CONTINUANDO");
+                auto_retomar();                                 // pode recusar (W2 sem contato): tenta de novo no proximo tick
+                if (_retomando) { g_pausa_x10 = false; t_volta = 0; }
+            }
+        }
+    } else if (g_estado_auto != AUTO_PAUSADO) {
+        g_pausa_x10 = false;                                    // saiu da pausa por outro caminho (cancelar, erro): zera a marca
+    }
 }
 
 // =======================================================================
