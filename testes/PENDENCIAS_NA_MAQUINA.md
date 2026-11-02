@@ -252,3 +252,14 @@ Só observa e registra; **nenhuma decisão de movimento mudou**. Regras em `docs
 - **Reavaliacao do zero na recuperacao de boot:** enquanto espera o botao HOME, se X16 + X12 ficarem ativos e estaveis por 1500 ms, encerra a recuperacao (antes ficava presa na decisao do boot, tomada com os sensores sem energia). Nao exercitada ainda em campo.
 - **Validado na maquina:** HOME obrigatorio pelo botao (`[REC] boot fora do zero` -> `HOME pedido pelo botao do display` -> `HOME concluido` -> `recuperacao encerrada`); 2 HOMEs completos sem falha depois da correcao; movimento manual ok; o filtro de pulso curto descartou pulsos falsos dos botoes do painel durante o movimento; cabo 0 erros com o motor girando.
 - Lição: opening the serial resets the W1 sometimes; o log de boot nao aparece (DBG so imprime com o host conectado).
+
+## O. Correcoes e regras novas gravadas NA MAQUINA em 2026-11-02 (tarde/noite)
+
+- **Gravado na W1 (cabo), commits 3532e38, bf69201, 731de19, c20fa3a, faf8ac0, b5d08b8** (copia ESP-NOW de producao compilada igual, nao gravada).
+- **START do app cancelava na hora** (`carro nao chegou na posicao em 3 min` junto do START): subtracao sem sinal (`g_t_app_armado` mais novo que `agora` no mesmo tick). Corrigido com sinal. VALIDADO: lavagem completa pelo app.
+- **X10 no inicio (AUTO_INICIANDO):** sem X10 a luz vermelha nao conta, nada liga; X10 volta -> 6 s recomecam; 60 s sem X10 -> erro. VALIDADO ('no partir deu certo').
+- **X10 no giro (G4/G5/G8):** pausa em 500 ms (motor parado, bombas desligadas), retoma sozinho com X10 estavel 1500 ms; giro 1->2 rebobina ate X16+X17 a 5 Hz e refaz o giro. VALIDADO ('o giro deu certo').
+- **X10 em TODAS as etapas (G3/G4/G5), b5d08b8:** etapa nao comeca sem X10; ausencia indevida (sem 3 s de Y14) no meio de qualquer etapa pausa/retoma. **NAO TESTADO ainda** (Giovani testa em outro dia: tirar o X10 no retorno ao X12 e entre etapas). Tambem desloca os watchdogs do X0 (`_cr_t_pulso`, `_cx_t_pulso`) na retomada (antes uma pausa > 4 s dava CARRO TRAVADO).
+- **HOME do giro: limite 25 s -> 60 s** (falhou aos 24,7 s com o braco longe do zero, em baixa velocidade).
+- **Ainda NAO programado (docs/REGRAS_RETOMADA_CICLO.md):** G6 (X13 com X10), G7 (carrinho parado na frente apos reinicio), G8b (giro triplo da volta a 5 Hz), retomada no meio do movimento apos reinicio (Fase 2), 5 Hz tambem no giro 2->1 retomado.
+- **Admin:** O6 com nome na main (8e5c683). IO1 confirmado pelo Giovani. Branch link-uart-w1-w2 com todos os commits so LOCAL (nao enviada).
