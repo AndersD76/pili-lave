@@ -134,38 +134,57 @@ export async function diagnosticar(): Promise<Diagnostico> {
 }
 
 /**
- * Registra um alerta para o admin (aparece no painel). Não repete o mesmo
- * problema em menos de 10 min — senão o painel vira uma parede de repetição
- * enquanto o problema durar.
+ * Alertas para o admin (aparecem no painel e viram push no celular).
+ *
+ * Dois comportamentos:
+ *  - EVENTO (padrão, ex.: carro não chegou no X15): cada ocorrência avisa, mas sem repetir o mesmo aviso em menos de 10 min.
+ *  - PERSISTENTE (display fora, câmera fora, máquina em falha): avisa UMA vez quando o problema começa e UMA vez quando ele acaba
+ *    ("voltou"). Enquanto durar, não repete (2026-11-02): antes repetia a cada ~10 min e poluía o painel e o celular.
+ *    O estado vem dos próprios eventos: o último de "alerta_admin"/"alerta_resolvido" para aquele tipo+máquina. Sem tabela nova.
  */
 const JANELA_REPETICAO_MS = 10 * 60_000;
+const TIPOS_ESTADO = ["alerta_admin", "alerta_resolvido"];
+
+type EventoAlerta = { type: string; createdAt: Date; payload: unknown };
+
+/** Alertas recentes (30 dias), mais novos primeiro: uma consulta só para toda a verificação. */
+async function alertasRecentes(): Promise<EventoAlerta[]> {
+  return prisma.event.findMany({
+    where: { type: { in: TIPOS_ESTADO }, createdAt: { gte: new Date(Date.now() - 30 * 86_400_000) } },
+    orderBy: { createdAt: "desc" },
+    take: 150,
+  });
+}
+
+function ultimoDe(recentes: EventoAlerta[], tipo: string, machineId: string | null | undefined): EventoAlerta | undefined {
+  return recentes.find((e) => {
+    const p = e.payload as { tipo?: string; machineId?: string | null } | null;
+    return p?.tipo === tipo && (p?.machineId ?? "") === (machineId ?? "");
+  });
+}
 
 export async function alertarAdmin(
   tipo: string,
   mensagem: string,
   extra?: unknown,
   machineId?: string | null,
-  operadorId?: string | null
+  operadorId?: string | null,
+  persistente = false,
+  recentesJa?: EventoAlerta[]
 ) {
-  /* Procura ESTE tipo NESTA máquina na janela — antes olhava só o tipo
-   * (sem distinguir máquina), e com mais de uma máquina no sistema o erro
-   * de uma abafava o aviso da outra: a primeira gravava o "MAQUINA_FALHA" e
-   * a segunda, mesmo sendo outra máquina, era descartada como repetição. */
-  const desde = new Date(Date.now() - JANELA_REPETICAO_MS);
-  const recentes = await prisma.event.findMany({
-    where: { type: "alerta_admin", createdAt: { gte: desde } },
-    orderBy: { createdAt: "desc" },
-    take: 20,
-  });
-  const chave = (e: { payload: unknown }) => {
-    const p = e.payload as { tipo?: string; machineId?: string | null } | null;
-    return `${p?.tipo}|${p?.machineId ?? ""}`;
-  };
-  if (recentes.some((e) => chave(e) === `${tipo}|${machineId ?? ""}`)) return;
+  const recentes = recentesJa ?? (await alertasRecentes());
+  const ultimo = ultimoDe(recentes, tipo, machineId);
+  if (persistente) {
+    // ainda aberto (o último registro é o aviso, sem "voltou" depois): não repete
+    if (ultimo?.type === "alerta_admin") return;
+  } else if (ultimo?.type === "alerta_admin" && Date.now() - ultimo.createdAt.getTime() < JANELA_REPETICAO_MS) {
+    return;
+  }
 
-  await prisma.event.create({
-    data: { type: "alerta_admin", payload: { tipo, mensagem, extra: extra ?? null, machineId: machineId ?? null } as object },
+  const criado = await prisma.event.create({
+    data: { type: "alerta_admin", payload: { tipo, mensagem, extra: extra ?? null, machineId: machineId ?? null, persistente } as object },
   });
+  recentes.unshift({ type: "alerta_admin", createdAt: criado.createdAt, payload: criado.payload });
   console.error(`[ALERTA ADMIN] ${tipo}: ${mensagem}`);
   // no painel já aparece; o push é para alguém saber sem estar olhando
   void avisarAdmins({ titulo: "PILI CLEAN — alerta", corpo: mensagem, url: "/admin", tag: `alerta-${tipo}-${machineId ?? ""}` });
@@ -175,22 +194,40 @@ export async function alertarAdmin(
     void avisarCliente(operadorId, { titulo: "Sua máquina precisa de atenção", corpo: mensagem, url: "/app", tag: `alerta-${tipo}` });
 }
 
-/** Verifica a saúde e alerta o admin (+ o lavador da máquina) quando houver problema. */
+/** O problema acabou: se havia um aviso aberto, registra UM "voltou" e avisa no celular. Sem aviso aberto, não faz nada. */
+export async function resolverAlerta(
+  tipo: string,
+  mensagem: string,
+  machineId?: string | null,
+  operadorId?: string | null,
+  recentesJa?: EventoAlerta[]
+) {
+  const recentes = recentesJa ?? (await alertasRecentes());
+  const ultimo = ultimoDe(recentes, tipo, machineId);
+  if (ultimo?.type !== "alerta_admin") return; // não havia nada aberto
+  const minutos = Math.max(1, Math.round((Date.now() - ultimo.createdAt.getTime()) / 60_000));
+  const texto = `${mensagem} (ficou ${minutos < 120 ? `${minutos} min` : `${Math.round(minutos / 60)} h`} com o problema)`;
+  const criado = await prisma.event.create({
+    data: { type: "alerta_resolvido", payload: { tipo, mensagem: texto, machineId: machineId ?? null, duracaoMin: minutos } as object },
+  });
+  recentes.unshift({ type: "alerta_resolvido", createdAt: criado.createdAt, payload: criado.payload });
+  void avisarAdmins({ titulo: "PILI CLEAN — normalizado", corpo: texto, url: "/admin", tag: `alerta-${tipo}-${machineId ?? ""}` });
+  if (operadorId) void avisarCliente(operadorId, { titulo: "Sua máquina voltou ao normal", corpo: texto, url: "/app", tag: `alerta-${tipo}` });
+}
+
+/** Verifica a saúde: avisa UMA vez quando o problema começa e UMA vez quando acaba (+ o lavador da máquina). */
 export async function verificarEAlertar(): Promise<Diagnostico> {
   const d = await diagnosticar();
-  if (d.problemas.includes("MAQUINA_FALHA"))
-    await alertarAdmin("MAQUINA_FALHA", "A máquina reportou falha e parou.", d.detalhe, d.machineId, d.operadorId);
-  if (d.problemas.includes("DISPLAY_OFFLINE"))
-    await alertarAdmin(
-      "DISPLAY_OFFLINE",
-      "O display parou de se comunicar (queda de internet ou energia na máquina).",
-      d.detalhe, d.machineId, d.operadorId
-    );
-  if (d.problemas.includes("CAMERA_OFFLINE"))
-    await alertarAdmin(
-      "CAMERA_OFFLINE",
-      "A câmera parou de enviar fotos — o reconhecimento de placa está fora.",
-      d.detalhe, d.machineId, d.operadorId
-    );
+  const recentes = await alertasRecentes();
+  const checar = async (tipo: string, ativo: boolean, msgProblema: string, msgVoltou: string) => {
+    if (ativo) await alertarAdmin(tipo, msgProblema, d.detalhe, d.machineId, d.operadorId, true, recentes);
+    else await resolverAlerta(tipo, msgVoltou, d.machineId, d.operadorId, recentes);
+  };
+  await checar("MAQUINA_FALHA", d.problemas.includes("MAQUINA_FALHA"),
+    "A máquina reportou falha e parou.", "A máquina voltou a operar.");
+  await checar("DISPLAY_OFFLINE", d.problemas.includes("DISPLAY_OFFLINE"),
+    "O display parou de se comunicar (queda de internet ou energia na máquina).", "O display voltou a se comunicar.");
+  await checar("CAMERA_OFFLINE", d.problemas.includes("CAMERA_OFFLINE"),
+    "A câmera parou de enviar fotos — o reconhecimento de placa está fora.", "A câmera voltou a enviar fotos.");
   return d;
 }

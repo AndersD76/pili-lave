@@ -53,7 +53,7 @@ export default async function AdminDashboard() {
   // saúde ao vivo + alertas recentes (falha, display mudo, câmera fora)
   const saude = await diagnosticar();
   const alertas = await prisma.event.findMany({
-    where: { type: "alerta_admin", createdAt: { gte: new Date(Date.now() - 24 * 3600e3) } },
+    where: { type: { in: ["alerta_admin", "alerta_resolvido"] }, createdAt: { gte: new Date(Date.now() - 24 * 3600e3) } },
     orderBy: { createdAt: "desc" },
     take: 12,
   });
@@ -92,7 +92,7 @@ export default async function AdminDashboard() {
                   return (
                     <tr key={a.id}>
                       <td>{a.createdAt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
-                      <td>{p.tipo ?? "-"}</td>
+                      <td>{p.tipo ?? "-"}{a.type === "alerta_resolvido" ? " ✓ voltou" : ""}</td>
                       <td>{p.mensagem ?? "-"}</td>
                     </tr>
                   );

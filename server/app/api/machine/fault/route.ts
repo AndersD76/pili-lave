@@ -163,7 +163,8 @@ export async function POST(req: NextRequest) {
       : "A máquina parou por falha. O motivo aparece na tela do display.",
     { errorCode: body.errorCode ?? null, estornadas, estornoCents },
     auth.machine.id,
-    auth.machine.operadorId
+    auth.machine.operadorId,
+    true // persistente: o aviso fica aberto até a máquina sair do FAULT; a verificação periódica registra o "voltou"
   );
 
   return NextResponse.json({

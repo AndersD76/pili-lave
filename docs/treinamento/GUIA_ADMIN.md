@@ -158,7 +158,7 @@ Isso poupa você de fazer conta na mão — é só olhar esse número na hora de
 
 ## 8. O que fazer quando um alerta chegar
 
-Se uma máquina falhar, ficar sem internet, ou a câmera parar de mandar foto, você recebe uma **notificação push** (a mesma que o lavador recebe) com o resumo do problema. O alerta também fica registrado — pra investigar, vá em **Máquinas**, escolha a unidade/máquina certa e confira o status/última batida.
+Se uma máquina falhar, ficar sem internet, ou a câmera parar de mandar foto, você recebe **uma** notificação push (a mesma que o lavador recebe) com o resumo do problema. **O aviso não se repete enquanto o problema durar.** Quando a situação normaliza chega **um segundo aviso, "voltou"**, dizendo quanto tempo ficou com o problema. No painel (Alertas — 24h) o "voltou" aparece com ✓. O alerta também fica registrado — pra investigar, vá em **Máquinas**, escolha a unidade/máquina certa e confira o status/última batida.
 
 ---
 

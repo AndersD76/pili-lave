@@ -305,6 +305,9 @@ Três coisas precisam estar vivas pra uma lavagem acontecer: o **display** (exec
 
 **Limitação conhecida**: `diagnosticar()` hoje sempre olha a "máquina padrão" (`findFirst`) — não está totalmente adaptado pro cenário de múltiplas máquinas ainda.
 
+### 6.9d Alertas sem repetição (2026-11-02)
+`alertarAdmin(..., persistente)` e `resolverAlerta(...)` em `lib/saude.ts`. Alertas **persistentes** (display fora, câmera fora, máquina em falha) avisam **uma vez** quando o problema começa e **uma vez** quando acaba (`Event alerta_resolvido`, com a duração); enquanto durar não repetem (antes repetiam a cada ~10 min no painel e no push). O estado vem do último evento `alerta_admin`/`alerta_resolvido` do tipo+máquina (sem tabela nova); `verificarEAlertar` faz uma única consulta de alertas recentes (30 dias) por chamada. Alertas de **evento** (ex.: `POSICAO_X15`) seguem com a janela de 10 min. A rota `/api/machine/fault` abre o aviso `MAQUINA_FALHA` como persistente. O painel `/admin` lista `alerta_admin` e `alerta_resolvido` ("✓ voltou").
+
 ### 6.10 Notificações push (`lib/push.ts`)
 Web Push com chaves VAPID. `avisarCliente()` manda pra todos os aparelhos inscritos de um usuário (limpa inscrições mortas automaticamente); `avisarAdmins()` manda pra todos os admins. Nunca derruba o fluxo principal se falhar — push é extra.
 
