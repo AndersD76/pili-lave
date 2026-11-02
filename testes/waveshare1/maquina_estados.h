@@ -372,6 +372,17 @@ void auto_tick() {
         } else {
             _t_x15_zero = 0;              // X15 voltou -> reinicia o debounce
         }
+        // X10 (carro sob a mesa) OBRIGATORIO no ciclo com carro real (2026-11-02: sem carro, com o X15 acionado a mao, o processo rodou ate o
+        // CARRO TRAVADO no retorno do X10). Sem X10 por 1500 ms seguidos nos 6 s da luz vermelha -> erro ANTES de ligar qualquer bomba/movimento.
+        // No SECO (teste tecnico, X10 simulado) nao se aplica.
+        static uint32_t _t_x10_ok = 0;
+        if ((int32_t)(_t_x10_ok - t_estado) < 0) _t_x10_ok = t_estado;     // (re)inicia a contagem a cada entrada neste estado
+        if (g_teste_seco || X10) _t_x10_ok = agora;
+        else if ((int32_t)(agora - _t_x10_ok) >= 1500) {
+            _t_x10_ok = 0;
+            auto_erro("Sem carro sob a mesa (X10) — ciclo nao iniciado");
+            return;
+        }
     }
 
     switch (g_estado_auto) {
