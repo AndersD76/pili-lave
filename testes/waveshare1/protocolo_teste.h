@@ -64,6 +64,7 @@ enum : uint8_t {
     MSG_TESTE_CFG_REQ  = 33, // Display -> W1: pede uma tabela de configuracao
     MSG_TESTE_CFG_DUMP = 34, // W1 -> Display: a tabela pedida
     MSG_TESTE_DATA     = 35, // Camera/Display -> W1: data de hoje (a maquina nao tem relogio). Camera ainda nao envia.
+    MSG_W2_DIARIO      = 42, // W2 -> W1: bordas de X14/X15 (diario para saber se um carro saiu/entrou enquanto a W1 estava fora); a cada 5 s
     MSG_HORA           = 41, // Camera -> W1: hora atual (epoch UTC) tirada da internet (NTP); a W1 mantem o relogio e carimba os reinicios
     MSG_W2_BOOT        = 40, // W2 -> W1: "acabei de reiniciar" (motivo do reset); repetida por ~20 s depois de cada boot (registro de reinicios)
 };
@@ -79,6 +80,7 @@ enum : uint8_t {
 //   i1 = 1: v[0..3] bonus por modelo, v[4..5] saldo historico presencial (lo,hi), v[6..7] aplicativo, v[8..9] socios, v[10..11] bonus
 // So com a maquina parada. DUMP: tabela 0/1 -> v[0..13] do modelo i1; tabela 2 -> v[0..3]; tabela 3 -> v[0..2] (efetivo).
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t dia, mes; uint16_t ano; } MsgTesteData;
+typedef struct __attribute__((packed)) { CabEspNow cab; uint16_t boot_id; uint8_t nivel; uint16_t x14_bordas, x15_bordas; uint32_t up_s; } MsgW2Diario;   // nivel: bit0 X14, bit1 X15 (ja com debounce de 100 ms)
 typedef struct __attribute__((packed)) { CabEspNow cab; uint32_t epoch; } MsgHora;   // Camera -> W1 (a cada 30 s, so com a hora valida)
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t motivo; uint16_t boot_id; uint32_t up_s; } MsgW2Boot;   // W2 -> W1 (esp_reset_reason da W2; boot_id aleatorio identifica o boot; up_s = segundos desde o boot)
 // ---- CADASTRO DA MAQUINA (iguais a lava_car_485/display/tipos.h e ao firmware da camera; DEVEM bater byte a byte) ----

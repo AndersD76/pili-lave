@@ -71,6 +71,8 @@ Obs. do Giovani: **X14 e X15 estão na W2**, então a máquina precisa saber se 
 
 ## 6. Plano
 
+> **Fase 0: implementada e compilada em 2026-11-02 (não gravada)**: retrato da etapa, ocorrências O1..O5 e diário X14/X15 da W2. Ver `testes/PENDENCIAS_NA_MAQUINA.md` seção L.3.
+
 1. **Fase 0 (segura):** diário das etapas (checkpoint) **e** de ocorrências, enviados à nuvem junto do registro de reinícios. Não muda o movimento. Mostra onde as interrupções acontecem.
 2. **Fase 1:** G2 + G3 + G4 + G5 + G6 como regras de **proteção** do ciclo normal (valem mesmo sem reinício) e retomada recomeçando a etapa.
 3. **Fase 2:** retomada no meio do movimento, por etapa, cada uma **desligada por padrão** até testada na máquina em modo SECO.

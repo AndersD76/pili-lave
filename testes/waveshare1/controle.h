@@ -154,6 +154,7 @@ static inline void w2_amostra_home(uint8_t di, uint32_t agora) {   // chamar DEN
 }
 static volatile uint32_t g_hb2=0;
 static volatile bool g_hora_tem = false; static volatile uint32_t g_hora_epoch = 0, g_hora_ms = 0;   // relogio vindo da camera (MSG_HORA); 0/false = sem hora
+static volatile bool g_w2d_novo = false; static MsgW2Diario g_w2d_rx;   // diario do X14/X15 da W2 (o callback so copia; reset_log_w1.h processa)
 static volatile bool g_w2boot_novo = false; static MsgW2Boot g_w2boot_rx;   // W2 avisou que reiniciou (o callback so copia; reset_log_w1.h processa)
 // Diagnostico do enlace (resumo [LINK] a cada 5 s no serial):
 static uint32_t          g_w2_prev_ms = 0, g_w2_gap_max = 0;      // maior intervalo entre pacotes da W2
@@ -604,6 +605,8 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* 
             portENTER_CRITICAL(&g_iomux2);
             g_viv2 = h->di_vivo; g_hb2 = millis(); g_w2_do_real = h->do_estado; w2_amostra_home(h->di_vivo, g_hb2); w2_gap_atualiza(g_hb2);
             portEXIT_CRITICAL(&g_iomux2);
+        } else if (cab->tipo == MSG_W2_DIARIO && len >= (int)sizeof(MsgW2Diario)) {
+            memcpy((void*)&g_w2d_rx, data, sizeof(MsgW2Diario)); g_w2d_novo = true;
         } else if (cab->tipo == MSG_W2_BOOT && len >= (int)sizeof(MsgW2Boot)) {
             memcpy((void*)&g_w2boot_rx, data, sizeof(MsgW2Boot)); g_w2boot_novo = true;
         }

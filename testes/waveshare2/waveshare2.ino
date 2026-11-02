@@ -64,11 +64,12 @@ static const uint8_t MAC_WAVE2[6]   = {0x02,0x00,0x00,ID_MAQUINA,0x01,0x03};
 static const uint8_t ESPNOW_PMK[16] = {'P','I','L','I','-','p','m','k',ID_MAQUINA,0,0,0,0,0,0,0};
 static const uint8_t ESPNOW_LMK[16] = {'P','I','L','I','-','l','m','k',ID_MAQUINA,0,0,0,0,0,0,0};
 
-enum : uint8_t { MSG_EVENTO=1, MSG_HEARTBEAT=2, MSG_COMANDO=3, MSG_CANAL=4, MSG_W2_BOOT=40 };
+enum : uint8_t { MSG_EVENTO=1, MSG_HEARTBEAT=2, MSG_COMANDO=3, MSG_CANAL=4, MSG_W2_BOOT=40, MSG_W2_DIARIO=42 };
 typedef struct __attribute__((packed)) { uint8_t tipo,id_maquina,origem,seq; } CabEspNow;
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t di_vivo,di_borda; uint32_t t_us; } MsgEvento;
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t di_vivo,do_estado; } MsgHeartbeat;
-typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t motivo; uint16_t boot_id; uint32_t up_s; } MsgW2Boot;   // W2 -> W1: "reiniciei" (igual ao protocolo_teste.h da W1)
+typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t motivo; uint16_t boot_id; uint32_t up_s; } MsgW2Boot;
+typedef struct __attribute__((packed)) { CabEspNow cab; uint16_t boot_id; uint8_t nivel; uint16_t x14_bordas, x15_bordas; uint32_t up_s; } MsgW2Diario;   // igual ao protocolo_teste.h da W1   // W2 -> W1: "reiniciei" (igual ao protocolo_teste.h da W1)
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal,estado; } MsgComando;
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal; } MsgCanal;
 
@@ -146,6 +147,10 @@ static bool escreve_do(uint8_t canal, bool ligar) {
 static uint8_t g_seq = 0;
 // REGISTRO DE REINICIOS (2026-11-02): depois de cada boot a W2 avisa a W1 (motivo do reset + id do boot) por ~20 s; a W1 guarda o historico e manda para a nuvem.
 static uint8_t g_w2_motivo = 0; static uint16_t g_w2_boot_id = 0;
+// DIARIO DO X14/X15 (2026-11-02): conta as bordas (debounce 100 ms) e manda a W1 a cada 5 s. Se SO a W1 reiniciar, a diferenca de bordas mostra
+// se um carro saiu/entrou enquanto ela estava fora (regra G9 de docs/REGRAS_RETOMADA_CICLO.md). So observa: nao muda nada na W2.
+static uint16_t g_dia_x14 = 0, g_dia_x15 = 0;
+static void w2_diario_tick();
 static void w2_boot_info() {
     esp_reset_reason_t r = esp_reset_reason();
     if (r == ESP_RST_SW && g_hr_marca == HR_MARCA && g_hr_orig != 0) { g_w2_motivo = g_hr_orig; g_hr_orig = 0; }   // 2o boot do hard reset: vale o motivo do 1o
@@ -204,6 +209,25 @@ static void envia_heartbeat() {
 // pra NAO ocupar o barramento -> DE/RE em LOW.
 #define RS485_DE_RE 21
 
+static void w2_diario_tick() {
+    static uint8_t aceito = 0; static bool ini = false; static uint32_t t_chg[2] = {0, 0}, t_tx = 0;
+    uint8_t di = le_entradas_vivo();
+    uint8_t b = (uint8_t)(((di >> 4) & 1) | (((di >> 5) & 1) << 1));       // bit0 = X14 (carro entrando), bit1 = X15 (carro na posicao)
+    if (!ini) { aceito = b; ini = true; }
+    for (uint8_t i = 0; i < 2; i++) {
+        if (((b >> i) & 1) != ((aceito >> i) & 1)) {
+            if (!t_chg[i]) t_chg[i] = millis() | 1;
+            else if (millis() - t_chg[i] >= 100) { aceito ^= (uint8_t)(1 << i); t_chg[i] = 0; if (i == 0) g_dia_x14++; else g_dia_x15++; }
+        } else t_chg[i] = 0;
+    }
+    if (millis() - t_tx >= 5000) {
+        t_tx = millis();
+        MsgW2Diario d = {}; d.cab.tipo = MSG_W2_DIARIO; d.cab.id_maquina = ID_MAQUINA; d.cab.origem = ORIGEM_WAVE2; d.cab.seq = g_seq++;
+        d.boot_id = g_w2_boot_id; d.nivel = aceito; d.x14_bordas = g_dia_x14; d.x15_bordas = g_dia_x15; d.up_s = millis() / 1000UL;
+        esp_now_send((uint8_t*)MAC_WAVE1, (uint8_t*)&d, sizeof(d));
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(200);
@@ -250,6 +274,7 @@ void loop() {
     }
     static uint32_t t_hb = 0;
     if (millis() - t_hb >= HEARTBEAT_MS) { t_hb = millis(); envia_heartbeat(); }
+    w2_diario_tick();
     static uint32_t t_boot = 0;
     if (millis() < 20000UL && millis() - t_boot >= 1000) {   // aviso de boot: 1x por segundo nos primeiros 20 s
         t_boot = millis();
