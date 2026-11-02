@@ -158,7 +158,15 @@ Isso poupa você de fazer conta na mão — é só olhar esse número na hora de
 
 ## 8. O que fazer quando um alerta chegar
 
-Se uma máquina falhar, ficar sem internet, ou a câmera parar de mandar foto, você recebe **uma** notificação push (a mesma que o lavador recebe) com o resumo do problema. **O aviso não se repete enquanto o problema durar.** Quando a situação normaliza chega **um segundo aviso, "voltou"**, dizendo quanto tempo ficou com o problema. No painel (Alertas — 24h) o "voltou" aparece com ✓. O alerta também fica registrado — pra investigar, vá em **Máquinas**, escolha a unidade/máquina certa e confira o status/última batida.
+Se uma máquina falhar, ficar sem internet, ou a câmera parar de mandar foto, você recebe **uma** notificação push (a mesma que o lavador recebe) com o resumo do problema. **O aviso não se repete enquanto o problema durar.** Quando a situação normaliza chega **um segundo aviso, "voltou"**, dizendo quanto tempo ficou com o problema. No painel (Alertas — 24h) o "voltou" aparece com ✓.
+
+### Histórico de alertas (menu **Alertas**)
+
+Os alertas **nunca são apagados**. Na tela inicial aparecem só as últimas 24 h; para ver tudo, abra **Alertas** no menu (ou "Ver histórico completo" abaixo da tabela):
+
+- **Abas por máquina:** "Todas as máquinas" e uma aba para cada máquina, com a quantidade de alertas no período e um ponto vermelho quando há problema **aberto** naquela máquina. Com várias máquinas, é só clicar na aba da que você quer acompanhar.
+- **Abertos agora:** lista o que está com problema neste momento (câmera fora, display fora, falha da máquina), desde quando e em qual máquina.
+- **Histórico:** filtros de **período** (24 h, 7 dias, 30 dias, tudo) e de **tipo** (câmera, display, falha, carro não posicionou, só os "voltou"), com páginas de 50 em 50 ("mais antigos →"). O alerta também fica registrado — pra investigar, vá em **Máquinas**, escolha a unidade/máquina certa e confira o status/última batida.
 
 ---
 

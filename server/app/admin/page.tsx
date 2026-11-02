@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireAdminPage } from "@/lib/admin";
 import { AdminNav } from "./nav";
@@ -52,6 +53,9 @@ export default async function AdminDashboard() {
 
   // saúde ao vivo + alertas recentes (falha, display mudo, câmera fora)
   const saude = await diagnosticar();
+  const maquinasNomes = new Map(
+    (await prisma.machine.findMany({ include: { station: true } })).map((m) => [m.id, `${m.station.city} — máq. ${m.numero}`])
+  );
   const alertas = await prisma.event.findMany({
     where: { type: { in: ["alerta_admin", "alerta_resolvido"] }, createdAt: { gte: new Date(Date.now() - 24 * 3600e3) } },
     orderBy: { createdAt: "desc" },
@@ -85,13 +89,14 @@ export default async function AdminDashboard() {
           <h2 className="section-title">Alertas — 24h</h2>
           <div className="tbl-wrap">
             <table className="tbl">
-              <thead><tr><th>Quando</th><th>Tipo</th><th>O que aconteceu</th></tr></thead>
+              <thead><tr><th>Quando</th><th>Máquina</th><th>Tipo</th><th>O que aconteceu</th></tr></thead>
               <tbody>
                 {alertas.map((a) => {
-                  const p = (a.payload ?? {}) as { tipo?: string; mensagem?: string };
+                  const p = (a.payload ?? {}) as { tipo?: string; mensagem?: string; machineId?: string | null };
                   return (
                     <tr key={a.id}>
                       <td>{a.createdAt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
+                      <td>{p.machineId ? maquinasNomes.get(p.machineId) ?? "—" : "—"}</td>
                       <td>{p.tipo ?? "-"}{a.type === "alerta_resolvido" ? " ✓ voltou" : ""}</td>
                       <td>{p.mensagem ?? "-"}</td>
                     </tr>
@@ -100,6 +105,9 @@ export default async function AdminDashboard() {
               </tbody>
             </table>
           </div>
+          <p style={{ margin: "10px 0 0" }}>
+            <Link href="/admin/alertas">Ver histórico completo e filtrar por máquina →</Link>
+          </p>
         </>
       )}
 
