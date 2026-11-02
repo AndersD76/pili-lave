@@ -14,6 +14,8 @@
 //   Eventos tipo 4: res = "W1-<seq>" / "W2-<seq>" (chave unica, volta no ACK), errcode = "W1;m=6;e=5;u=1234;n=12;c=1;s=0":
 //     m = esp_reset_reason (1 POWERON 3 SW 4 PANIC 5 INT_WDT 6 TASK_WDT 7 WDT 9 BROWNOUT 11 USB) | e = estado da W1 antes (255 = desconhecido)
 //     u = segundos ligada antes do reset | n = total de reinicios daquela placa | c = 1 se estava em ciclo (carro presente) | s = restart
+//     t = HORA do reset (epoch, UTC), so quando a W1 ja tinha o relogio: a camera pega a hora na internet (NTP) e manda MSG_HORA; o reinicio e
+//     carimbado de tras para frente (hora atual - tempo ligada). Sem relogio: o campo t some e o backend so registra (nao mexe em reserva).
 //     DELIBERADO nosso (1 memoria critica, 2 radio travado) ou 0.
 // =======================================================================
 #pragma once
@@ -29,6 +31,7 @@
 #define RST_F_NAOENV     4
 #define RST_F_ENVIADO    8
 #define RST_F_FILA       16
+#define RST_F_SEMHORA    32     // criado sem relogio: carimba assim que a hora chegar (so se for do boot atual)
 
 RTC_NOINIT_ATTR static uint32_t g_rtc_magic;
 RTC_NOINIT_ATTR static uint8_t  g_rtc_estado;
@@ -37,9 +40,12 @@ RTC_NOINIT_ATTR static uint32_t g_rtc_up_s;
 RTC_NOINIT_ATTR static uint8_t  g_rtc_sw;
 RTC_NOINIT_ATTR static uint8_t  g_rtc_orig;
 
-typedef struct { uint32_t seq; uint32_t up_s; uint16_t n; uint8_t quem, motivo, estado, flags, sw, pad; } RstRec;
+typedef struct { uint32_t seq; uint32_t up_s; uint32_t t; uint16_t n; uint8_t quem, motivo, estado, flags, sw, pad; } RstRec;
 typedef struct { uint32_t magic, seq; uint16_t tot[3]; uint16_t por_motivo[16]; uint8_t pos, n; RstRec rec[RST_N]; } RstLog;
 static RstLog g_rst_log;
+static uint32_t g_rst_rel[RST_N];          // so RAM: segundos de uptime da W1 no instante do reset (0 = o proprio boot da W1) - base do carimbo de hora
+static uint32_t g_rst_seq_ini = 0;         // 1o seq deste boot (so registros deste boot podem ser carimbados)
+static uint32_t rst_epoch_agora() { return g_hora_tem ? g_hora_epoch + (millis() - g_hora_ms) / 1000UL : 0; }   // 0 = sem relogio
 static struct { bool tem; uint8_t motivo, estado, flags, sw; uint32_t up_s; } g_rst_boot = {};
 
 static const char* rst_nome(uint8_t m) {
@@ -78,8 +84,21 @@ static void rst_carregar() {
     }
     if (g_rst_log.magic != RST_MAGIC) { memset(&g_rst_log, 0, sizeof(g_rst_log)); g_rst_log.magic = RST_MAGIC; }
 }
-static void rst_adicionar(uint8_t quem, uint8_t motivo, uint8_t estado, uint8_t flags, uint8_t sw, uint32_t up_s) {
-    RstRec r = {}; r.seq = ++g_rst_log.seq; r.quem = quem; r.motivo = motivo; r.estado = estado; r.flags = flags; r.sw = sw; r.up_s = up_s;
+static void rst_carimbar() {   // da hora aos registros deste boot que nasceram sem relogio
+    uint32_t ep = rst_epoch_agora(); if (!ep) return;
+    uint32_t now_s = millis() / 1000UL; bool mudou = false;
+    for (uint8_t i = 0; i < RST_N; i++) {
+        RstRec& r = g_rst_log.rec[i];
+        if (!(r.flags & RST_F_SEMHORA) || r.seq < g_rst_seq_ini) continue;
+        uint32_t atras = now_s > g_rst_rel[i] ? now_s - g_rst_rel[i] : 0;
+        r.t = ep > atras ? ep - atras : ep; r.flags &= ~RST_F_SEMHORA; mudou = true;
+        DBG_PRINTF("[RST] %s #%lu carimbado: ha %lus (epoch %lu)\n", r.quem == 1 ? "W1" : "W2", (unsigned long)r.seq, (unsigned long)atras, (unsigned long)r.t);
+    }
+    if (mudou) rst_salvar();
+}
+static void rst_adicionar(uint8_t quem, uint8_t motivo, uint8_t estado, uint8_t flags, uint8_t sw, uint32_t up_s, uint32_t rel_s) {
+    RstRec r = {}; r.seq = ++g_rst_log.seq; r.quem = quem; r.motivo = motivo; r.estado = estado; r.flags = flags | RST_F_SEMHORA; r.sw = sw; r.up_s = up_s;
+    g_rst_rel[g_rst_log.pos] = rel_s;
     if (quem >= 1 && quem <= 2) { g_rst_log.tot[quem]++; r.n = g_rst_log.tot[quem]; }
     if (motivo < 16) g_rst_log.por_motivo[motivo]++;
     g_rst_log.rec[g_rst_log.pos] = r; g_rst_log.pos = (g_rst_log.pos + 1) % RST_N; if (g_rst_log.n < RST_N) g_rst_log.n++;
@@ -102,8 +121,9 @@ static void rst_reconciliar_fila() {   // registro marcado "na fila" mas o event
 void rst_boot_registrar() {
     rst_carregar();
     rst_reconciliar_fila();
+    g_rst_seq_ini = g_rst_log.seq + 1;
     if (g_rst_boot.tem) {
-        rst_adicionar(1, g_rst_boot.motivo, g_rst_boot.estado, g_rst_boot.flags, g_rst_boot.sw, g_rst_boot.up_s);
+        rst_adicionar(1, g_rst_boot.motivo, g_rst_boot.estado, g_rst_boot.flags, g_rst_boot.sw, g_rst_boot.up_s, 0);
         rst_salvar();
         g_rst_boot.tem = false;
     }
@@ -121,8 +141,10 @@ static void rst_w2_processar() {
     g_w2_boot_tem = true; g_w2_boot_visto = b.boot_id;
     uint8_t est = (uint8_t)g_estado_auto;                           // o que a W1 (que continua viva) estava fazendo quando a W2 voltou
     uint8_t fl = RST_F_EST_OK | (rst_estado_em_ciclo(est) ? RST_F_CICLO : 0) | ((b.motivo == 2 || b.motivo == 11 || b.motivo == 12) ? RST_F_NAOENV : 0);
-    rst_adicionar(2, b.motivo, est, fl, 0, b.up_s);
+    uint32_t now_s = millis() / 1000UL;
+    rst_adicionar(2, b.motivo, est, fl, 0, b.up_s, now_s > b.up_s ? now_s - b.up_s : 0);
     rst_salvar();
+    rst_carimbar();
 }
 
 void rst_evento_confirmado(const char* res) {                       // ACK do display para o evento tipo 4 da cabeca da fila
@@ -144,14 +166,16 @@ static void rst_enviar_tick(uint32_t agora) {
     for (uint8_t i = 0; i < RST_N; i++) {
         const RstRec& r = g_rst_log.rec[i];
         if (!r.seq || (r.flags & (RST_F_ENVIADO | RST_F_NAOENV | RST_F_FILA))) continue;
+        if ((r.flags & RST_F_SEMHORA) && r.seq >= g_rst_seq_ini && agora < 120000UL) continue;   // espera o relogio chegar (ate 2 min de boot)
         if (melhor < 0 || r.seq < g_rst_log.rec[melhor].seq) melhor = i;
     }
     if (melhor < 0) return;
     RstRec& r = g_rst_log.rec[melhor];
     EvtRec e = {}; e.tipo = 4;
     snprintf(e.res, sizeof(e.res), "W%u-%lu", (unsigned)r.quem, (unsigned long)r.seq);
-    snprintf(e.err, sizeof(e.err), "W%u;m=%u;e=%u;u=%lu;n=%u;c=%u;s=%u", (unsigned)r.quem, (unsigned)r.motivo, (unsigned)r.estado, (unsigned long)r.up_s,
-             (unsigned)r.n, (r.flags & RST_F_CICLO) ? 1u : 0u, (unsigned)r.sw);
+    int k = snprintf(e.err, sizeof(e.err), "W%u;m=%u;e=%u;u=%lu;n=%u;c=%u;s=%u", (unsigned)r.quem, (unsigned)r.motivo, (unsigned)r.estado, (unsigned long)r.up_s,
+                     (unsigned)r.n, (r.flags & RST_F_CICLO) ? 1u : 0u, (unsigned)r.sw);
+    if (r.t && k > 0 && k < (int)sizeof(e.err) - 14) snprintf(e.err + k, sizeof(e.err) - k, ";t=%lu", (unsigned long)r.t);   // hora do reset (so com relogio)
     evq_push(e);
     r.flags |= RST_F_FILA; rst_salvar();
     DBG_PRINTF("[RST] evento %s enfileirado para a nuvem\n", e.res);
@@ -163,5 +187,6 @@ void rst_tick() {
     g_rtc_flags = (home_rodando() ? 1 : 0) | (recuperacao_ativa() ? 2 : 0);
     uint32_t agora = millis(), s = agora / 1000UL; if (s != g_rtc_up_s) g_rtc_up_s = s;
     rst_w2_processar();
+    { static uint32_t t_c = 0; if (agora - t_c >= 5000) { t_c = agora; rst_carimbar(); } }
     rst_enviar_tick(agora);
 }

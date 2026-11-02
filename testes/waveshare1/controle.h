@@ -153,6 +153,7 @@ static inline void w2_amostra_home(uint8_t di, uint32_t agora) {   // chamar DEN
     else     { g_x17_up = false; }
 }
 static volatile uint32_t g_hb2=0;
+static volatile bool g_hora_tem = false; static volatile uint32_t g_hora_epoch = 0, g_hora_ms = 0;   // relogio vindo da camera (MSG_HORA); 0/false = sem hora
 static volatile bool g_w2boot_novo = false; static MsgW2Boot g_w2boot_rx;   // W2 avisou que reiniciou (o callback so copia; reset_log_w1.h processa)
 // Diagnostico do enlace (resumo [LINK] a cada 5 s no serial):
 static uint32_t          g_w2_prev_ms = 0, g_w2_gap_max = 0;      // maior intervalo entre pacotes da W2
@@ -610,6 +611,11 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* 
     }
 
     // ---- do Display: so o comando do teste (NADA e executado aqui: fila / flag) ----
+    if (cab->origem == ORIGEM_CAMERA && cab->tipo == MSG_HORA && len >= (int)sizeof(MsgHora)) {   // relogio da camera (NTP)
+        const MsgHora* h = (const MsgHora*)data;
+        if (h->epoch > 1700000000UL) { g_hora_epoch = h->epoch; g_hora_ms = millis(); g_hora_tem = true; }
+        return;
+    }
     if (cab->origem != ORIGEM_DISPLAY && !(cab->origem == ORIGEM_CAMERA && cab->tipo == MSG_TESTE_DATA)) return;
     if (cab->tipo == MSG_TESTE_CMD && len >= (int)sizeof(MsgTesteCmd)) {
         const MsgTesteCmd* m = (const MsgTesteCmd*)data;

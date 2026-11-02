@@ -123,6 +123,7 @@ static void hardResetRadio() { WiFi.persistent(false); WiFi.mode(WIFI_OFF); dela
 #define MSG_HB_RESP   8   // câmera -> display: resposta do backend
 #define MSG_EVT       9   // display -> câmera: evento p/ a nuvem (car-entered/wash-complete/fault; 4 = reinício de placa)
 #define MSG_EVT_ACK  10   // câmera -> display: confirmação do evento (200 OK)
+#define MSG_HORA     41   // câmera -> W1: hora atual (epoch UTC, NTP) a cada 30 s; a W1 carimba os reinícios com ela
 #define MSG_SCAN_REQ 11   // display -> câmera: "escaneia as redes e me diga"
 #define MSG_SCAN_RESP 12  // câmera -> display: uma página da lista de redes encontradas
 #define MSG_RESYNC_REQ 21 // câmera -> display: "o roteador mudou para o canal N; migre todos" (re-sync automático)
@@ -160,6 +161,7 @@ typedef struct __attribute__((packed)) {
 } MsgEvtAck;
 
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal; } MsgCanal;
+typedef struct __attribute__((packed)) { CabEspNow cab; uint32_t epoch; } MsgHora;   // MSG_HORA
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal; } MsgResyncReq;   // MSG_RESYNC_REQ
 #define MSG_REDE_INFO 22   // camera -> display: nome da rede Wi-Fi em que ela esta conectada (a cada 5 s)
 typedef struct __attribute__((packed)) { CabEspNow cab; int8_t rssi; char ssid[33]; } MsgRedeInfo;
@@ -1310,6 +1312,16 @@ void loop() {
   if (millis() - tHb >= PILI_HB_INTERVALO_MS) { tHb = millis(); fazerHeartbeat(); }
   processarEvento();
   processarProvisionamento();
+  {   // RELÓGIO DA MÁQUINA: hora da internet (NTP) para a W1 (a W1 não tem relógio). Só manda com a hora válida (depois de 2023).
+    static bool ntpIniciado = false; static uint32_t tHora = 0;
+    if (!ntpIniciado) { configTime(0, 0, "pool.ntp.org", "time.google.com"); ntpIniciado = true; }
+    time_t agoraT = time(nullptr);
+    if (agoraT > 1700000000 && millis() - tHora >= 30000UL) {
+      tHora = millis();
+      MsgHora h = {}; h.cab.tipo = MSG_HORA; h.cab.id_maquina = ID_MAQUINA; h.cab.origem = ORIGEM_CAMERA; h.cab.seq = 0; h.epoch = (uint32_t)agoraT;
+      esp_now_send((uint8_t*)MAC_WAVE1, (uint8_t*)&h, sizeof(h));
+    }
+  }
 
   static uint32_t tOta = 0;
   if (millis() - tOta >= PILI_OTA_CHECK_MS) { tOta = millis(); verificarOTA(); }
