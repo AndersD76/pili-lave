@@ -1,0 +1,425 @@
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x15 (USB_UART_CHIP_RESET),boot:0x39 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037ade6
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x10cc
+load:0x403c8700,len:0xc2c
+load:0x403cb700,len:0x30b0
+entry 0x403c88b8
+[WAVE1-MESTRE] boot limpo (motivo=11, hard reset ja feito)
+[WAVE1-MESTRE] pronto (ESP-NOW canal 1, RS-485 Delta/SAJ sozinho)
+[AUTO] estado=0 idx=0 proc=0
+[RS485] ok=20 zero_bytes=0 curta=0 crc=0 | total=20 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=42 zero_bytes=0 curta=0 crc=0 | total=42 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=62 zero_bytes=0 curta=0 crc=0 | total=62 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=82 zero_bytes=0 curta=0 crc=0 | total=82 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=102 zero_bytes=0 curta=0 crc=0 | total=102 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=122 zero_bytes=0 curta=0 crc=0 | total=122 (100% ok) | mov=0 giro=0 home=0
+[TESTE] iniciado (bomba OFF)
+[AUTO] estado=5 idx=0 proc=0
+[RS485] ok=129 zero_bytes=0 curta=0 crc=0 | total=129 (100% ok) | mov=0 giro=0 home=0
+[RS485] ok=132 zero_bytes=0 curta=0 crc=0 | total=132 (100% ok) | mov=2 giro=1 home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=0ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=1 | dt=69ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=169ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=0 X11=0 X7=0 | dt=537ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=824ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=1647ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=2122ms fase=0 dest_home=0
+[GIRO] sensores parados ha 2618ms -> reenviando comando
+[RS485] ok=172 zero_bytes=6 curta=0 crc=0 | total=178 (96% ok) | mov=2 giro=1 home=0
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=168 f=142 (freq_giro=150)
+[RAMPA] dtr=337 f=134 (freq_giro=150)
+[VFD] FALHA escrita reg=0x2001 val=1340 apos 4 tentativas (total falhas=1)
+[RAMPA] dtr=652 f=118 (freq_giro=150)
+[RAMPA] dtr=859 f=108 (freq_giro=150)
+[RAMPA] dtr=997 f=101 (freq_giro=150)
+[RAMPA] dtr=1166 f=92 (freq_giro=150)
+[RAMPA] dtr=1334 f=84 (freq_giro=150)
+[RAMPA] dtr=1502 f=75 (freq_giro=150)
+[RAMPA] dtr=1639 f=69 (freq_giro=150)
+[RAMPA] dtr=1808 f=60 (freq_giro=150)
+[RAMPA] dtr=1976 f=52 (freq_giro=150)
+[GIRO] 1->2 tempo 7500ms -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[RS485] ok=207 zero_bytes=14 curta=0 crc=0 | total=221 (93% ok) | mov=1 giro=1 home=0
+[GIRO] saiu pos2 dt_y4=0ms
+[GIRO] sensores X16=1 X17=0 X11=0 X7=1 | dt=69ms fase=0 dest_home=1
+[GIRO] sensores X16=1 X17=0 X11=0 X7=0 | dt=119ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=219ms fase=0 dest_home=1
+[GIRO] sensores parados ha 2549ms -> reenviando comando
+[RS485] ok=247 zero_bytes=17 curta=0 crc=0 | total=264 (93% ok) | mov=1 giro=1 home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=5286ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=5791ms fase=0 dest_home=1
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=138 f=144 (freq_giro=150)
+[RAMPA] dtr=276 f=137 (freq_giro=150)
+[GIRO] sensores X16=1 X17=0 X11=0 X7=0 | dt=6504ms fase=0 dest_home=1
+[RAMPA] dtr=445 f=128 (freq_giro=150)
+[RAMPA] dtr=583 f=121 (freq_giro=150)
+[RAMPA] dtr=721 f=114 (freq_giro=150)
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=6899ms fase=0 dest_home=1
+[RAMPA] dtr=890 f=106 (freq_giro=150)
+[GIRO] 2->1 fim giro (viu_home=1 parada=1 dt_saiu=7086ms) -> fine-home
+[GIRO] fine-home OK (X17+HOME) [imediato] -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=0ms fase=0 dest_home=0
+[RS485] ok=282 zero_bytes=23 curta=0 crc=0 | total=305 (92% ok) | mov=2 giro=1 home=0
+[GIRO] sensores X16=1 X17=0 X11=0 X7=0 | dt=538ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=974ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=1678ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=2165ms fase=0 dest_home=0
+[GIRO] sensores parados ha 2531ms -> reenviando comando
+[RS485] ok=320 zero_bytes=25 curta=0 crc=0 | total=345 (92% ok) | mov=2 giro=1 home=0
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=168 f=142 (freq_giro=150)
+[RAMPA] dtr=336 f=134 (freq_giro=150)
+[RAMPA] dtr=504 f=125 (freq_giro=150)
+[RAMPA] dtr=672 f=117 (freq_giro=150)
+[RAMPA] dtr=840 f=108 (freq_giro=150)
+[RAMPA] dtr=1008 f=100 (freq_giro=150)
+[RAMPA] dtr=1177 f=92 (freq_giro=150)
+[RAMPA] dtr=1346 f=83 (freq_giro=150)
+[RAMPA] dtr=1514 f=75 (freq_giro=150)
+[RAMPA] dtr=1682 f=66 (freq_giro=150)
+[RAMPA] dtr=1850 f=58 (freq_giro=150)
+[GIRO] 1->2 tempo 7500ms -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[RS485] ok=366 zero_bytes=25 curta=0 crc=0 | total=391 (93% ok) | mov=1 giro=0 home=0
+[RS485] ok=382 zero_bytes=25 curta=0 crc=0 | total=407 (93% ok) | mov=2 giro=0 home=0
+[GIRO] saiu pos2 dt_y4=0ms
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=69ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=169ms fase=0 dest_home=1
+[GIRO] sensores parados ha 2512ms -> reenviando comando
+[RS485] ok=414 zero_bytes=26 curta=0 crc=0 | total=440 (94% ok) | mov=2 giro=1 home=0
+[GIRO] sensores parados ha 2536ms -> reenviando comando
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=5721ms fase=0 dest_home=1
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=169 f=142 (freq_giro=150)
+[RAMPA] dtr=337 f=134 (freq_giro=150)
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=6582ms fase=0 dest_home=1
+[RAMPA] dtr=505 f=125 (freq_giro=150)
+[RAMPA] dtr=673 f=117 (freq_giro=150)
+[RAMPA] dtr=841 f=108 (freq_giro=150)
+[RAMPA] dtr=1009 f=100 (freq_giro=150)
+[RAMPA] dtr=1215 f=90 (freq_giro=150)
+[RAMPA] dtr=1384 f=81 (freq_giro=150)
+[RAMPA] dtr=1552 f=73 (freq_giro=150)
+[RAMPA] dtr=1721 f=64 (freq_giro=150)
+[GIRO] sensores X16=0 X17=1 X11=0 X7=0 | dt=7985ms fase=0 dest_home=1
+[RAMPA] dtr=1858 f=58 (freq_giro=150)
+[RAMPA] dtr=2027 f=50 (freq_giro=150)
+[RS485] ok=462 zero_bytes=32 curta=0 crc=0 | total=494 (93% ok) | mov=2 giro=1 home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=9222ms fase=0 dest_home=1
+[GIRO] 2->1 fim giro (viu_home=1 parada=1 dt_saiu=9322ms) -> fine-home
+[GIRO] fine-home OK (X17+HOME) [imediato] -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=0ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=1 | dt=69ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=119ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=1 X11=0 X7=0 | dt=406ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=892ms fase=0 dest_home=0
+[RS485] ok=483 zero_bytes=34 curta=0 crc=0 | total=517 (93% ok) | mov=1 giro=1 home=0
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=1796ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=2600ms fase=0 dest_home=0
+[GIRO] sensores parados ha 2508ms -> reenviando comando
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=168 f=142 (freq_giro=150)
+[RAMPA] dtr=305 f=135 (freq_giro=150)
+[RAMPA] dtr=442 f=128 (freq_giro=150)
+[RAMPA] dtr=611 f=120 (freq_giro=150)
+[RAMPA] dtr=748 f=113 (freq_giro=150)
+[RAMPA] dtr=917 f=105 (freq_giro=150)
+[RS485] ok=527 zero_bytes=43 curta=0 crc=0 | total=570 (92% ok) | mov=1 giro=1 home=0
+[RAMPA] dtr=1085 f=96 (freq_giro=150)
+[RAMPA] dtr=1253 f=88 (freq_giro=150)
+[RAMPA] dtr=1421 f=79 (freq_giro=150)
+[RAMPA] dtr=1589 f=71 (freq_giro=150)
+[RAMPA] dtr=1757 f=63 (freq_giro=150)
+[RAMPA] dtr=1925 f=54 (freq_giro=150)
+[GIRO] 1->2 tempo 7500ms -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[GIRO] saiu pos2 dt_y4=0ms
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=69ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=169ms fase=0 dest_home=1
+[RS485] ok=559 zero_bytes=44 curta=0 crc=0 | total=603 (92% ok) | mov=2 giro=1 home=0
+[GIRO] sensores parados ha 2531ms -> reenviando comando
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=4777ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=5650ms fase=0 dest_home=1
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=137 f=144 (freq_giro=150)
+[RAMPA] dtr=274 f=137 (freq_giro=150)
+[RS485] ok=599 zero_bytes=53 curta=0 crc=0 | total=652 (91% ok) | mov=2 giro=1 home=0
+[RAMPA] dtr=443 f=128 (freq_giro=150)
+[GIRO] sensores X16=0 X17=1 X11=0 X7=0 | dt=6529ms fase=0 dest_home=1
+[RAMPA] dtr=611 f=120 (freq_giro=150)
+[RAMPA] dtr=779 f=112 (freq_giro=150)
+[RAMPA] dtr=947 f=103 (freq_giro=150)
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=7033ms fase=0 dest_home=1
+[GIRO] 2->1 fim giro (viu_home=1 parada=1 dt_saiu=7133ms) -> fine-home
+[GIRO] fine-home OK (X17+HOME) [imediato] -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[CARRINHO] REV_X12 (retorno final) freq=35.0Hz
+[RS485] ok=628 zero_bytes=53 curta=0 crc=0 | total=681 (92% ok) | mov=2 giro=0 home=0
+[AUTO] estado=6 idx=1 proc=7
+[AUTO] estado=0 idx=1 proc=0
+[RS485] ok=650 zero_bytes=54 curta=0 crc=0 | total=704 (92% ok) | mov=0 giro=0 home=0
+[RS485] ok=670 zero_bytes=54 curta=0 crc=0 | total=724 (92% ok) | mov=0 giro=0 home=0
+[RS485] ok=690 zero_bytes=54 curta=0 crc=0 | total=744 (92% ok) | mov=0 giro=0 home=0
+[RS485] ok=710 zero_bytes=54 curta=0 crc=0 | total=764 (92% ok) | mov=0 giro=0 home=0
+[RS485] ok=730 zero_bytes=54 curta=0 crc=0 | total=784 (93% ok) | mov=0 giro=0 home=0
+[RS485] ok=750 zero_bytes=54 curta=0 crc=0 | total=804 (93% ok) | mov=0 giro=0 home=0
+[RS485] ok=770 zero_bytes=54 curta=0 crc=0 | total=824 (93% ok) | mov=0 giro=0 home=0
+[TESTE] iniciado (bomba ON)
+[AUTO] estado=5 idx=0 proc=0
+[RS485] ok=777 zero_bytes=54 curta=0 crc=0 | total=831 (93% ok) | mov=0 giro=0 home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=0ms fase=0 dest_home=0
+[RS485] ok=782 zero_bytes=55 curta=0 crc=0 | total=837 (93% ok) | mov=2 giro=1 home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=1 | dt=138ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=188ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=0 X11=0 X7=0 | dt=575ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=931ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=1705ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=2241ms fase=0 dest_home=0
+[GIRO] sensores parados ha 2557ms -> reenviando comando
+[VFD] FALHA escrita reg=0x2000 val=34 apos 4 tentativas (total falhas=2)
+[RS485] ok=819 zero_bytes=69 curta=0 crc=0 | total=888 (92% ok) | mov=2 giro=1 home=0
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=168 f=142 (freq_giro=150)
+[RAMPA] dtr=336 f=134 (freq_giro=150)
+[RAMPA] dtr=504 f=125 (freq_giro=150)
+[RAMPA] dtr=672 f=117 (freq_giro=150)
+[RAMPA] dtr=840 f=108 (freq_giro=150)
+[RAMPA] dtr=1009 f=100 (freq_giro=150)
+[RAMPA] dtr=1178 f=92 (freq_giro=150)
+[RAMPA] dtr=1346 f=83 (freq_giro=150)
+[RAMPA] dtr=1483 f=76 (freq_giro=150)
+[RAMPA] dtr=1652 f=68 (freq_giro=150)
+[GIRO] 1->2 tempo 7500ms -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[RS485] ok=851 zero_bytes=78 curta=0 crc=0 | total=929 (91% ok) | mov=1 giro=1 home=0
+[GIRO] saiu pos2 dt_y4=1ms
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=69ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=169ms fase=0 dest_home=1
+[GIRO] sensores parados ha 2550ms -> reenviando comando
+[VFD] FALHA escrita reg=0x2001 val=1500 apos 4 tentativas (total falhas=3)
+[RS485] ok=888 zero_bytes=90 curta=0 crc=0 | total=978 (90% ok) | mov=1 giro=1 home=0
+[GIRO] sensores parados ha 2531ms -> reenviando comando
+[VFD] FALHA escrita reg=0x2000 val=18 apos 4 tentativas (total falhas=4)
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=5635ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=5980ms fase=0 dest_home=1
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=168 f=142 (freq_giro=150)
+[RAMPA] dtr=336 f=134 (freq_giro=150)
+[RAMPA] dtr=504 f=125 (freq_giro=150)
+[RAMPA] dtr=672 f=117 (freq_giro=150)
+[GIRO] sensores X16=1 X17=0 X11=0 X7=0 | dt=6839ms fase=0 dest_home=1
+[RAMPA] dtr=809 f=110 (freq_giro=150)
+[RAMPA] dtr=947 f=103 (freq_giro=150)
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=7115ms fase=0 dest_home=1
+[RAMPA] dtr=1085 f=96 (freq_giro=150)
+[GIRO] 2->1 fim giro (viu_home=1 parada=1 dt_saiu=7233ms) -> fine-home
+[GIRO] fine-home: PASSOU (saiu X16 / chegou X7) -> horario
+[GIRO] fine-home OK (X17+HOME) [imediato] -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[RS485] ok=921 zero_bytes=103 curta=0 crc=0 | total=1024 (89% ok) | mov=2 giro=1 home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=0ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=0 X11=0 X7=0 | dt=188ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=406ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=0 X11=0 X7=0 | dt=556ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=743ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=1516ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=2178ms fase=0 dest_home=0
+[VFD] FALHA escrita reg=0x2001 val=1500 apos 4 tentativas (total falhas=5)
+[GIRO] sensores parados ha 2604ms -> reenviando comando
+[RS485] ok=960 zero_bytes=118 curta=0 crc=0 | total=1078 (89% ok) | mov=2 giro=1 home=0
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=169 f=142 (freq_giro=150)
+[RAMPA] dtr=337 f=134 (freq_giro=150)
+[RAMPA] dtr=543 f=123 (freq_giro=150)
+[RAMPA] dtr=750 f=113 (freq_giro=150)
+[RAMPA] dtr=919 f=105 (freq_giro=150)
+[RAMPA] dtr=1125 f=94 (freq_giro=150)
+[RAMPA] dtr=1263 f=87 (freq_giro=150)
+[VFD] FALHA escrita reg=0x2000 val=34 apos 4 tentativas (total falhas=6)
+[RAMPA] dtr=1578 f=72 (freq_giro=150)
+[RAMPA] dtr=1785 f=61 (freq_giro=150)
+[RAMPA] dtr=1923 f=54 (freq_giro=150)
+[GIRO] 1->2 tempo 7500ms -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[RS485] ok=1005 zero_bytes=135 curta=0 crc=0 | total=1140 (88% ok) | mov=1 giro=0 home=0
+[RS485] ok=1021 zero_bytes=136 curta=0 crc=0 | total=1157 (88% ok) | mov=2 giro=0 home=0
+[GIRO] saiu pos2 dt_y4=0ms
+[VFD] FALHA escrita reg=0x2000 val=34 apos 4 tentativas (total falhas=7)
+[GIRO] sensores parados ha 2586ms -> reenviando comando
+[VFD] FALHA escrita reg=0x2000 val=34 apos 4 tentativas (total falhas=8)
+[RS485] ok=1047 zero_bytes=147 curta=0 crc=0 | total=1194 (87% ok) | mov=2 giro=1 home=0
+[GIRO] sensores parados ha 2636ms -> reenviando comando
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=5341ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=5478ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=5528ms fase=0 dest_home=1
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=168 f=142 (freq_giro=150)
+[RAMPA] dtr=337 f=134 (freq_giro=150)
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=6488ms fase=0 dest_home=1
+[RAMPA] dtr=474 f=127 (freq_giro=150)
+[RAMPA] dtr=612 f=120 (freq_giro=150)
+[RAMPA] dtr=781 f=111 (freq_giro=150)
+[RAMPA] dtr=919 f=105 (freq_giro=150)
+[RAMPA] dtr=1088 f=96 (freq_giro=150)
+[RAMPA] dtr=1256 f=88 (freq_giro=150)
+[RAMPA] dtr=1531 f=74 (freq_giro=150)
+[GIRO] sensores X16=0 X17=1 X11=0 X7=0 | dt=7614ms fase=0 dest_home=1
+[RAMPA] dtr=1700 f=65 (freq_giro=150)
+[RAMPA] dtr=1837 f=59 (freq_giro=150)
+[RAMPA] dtr=2044 f=50 (freq_giro=150)
+[RS485] ok=1097 zero_bytes=160 curta=0 crc=0 | total=1257 (87% ok) | mov=2 giro=1 home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=8577ms fase=0 dest_home=1
+[GIRO] 2->1 fim giro (viu_home=1 parada=1 dt_saiu=8677ms) -> fine-home
+[GIRO] fine-home OK (X17+HOME) [imediato] -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=0ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=1 | dt=69ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=169ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=1 X11=0 X7=0 | dt=487ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=873ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=1597ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=1734ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=1784ms fase=0 dest_home=0
+[RS485] ok=1120 zero_bytes=163 curta=0 crc=0 | total=1283 (87% ok) | mov=1 giro=1 home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=1884ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=1952ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=2557ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=2607ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=2875ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=4149ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=4299ms fase=0 dest_home=0
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=206 f=140 (freq_giro=150)
+[RAMPA] dtr=482 f=126 (freq_giro=150)
+[RAMPA] dtr=689 f=116 (freq_giro=150)
+[RAMPA] dtr=1034 f=99 (freq_giro=150)
+[RAMPA] dtr=1172 f=92 (freq_giro=150)
+[RAMPA] dtr=1310 f=85 (freq_giro=150)
+[RS485] ok=1162 zero_bytes=184 curta=0 crc=0 | total=1346 (86% ok) | mov=1 giro=1 home=0
+[RAMPA] dtr=1479 f=77 (freq_giro=150)
+[RAMPA] dtr=1647 f=68 (freq_giro=150)
+[RAMPA] dtr=1784 f=61 (freq_giro=150)
+[GIRO] 1->2 tempo 7500ms -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=0ms fase=0 dest_home=1
+[GIRO] saiu pos2 dt_y4=0ms
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=276ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=414ms fase=0 dest_home=1
+[RS485] ok=1190 zero_bytes=192 curta=0 crc=0 | total=1382 (86% ok) | mov=2 giro=1 home=0
+[VFD] FALHA escrita reg=0x2000 val=34 apos 4 tentativas (total falhas=9)
+[GIRO] sensores parados ha 2506ms -> reenviando comando
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=3712ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=3780ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=4572ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=5495ms fase=0 dest_home=1
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=168 f=142 (freq_giro=150)
+[GIRO] sensores X16=0 X17=1 X11=0 X7=0 | dt=6367ms fase=0 dest_home=1
+[RAMPA] dtr=336 f=134 (freq_giro=150)
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=6485ms fase=0 dest_home=1
+[RAMPA] dtr=504 f=125 (freq_giro=150)
+[GIRO] sensores X16=0 X17=1 X11=0 X7=0 | dt=6653ms fase=0 dest_home=1
+[RAMPA] dtr=672 f=117 (freq_giro=150)
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=6821ms fase=0 dest_home=1
+[RS485] ok=1231 zero_bytes=205 curta=0 crc=0 | total=1436 (85% ok) | mov=2 giro=1 home=0
+[RAMPA] dtr=840 f=108 (freq_giro=150)
+[GIRO] 2->1 fim giro (viu_home=1 parada=1 dt_saiu=7008ms) -> fine-home
+[GIRO] fine-home OK (X17+HOME) [imediato] -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[CARRINHO] REV_X12 (retorno final) freq=35.0Hz
+[RS485] ok=1254 zero_bytes=206 curta=0 crc=0 | total=1460 (85% ok) | mov=2 giro=0 home=0
+[AUTO] estado=6 idx=1 proc=7
+[AUTO] estado=0 idx=1 proc=0
+[RS485] ok=1278 zero_bytes=206 curta=0 crc=0 | total=1484 (86% ok) | mov=0 giro=0 home=0
+[RS485] ok=1298 zero_bytes=206 curta=0 crc=0 | total=1504 (86% ok) | mov=0 giro=0 home=0
+[RS485] ok=1318 zero_bytes=206 curta=0 crc=0 | total=1524 (86% ok) | mov=0 giro=0 home=0
+[RS485] ok=1338 zero_bytes=206 curta=0 crc=0 | total=1544 (86% ok) | mov=0 giro=0 home=0
+[RS485] ok=1358 zero_bytes=206 curta=0 crc=0 | total=1564 (86% ok) | mov=0 giro=0 home=0
+[RS485] ok=1378 zero_bytes=206 curta=0 crc=0 | total=1584 (86% ok) | mov=0 giro=0 home=0
+[RS485] ok=1398 zero_bytes=206 curta=0 crc=0 | total=1604 (87% ok) | mov=0 giro=0 home=0
+[RS485] ok=1418 zero_bytes=206 curta=0 crc=0 | total=1624 (87% ok) | mov=0 giro=0 home=0
+[RS485] ok=1438 zero_bytes=206 curta=0 crc=0 | total=1644 (87% ok) | mov=0 giro=0 home=0
+[RS485] ok=1458 zero_bytes=206 curta=0 crc=0 | total=1664 (87% ok) | mov=0 giro=0 home=0
+[RS485] ok=1478 zero_bytes=206 curta=0 crc=0 | total=1684 (87% ok) | mov=0 giro=0 home=0
+[RS485] ok=1498 zero_bytes=206 curta=0 crc=0 | total=1704 (87% ok) | mov=0 giro=0 home=0
+[TESTE] iniciado (bomba OFF)
+[AUTO] estado=5 idx=0 proc=0
+[RS485] ok=1505 zero_bytes=206 curta=0 crc=0 | total=1711 (87% ok) | mov=0 giro=0 home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=0ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=1 | dt=138ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=188ms fase=0 dest_home=0
+[RS485] ok=1512 zero_bytes=207 curta=0 crc=0 | total=1719 (87% ok) | mov=2 giro=1 home=0
+[GIRO] sensores X16=1 X17=0 X11=0 X7=0 | dt=624ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=992ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=1696ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=2164ms fase=0 dest_home=0
+[GIRO] sensores parados ha 2537ms -> reenviando comando
+[RS485] ok=1550 zero_bytes=210 curta=0 crc=0 | total=1760 (88% ok) | mov=2 giro=1 home=0
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=168 f=142 (freq_giro=150)
+[TESTE] PARADO pelo operador
+[AUTO] estado=0 idx=0 proc=0
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[RS485] ok=1586 zero_bytes=210 curta=0 crc=0 | total=1796 (88% ok) | mov=0 giro=0 home=0
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[RS485] ok=1654 zero_bytes=210 curta=0 crc=0 | total=1864 (88% ok) | mov=0 giro=0 home=0
+[RS485] ok=1674 zero_bytes=210 curta=0 crc=0 | total=1884 (88% ok) | mov=0 giro=0 home=0
+[RS485] ok=1694 zero_bytes=210 curta=0 crc=0 | total=1904 (88% ok) | mov=0 giro=0 home=0
+[RS485] ok=1714 zero_bytes=210 curta=0 crc=0 | total=1924 (89% ok) | mov=0 giro=0 home=0
+[RS485] ok=1734 zero_bytes=210 curta=0 crc=0 | total=1944 (89% ok) | mov=0 giro=0 home=0
+[RS485] ok=1754 zero_bytes=210 curta=0 crc=0 | total=1964 (89% ok) | mov=0 giro=0 home=0
+[RS485] ok=1774 zero_bytes=210 curta=0 crc=0 | total=1984 (89% ok) | mov=0 giro=0 home=0
+[RS485] ok=1794 zero_bytes=210 curta=0 crc=0 | total=2004 (89% ok) | mov=0 giro=0 home=0
+[RS485] ok=1814 zero_bytes=210 curta=0 crc=0 | total=2024 (89% ok) | mov=0 giro=0 home=0
+[RS485] ok=1834 zero_bytes=210 curta=0 crc=0 | total=2044 (89% ok) | mov=0 giro=0 home=0
+[RS485] ok=1854 zero_bytes=210 curta=0 crc=0 | total=2064 (89% ok) | mov=0 giro=0 home=0
+[RS485] ok=1874 zero_bytes=210 curta=0 crc=0 | total=2084 (89% ok) | mov=0 giro=0 home=0
+[RS485] ok=1894 zero_bytes=210 curta=0 crc=0 | total=2104 (90% ok) | mov=0 giro=0 home=0
+[RS485] ok=1914 zero_bytes=210 curta=0 crc=0 | total=2124 (90% ok) | mov=0 giro=0 home=0
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[RS485] ok=1937 zero_bytes=210 curta=0 crc=0 | total=2147 (90% ok) | mov=0 giro=0 home=0
+[RS485] ok=1987 zero_bytes=213 curta=0 crc=0 | total=2200 (90% ok) | mov=0 giro=0 home=2
+[RS485] ok=2032 zero_bytes=213 curta=0 crc=0 | total=2245 (90% ok) | mov=0 giro=0 home=5
+[RS485] ok=2052 zero_bytes=213 curta=0 crc=0 | total=2265 (90% ok) | mov=0 giro=0 home=5
+[RS485] ok=2072 zero_bytes=213 curta=0 crc=0 | total=2285 (90% ok) | mov=0 giro=0 home=5
+[RS485] ok=2092 zero_bytes=213 curta=0 crc=0 | total=2305 (90% ok) | mov=0 giro=0 home=5
+[RS485] ok=2112 zero_bytes=213 curta=0 crc=0 | total=2325 (90% ok) | mov=0 giro=0 home=5
+[RS485] ok=2132 zero_bytes=213 curta=0 crc=0 | total=2345 (90% ok) | mov=0 giro=0 home=5
+[RS485] ok=2152 zero_bytes=213 curta=0 crc=0 | total=2365 (90% ok) | mov=0 giro=0 home=5
+[RS485] ok=2172 zero_bytes=213 curta=0 crc=0 | total=2385 (91% ok) | mov=0 giro=0 home=5
+[RS485] ok=2192 zero_bytes=213 curta=0 crc=0 | total=2405 (91% ok) | mov=0 giro=0 home=5
+[RS485] ok=2212 zero_bytes=213 curta=0 crc=0 | total=2425 (91% ok) | mov=0 giro=0 home=5
+[RS485] ok=2232 zero_bytes=213 curta=0 crc=0 | total=2445 (91% ok) | mov=0 giro=0 home=5
+[RS485] ok=2252 zero_bytes=213 curta=0 crc=0 | total=2465 (91% ok) | mov=0 giro=0 home=5
+[RS485] ok=2272 zero_bytes=213 curta=0 crc=0 | total=2485 (91% ok) | mov=0 giro=0 home=5
+[RS485] ok=2292 zero_bytes=213 curta=0 crc=0 | total=2505 (91% ok) | mov=0 giro=0 home=5
+[RS485] ok=2312 zero_bytes=213 curta=0 crc=0 | total=2525 (91% ok) | mov=0 giro=0 home=5
+[RS485] ok=2332 zero_bytes=213 curta=0 crc=0 | total=2545 (91% ok) | mov=0 giro=0 home=5
+[RS485] ok=2352 zero_bytes=213 curta=0 crc=0 | total=2565 (91% ok) | mov=0 giro=0 home=5
+[RS485] ok=2372 zero_bytes=213 curta=0 crc=0 | total=2585 (91% ok) | mov=0 giro=0 home=5
+[RS485] ok=2392 zero_bytes=213 curta=0 crc=0 | total=2605 (91% ok) | mov=0 giro=0 home=5
+[RS485] ok=2412 zero_bytes=213 curta=0 crc=0 | total=2625 (91% ok) | mov=0 giro=0 home=5
+[RS485] ok=2432 zero_bytes=213 curta=0 crc=0 | total=2645 (91% ok) | mov=0 giro=0 home=5
+[RS485] ok=2452 zero_bytes=213 curta=0 crc=0 | total=2665 (92% ok) | mov=0 giro=0 home=5
