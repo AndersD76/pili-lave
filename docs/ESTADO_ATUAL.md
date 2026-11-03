@@ -61,7 +61,7 @@ Os outros documentos têm o detalhe; este diz onde ele está e o que mudou por �
 
 ## 8. Ordem de leitura sugerida
 1. Este arquivo. 2. `CLAUDE.md` (regras). 3. `docs/COMBINADOS.md` (decisões). 4. `testes/PENDENCIAS_NA_MAQUINA.md` (**seções H e I** são as mais recentes). 5. `docs/PARIDADE_ANTIGO_NOVO.md` (o que o novo já faz vs o antigo). Link W1↔W2 por cabo (projeto e teste): `docs/LINK_W1_W2_UART.md`.
-6. `testes/LEIAME.md` (base de testes e telas). 7. `GUIA_TECNICO_COMPLETO.md` (referência técnica; seção 3.13 e as do backend). 8. `docs/BACKUP_E_RESTAURACAO.md`, `docs/TROCA_DE_DISPLAY.md`, `firmware_camera/release/LEIAME.md`.
+6. `testes/LEIAME.md` (base de testes e telas). 7. `GUIA_TECNICO_COMPLETO.md` (referência técnica; seções 3 e 4 (firmware atual), Apêndices A/B (firmware antigo) e as do backend). 8. `docs/BACKUP_E_RESTAURACAO.md`, `docs/TROCA_DE_DISPLAY.md`, `firmware_camera/release/LEIAME.md`.
 
 ## 9. Como compilar e gravar (resumo)
 - W1/W2: `arduino-cli compile|upload --fqbn esp32:esp32:esp32s3:PSRAM=opi,CPUFreq=240,FlashMode=qio,FlashSize=16M,CDCOnBoot=cdc` (W1 = COM24, W2 = COM10). **Abrir a serial da W1 a reinicia.**

@@ -36,7 +36,7 @@ arduino-cli upload -p COM11 --fqbn "esp32:esp32:esp32s3:PartitionScheme=huge_app
 (antes de `upload`, rode `arduino-cli compile` com o mesmo `--fqbn` e a mesma pasta.)
 
 ## 4. Voltar ao firmware ANTIGO (display mestre, com app)
-Gravar `lixo/lava_car_485/display`, `lixo/lava_car_485/waveshare1` e `lixo/lava_car_485/waveshare2` (FQBNs em `GUIA_TECNICO_COMPLETO.md`, seções 3 e 4) e a câmera
+Gravar `lixo/lava_car_485/display`, `lixo/lava_car_485/waveshare1` e `lixo/lava_car_485/waveshare2` (FQBNs em `GUIA_TECNICO_COMPLETO.md`, Apêndices A e B) e a câmera
 (`firmware_camera`). Atenção: o antigo usa **Modbus RS-485** entre display e Waveshares, então a **fiação do RS-485** precisa estar como era antes
 (SAJ de volta no barramento fica fora: foi o que causou o ruído).
 
