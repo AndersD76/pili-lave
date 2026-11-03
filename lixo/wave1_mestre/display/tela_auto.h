@@ -33,7 +33,7 @@ void tela_auto_atualizar_diag() {
 // ERROS — ex.: "braco fora de posicao"). Chamar com o lock do LVGL em maos.
 void tela_auto_atualizar_status() {
     if (!lbl_status_auto) return;
-    static char buf[72];
+    static char buf[96];
     lv_color_t cor = COR_TEXTO;
     switch (g_estado_auto) {
         case AUTO_IDLE:           snprintf(buf, sizeof(buf), "Selecione o modelo"); cor = COR_TEXTO_FRACO; break;
@@ -49,6 +49,11 @@ void tela_auto_atualizar_status() {
         case AUTO_ERRO:           snprintf(buf, sizeof(buf), "ERRO: %s",
                                            g_estado.msg_alarme ? g_estado.msg_alarme : "?"); cor = COR_VERMELHO; break;
         default:                  buf[0] = '\0'; break;
+    }
+    if (g_modo_teste_seco) {   // avisa que o ciclo roda em modo bancada
+        char tmp[96];
+        snprintf(tmp, sizeof(tmp), "[TESTE A SECO] %s", buf);
+        snprintf(buf, sizeof(buf), "%s", tmp);
     }
     lv_label_set_text(lbl_status_auto, buf);
     lv_obj_set_style_text_color(lbl_status_auto, cor, 0);

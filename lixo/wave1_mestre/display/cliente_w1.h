@@ -49,6 +49,9 @@ void alarme_modbus(const char* msg) {
 uint32_t g_giro_dur_ms     = 7500;
 uint32_t g_giro_timeout_ms = 10000;
 
+// Modo teste a seco (bancada): so existe em RAM, sempre desligado no boot.
+bool g_modo_teste_seco = false;
+
 int  proc_estado() { return (int)g_sub_estado_w1; }
 bool giro_dupla()  { return false; }   // diagnostico fino nao espelhado (baixa prioridade)
 bool io1_get_di(uint8_t canal) { return (g_io1_di_w1 >> (canal-1)) & 1; }
@@ -143,6 +146,7 @@ void w1_push_config() {
     m.atraso_espuma_a = g_config.atraso_espuma_a; m.atraso_espuma_b = g_config.atraso_espuma_b;
     m.atraso_cor_magica = g_config.atraso_cor_magica; m.atraso_secagem = g_config.atraso_secagem;
     m.giro_dur_ms = g_giro_dur_ms; m.giro_timeout_ms = g_giro_timeout_ms;
+    m.modo_teste_seco = g_modo_teste_seco ? 1 : 0;
     w1_send(&m, sizeof(m));
 }
 

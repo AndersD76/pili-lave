@@ -420,8 +420,16 @@ static void status_enviar() {
 // ja chegou pelo menos uma vez.
 bool g_config_recebida = false;
 
+// Modo teste a seco (bancada). g_teste_seco_cfg e o que o display pediu por
+// ultimo; g_teste_seco e o valor TRAVADO no inicio do ciclo (auto_iniciar),
+// pra nao mudar no meio de uma lavagem. Ambos nascem desligados e nunca vao
+// pra NVS.
+bool g_teste_seco_cfg = false;
+bool g_teste_seco     = false;
+
 static void aplica_config_push(const MsgConfigPush* c) {
     g_config_recebida = true;
+    g_teste_seco_cfg = (c->modo_teste_seco != 0);
     memcpy(g_velocidades, c->velocidades, sizeof(g_velocidades));
     memcpy(g_modelos, c->modelos, sizeof(g_modelos));
     g_config.atraso_init = c->atraso_init; g_config.tempo_espuma_a = c->tempo_espuma_a;

@@ -155,7 +155,6 @@ void auto_tick() {
             if (X14 && !x14_estava_ativo) {
                 x14_estava_ativo = true;
                 SET_Y13(true);            // liga bomba alta pressao
-                saj_set_freq(30.0f);      // pedido do operador: 30Hz nesse pulso de entrada (antes nao mandava frequencia nenhuma, ficava com o valor que o SAJ tinha de antes)
                 backend_evt_car_entered();   // enfileira car-entered
             } else if (!X14 && x14_estava_ativo) {   // else if: evita corrida X14 liga/desliga no mesmo tick
                 x14_estava_ativo = false;
@@ -298,14 +297,6 @@ void auto_tick() {
 void auto_iniciar(uint8_t modelo) {
     if (licenca_bloqueada()) {
         DBG_PRINTLN("[AUTO] bloqueado por licenca");
-        return;
-    }
-    extern bool g_config_recebida;
-    if (!g_config_recebida) {
-        // Acha de campo: nunca rodar um ciclo com velocidades/modelos
-        // zerados por falta de config (ver nota em controle.h). Recusa o
-        // inicio em vez de rodar silenciosamente errado.
-        DBG_PRINTLN("[AUTO] bloqueado: ainda sem config do display (aguardando push)");
         return;
     }
     g_estado.programa_sel   = modelo;

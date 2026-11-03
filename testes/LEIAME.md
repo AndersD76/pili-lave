@@ -1,3 +1,5 @@
+> **2026-11-03:** nesta pasta ficou so o firmware atual (`display/` e `w1_w2_por_rxtx/`). `waveshare1/`, `waveshare2/` (ESP-NOW), `diag_*` e `display_sem_toque/`, assim como `wave1_mestre/` e `lava_car_485/` citados abaixo, foram para `lixo/` (ver `lixo/LEIAME.md`).
+
 # testes/ — bancada da Alta Pressão (etapa 0)
 
 Base nova, construída passo a passo. `wave1_mestre/` (experimento) e `lava_car_485/`

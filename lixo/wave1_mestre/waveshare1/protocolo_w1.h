@@ -66,7 +66,8 @@ typedef struct __attribute__((packed)) {
              dist_compensacao, sobrecarga_main, sobrecarga_rotacao, tempo_sobrecarga,
              atraso_espuma_a, atraso_espuma_b, atraso_cor_magica, atraso_secagem;
     uint32_t giro_dur_ms, giro_timeout_ms;
-} MsgConfigPush;   // sizeof ~= 4 + 112 + 40 + 24 = 180 bytes — cabe no limite ESP-NOW (250)
+    uint8_t  modo_teste_seco;   // 1 = bancada a seco (Alta Pressao: carrinho por tempo, sem Y13/SAJ). Nunca persistido.
+} MsgConfigPush;   // sizeof ~= 4 + 112 + 40 + 24 + 8 + 1 = 189 bytes — cabe no limite ESP-NOW (250)
 
 typedef struct __attribute__((packed)) {
     CabEspNow cab;

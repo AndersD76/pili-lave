@@ -83,17 +83,6 @@ uint32_t g_giro_timeout_ms = GIRO_TIMEOUT_DEFAULT_MS;
 // ---- Posicionamento fino no HOME (fine-homing) apos cada giro 2->1 ----
 #define GIRO_FASE_GIRO        0    // fase: girando normalmente
 #define GIRO_FASE_HOME        1    // fase: buscando o home em pulsos
-#define GIRO_FASE_PARANDO     2    // fase: confirmando que o motor realmente parou (reenvia STOP)
-// Achado em campo: vfd_stop() ja tenta 4x internamente (vfd_write_reg_retry,
-// ~60ms de janela), mas sao 4 tentativas em UM UNICO instante — se a rajada
-// de ruido do proprio motor (giro em alta velocidade) durar mais que isso,
-// as 4 falham juntas e NINGUEM reenvia o STOP depois (era um disparo unico).
-// O giro ficava girando sem parar ate estourar o timeout de seguranca.
-// Agora toda parada "terminal" do giro entra nesta fase e reenvia o STOP
-// mais algumas vezes, espaçadas no tempo, pra dar chance de uma rajada de
-// ruido pontual nao ser fatal.
-#define GIRO_PARAR_TENTATIVAS    5   // reenvios espaçados do STOP antes de considerar parado
-#define GIRO_PARAR_INTERVALO_MS 200  // intervalo entre reenvios
 #define SENSOR_HOME_DEBOUNCE_MS 100 // X16/X17 (NIVEL) so valem apos ficarem >100ms constantes (filtra ruido/travessia curta)
 #define FH_PULSE_HZ10        50    // 5.0 Hz — velocidade lenta dos pulsos de busca
 #define FH_PULSE_MS        1000    // duracao de cada pulso de busca
@@ -142,10 +131,6 @@ static uint8_t  _fh_n           = 0;   // pulsos ja dados na perna atual
 static uint8_t  _fh_leg         = 0;   // 0 = 1a perna (budget 5) ; 1 = perna invertida (budget 10)
 static uint8_t  _fh_tentativa   = 0;   // 0 = 1a rodada completa ; 1 = 2a rodada (retry) antes de desistir de vez
 static uint32_t _fh_t           = 0;   // timer dos pulsos/settle
-// --- estado da fase de confirmacao de parada (GIRO_FASE_PARANDO) ---
-static uint8_t  _giro_parar_n   = 0;   // reenvios de STOP ja feitos
-static uint32_t _giro_t_parar   = 0;   // ultimo reenvio
-static int      _giro_parar_ret = 0;   // valor a retornar quando confirmar (SUB_DONE ou SUB_ERR)
 
 // Prepara o giro e retorna NA HORA — nao bloqueia.
 // dest_home: true se este giro especifico termina na posicao 1 (home, onde X17 E
@@ -190,39 +175,11 @@ static void giro_iniciar(bool fwd, uint16_t freq_hz10, bool dest_home) {
     _fh_tentativa    = 0;
     _giro_t_vida        = millis();
     _giro_sensores_ant  = 0;
-    _giro_fase          = GIRO_FASE_GIRO;
-    _giro_parar_n       = 0;
-}
-
-// Chama depois do PRIMEIRO vfd_stop() de uma parada terminal do giro: entra
-// na fase de confirmacao (reenvia STOP mais GIRO_PARAR_TENTATIVAS-1 vezes,
-// espaçadas) antes de dar o giro por encerrado de verdade. ret_final e o que
-// giro_tick devera retornar quando a confirmacao acabar (SUB_DONE ou SUB_ERR).
-static int giro_parar_e_confirmar(int ret_final) {
-    _giro_fase     = GIRO_FASE_PARANDO;
-    _giro_parar_n  = 1;           // a chamada vfd_stop() que o chamador ja fez conta como a 1a
-    _giro_t_parar  = millis();
-    _giro_parar_ret = ret_final;
-    return SUB_RUN;
 }
 
 // Chamado a cada ciclo do laco principal. SEMPRE retorna imediatamente.
 static int giro_tick() {
     uint32_t agora = millis();
-
-    if (_giro_fase == GIRO_FASE_PARANDO) {
-        if (agora - _giro_t_parar >= GIRO_PARAR_INTERVALO_MS) {
-            _giro_t_parar = agora;
-            vfd_stop();
-            _giro_parar_n++;
-            if (_giro_parar_n >= GIRO_PARAR_TENTATIVAS) {
-                g_giro_ativo = false;
-                DBG_PRINTLN("[GIRO] parada confirmada (reenvios)");
-                return _giro_parar_ret;
-            }
-        }
-        return SUB_RUN;
-    }
 
     // X17 e X16 agora sao NIVEL ao vivo (g_viv2, sempre fresco via ESP-NOW — nao
     // depende de refresh nem de latch). DEBOUNCE de 100ms: o nivel so vale depois de
@@ -245,8 +202,9 @@ static int giro_tick() {
         // pulso) -> para IMEDIATAMENTE, sem esperar o pulso terminar nem o settle.
         if (combo) {
             SET_Y4(false); vfd_stop();
-            DBG_PRINTLN("[GIRO] fine-home OK (X17+HOME) [imediato] -> confirmando parada");
-            return giro_parar_e_confirmar(SUB_DONE);
+            g_giro_ativo = false;
+            DBG_PRINTLN("[GIRO] fine-home OK (X17+HOME) [imediato]");
+            return SUB_DONE;
         }
         switch (_fh_st) {
             case 0:  // escolhe o sentido inicial pela MEMORIA do giro e faz o 1o settle.
@@ -384,8 +342,9 @@ static int giro_tick() {
         // ---- lado 1->2 (posicao 2, so X17): para por TEMPO (parada principal).
         if (dt >= g_giro_dur_ms) {
             vfd_stop(); SET_Y4(false);
-            DBG_PRINTF("[GIRO] 1->2 tempo %ums -> confirmando parada\n", (unsigned)g_giro_dur_ms);
-            return giro_parar_e_confirmar(SUB_DONE);
+            g_giro_ativo = false;
+            DBG_PRINTF("[GIRO] 1->2 tempo %ums -> DONE\n", (unsigned)g_giro_dur_ms);
+            return SUB_DONE;
         }
     }
 
@@ -397,15 +356,8 @@ static int giro_tick() {
     //      pode nao zerar de forma confiavel nesse sentido -> a rampa nunca
     //      comecava. Usar sempre dt (relogio unico, sem depender de sensor)
     //      resolve isso; a PARADA continua sendo so pelo X16+X17, sem mudanca.
-    // Giro 1->2 (parada por TEMPO): a rampa de 2s termina exatamente no tempo
-    // GIRO ajustado na tela (comeca em GIRO-2s), pra mexer no tempo mover o
-    // ponto de parada de forma previsivel e o STOP nunca vir em velocidade
-    // cheia. Antes a rampa era fixa em 6s e o tempo so mudava o instante do
-    // STOP. O giro 2->1 (home) continua com a rampa fixa em 6s.
-    uint32_t inicio_rampa = GIRO_INICIO_RAMPA_MS;
-    if (!_giro_dest_home) inicio_rampa = (g_giro_dur_ms > GIRO_DESAC_MS) ? (g_giro_dur_ms - GIRO_DESAC_MS) : 0;
     uint32_t dt_rampa = dt;
-    if (!_giro_desac && dt_rampa >= inicio_rampa) {
+    if (!_giro_desac && dt_rampa >= GIRO_INICIO_RAMPA_MS) {
         _giro_desac   = true;
         _giro_t_desac = agora;
     }
@@ -433,9 +385,10 @@ static int giro_tick() {
     //      fine-homing la em cima). Aqui e braco travado de verdade -> erro.
     if (!_giro_dest_home && dt > g_giro_timeout_ms) {
         vfd_stop(); SET_Y4(false);
+        g_giro_ativo = false;
         _giro_msg = "ERRO: timeout giro";
-        DBG_PRINTLN("[GIRO] TIMEOUT -> confirmando parada antes do ERR");
-        return giro_parar_e_confirmar(SUB_ERR);
+        DBG_PRINTLN("[GIRO] TIMEOUT -> ERR");
+        return SUB_ERR;
     }
 
     return SUB_RUN;

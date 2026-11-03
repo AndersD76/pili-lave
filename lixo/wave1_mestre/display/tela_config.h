@@ -105,6 +105,20 @@ static void cb_cfg_wifi(lv_event_t* e) {
     if (_cb_config_wifi) _cb_config_wifi();
 }
 
+// Interruptor do modo teste a seco (bancada). Nao persiste: religou, volta OFF.
+static lv_obj_t* btn_teste_seco = nullptr;
+static lv_obj_t* lbl_teste_seco = nullptr;
+static void atualiza_btn_teste_seco() {
+    if (!btn_teste_seco || !lbl_teste_seco) return;
+    lv_label_set_text(lbl_teste_seco, g_modo_teste_seco ? "TESTE A SECO: ON" : "TESTE A SECO: OFF");
+    lv_obj_set_style_bg_color(btn_teste_seco, g_modo_teste_seco ? COR_VERMELHO : COR_BORDA, 0);
+}
+static void cb_cfg_teste_seco(lv_event_t* e) {
+    g_modo_teste_seco = !g_modo_teste_seco;
+    atualiza_btn_teste_seco();
+    w1_push_config();
+}
+
 // -----------------------------------------------------------------------
 // Criação da tela
 // -----------------------------------------------------------------------
@@ -163,6 +177,16 @@ void tela_config_criar(void (*cb_voltar)(), void (*cb_vel)(), void (*cb_mod)(), 
         lv_obj_set_style_text_color(lc, COR_AMARELO, 0);
         lv_obj_set_pos(lc, 150 + i * 140, 325);
     }
+
+    // Interruptor do modo teste a seco (bancada: Alta Pressao com carrinho por
+    // tempo e sem Y13/SAJ). Fica livre na faixa dos contadores, a direita.
+    btn_teste_seco = lv_btn_create(scr_config);
+    lv_obj_set_size(btn_teste_seco, 170, 36);
+    lv_obj_set_pos(btn_teste_seco, 620, 322);
+    lbl_teste_seco = lv_label_create(btn_teste_seco);
+    lv_obj_center(lbl_teste_seco);
+    lv_obj_add_event_cb(btn_teste_seco, cb_cfg_teste_seco, LV_EVENT_CLICKED, nullptr);
+    atualiza_btn_teste_seco();
 
     // Botões de navegação
     lv_obj_t* btn_vel = lv_btn_create(scr_config);
