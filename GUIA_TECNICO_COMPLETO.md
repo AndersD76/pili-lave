@@ -48,12 +48,12 @@ Pontos importantes:
 - **O display NÃO tem Wi-Fi/internet** (não tem RAM suficiente pra TLS). Ele só fala ESP-NOW com a câmera.
 - **A câmera é o gateway de nuvem**: é ela quem conecta no Wi-Fi, é a "mestre de canal" (avisa display+Waveshares em qual canal do rádio ela está), e faz todo o HTTPS (heartbeat, envio de fotos LPR, eventos, provisionamento).
 - **ESP-NOW é rádio de curto alcance** (dezenas de metros) — isso é usado deliberadamente como trava de segurança na troca de peça (ver seção 3.9).
-- **Waveshares migraram de ESP-NOW pra RS-485 cabeado** (mudança que deu nome à pasta `lava_car_485`) — só a câmera continua em ESP-NOW com o display.
+- **Waveshares migraram de ESP-NOW pra RS-485 cabeado** (mudança que deu nome à pasta `lixo/lava_car_485`) — só a câmera continua em ESP-NOW com o display.
 - **Achado real em teste de bancada (09-19)**: quando a câmera muda de rede Wi-Fi (e portanto de canal) enquanto já está em operação, o display **não tinha como descobrir sozinho** o canal novo — os dois ficavam "surdos" um pro outro até um reset manual. Corrigido com o "modo caça" (ver 3.4).
 
 ---
 
-## 3. Firmware do Display — `lava_car_485/display/`
+## 3. Firmware do Display — `lixo/lava_car_485/display/`
 
 Projeto Arduino (`display.ino` + vários `.h`). Board: ESP32S3 Dev Module, Flash 16MB, PSRAM OPI 8MB, tela Waveshare ESP32-S3-Touch-LCD-7 (800×480, LVGL 8.4).
 
@@ -155,13 +155,14 @@ Código de porting oficial da Espressif (não é nosso, CC0/Apache) — ponte en
 ---
 
 ### 3.13 Base de testes `testes/` (em reconstrução; NÃO é a produção)
+> **Atualização 2026-11-03:** o firmware que roda na máquina hoje é o de `testes/` com a W1↔W2 por **cabo UART** (`testes/w1_w2_por_rxtx/waveshare1` e `waveshare2`), display em `testes/display` e câmera v7 em `firmware_camera/`. Os firmwares antigos (`lava_car_485`, `wave1_mestre`, ESP-NOW `testes/waveshare1|2`, diagnósticos) foram movidos para `lixo/` (mapa em `lixo/LEIAME.md`); as menções a eles neste guia apontam para `lixo/...`. Regras do X10 (carro sob a mesa) por etapa, HOME com limite de 60 s e correção do START do app: `testes/PENDENCIAS_NA_MAQUINA.md`, seções M–O.
 Projeto paralelo em `testes/` onde o firmware está sendo refeito passo a passo com validação em bancada: W1 como controlador
 (máquina de estados + RS-485 só do Delta + ESP-NOW com a W2) e display como cliente fino (ESP-NOW, `protocolo_teste.h`). A produção
-(`lava_car_485/`) continua intacta. Estado, telas, protocolo e pendências: `testes/LEIAME.md` e `testes/PENDENCIAS_NA_MAQUINA.md`.
+(`lixo/lava_car_485/`) continua intacta. Estado, telas, protocolo e pendências: `testes/LEIAME.md` e `testes/PENDENCIAS_NA_MAQUINA.md`.
 Displays novos sem flat do toque (GT911): `docs/TROCA_DE_DISPLAY.md`.
 **Nuvem na base nova (2026-10-24):** a W1 fica só com a operação; o **display** conversa com a câmera (`testes/display/nuvem_display.h`:
 heartbeat a cada 5 s, fila de eventos na NVS com ACK, licença 40/50 dias + 15 dias ligada sem comunicação) e manda ordens à W1 a cada 2 s
-(`MSG_NV_ORDEM` 38: lâmpada, licença, aspirador, reserva do app). A W1 (`testes/waveshare1/nuvem_w1.h`) manda eventos (`MSG_NV_EVT` 36, confirmados por `MSG_NV_EVT_ACK` 37),
+(`MSG_NV_ORDEM` 38: lâmpada, licença, aspirador, reserva do app). A W1 (`testes/w1_w2_por_rxtx/waveshare1/nuvem_w1.h`) manda eventos (`MSG_NV_EVT` 36, confirmados por `MSG_NV_EVT_ACK` 37),
 guarda até 16 na NVS e executa as ordens (início pelo app, lâmpada, aspirador). Sem ordens por 60 s a W1 age em modo seguro. **Gravado e validado na máquina em 2026-10-25** (teste com o app de ponta a ponta). Estado atual, decisões e o que mudou desde então: **`docs/ESTADO_ATUAL.md`**.
 
 **Resumo do que a máquina faz com o app (2026-10-25):** reserva paga no app (HELD) → a câmera lê a placa ou o cliente toca em "Já estou na máquina" (ACTIVE: luz verde, o heartbeat devolve `start`) → o display repassa à W1 (`MSG_NV_ORDEM`), que arma o ciclo e espera o X14 → `car_entered` (ENTERED) → ciclo → `wash_completed` (COMPLETED). Em erro (AUTO_ERRO) ou PARAR TUDO/cancelar do operador a W1 manda `fault` e o backend marca a reserva FAILED e **estorna na hora** (`/api/machine/fault`). A W1 desarma sozinha o ciclo armado se a reserva sumir do backend (8 s, nuvem ONLINE). O display avisa "ocupada" à câmera se perder a W1. **X15 perdido no processo para tudo e fica em erro, sem HOME automático** (o antigo fazia HOME e o braço bateu no carro).
@@ -170,7 +171,7 @@ guarda até 16 na NVS e executa as ordens (início pelo app, lâmpada, aspirador
 
 **Link W1↔W2 por cabo (proposta, branch `link-uart-w1-w2`, 2026-11-01; ainda NÃO gravado):** o ESP-NOW entre W1 e W2 é a fonte dos silêncios da W2 observados em 29–31/10. A proposta troca só esse transporte por UART0 (TXD GPIO43 / RXD GPIO44, 115200 8N1, quadro `A5 5A | tipo | seq | len | payload | CRC16`). W2 sem rádio; rádio só na W1 (display e câmera como hoje); fail-safe na W2; chave `LINK_W1_W2_UART` (0 = ESP-NOW antigo). O display e a câmera não mudam (o display já lê a W2 pelo status da W1). Detalhes, roteiro de teste e reversão: `docs/LINK_W1_W2_UART.md`.
 
-## 4. Firmware das Waveshares — `lava_car_485/waveshare1/` e `waveshare2/`
+## 4. Firmware das Waveshares — `lixo/lava_car_485/waveshare1/` e `waveshare2/`
 
 Dois firmwares quase idênticos (endereço Modbus 1 e 2), rodando na placa Waveshare ESP32-S3-POE-ETH-8DI-8DO. Cada uma:
 - Lê 8 entradas digitais (lógica NPN, ativo em nível baixo) com **latch por interrupção** (`attachInterruptArg` na borda de descida) — captura o pulso no instante exato, mesmo que dure só 1ms, e guarda até o display ler (leitura destrutiva/read-and-clear).
@@ -540,8 +541,8 @@ Firmware da câmera tem seu próprio `PILI_PROVISION_SECRET` (deve bater com o `
 | Como a fila/reserva funciona | `server/lib/reservations.ts` |
 | Como a placa é lida | `server/lib/lpr.ts`, `server/lib/vision-claude.ts` |
 | Login/cadastro do cliente | `server/app/api/auth/*`, `mobile/src/app/{login,cadastro}.tsx` |
-| Ciclo físico de lavagem (giro, carrinho, processos) | `lava_car_485/display/maquina_estados.h`, `processos.h` |
-| Telas do display | `lava_car_485/display/tela_*.h` |
+| Ciclo físico de lavagem (giro, carrinho, processos) | `lixo/lava_car_485/display/maquina_estados.h`, `processos.h` |
+| Telas do display | `lixo/lava_car_485/display/tela_*.h` |
 | O que a câmera manda/recebe da nuvem | `firmware_camera/src/main.cpp` |
 | Painel do admin | `server/app/admin/*` |
 | App do lavador | `mobile/src/app/(tabs)/minha-maquina.tsx`, `server/app/api/lavador/*` |

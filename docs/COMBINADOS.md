@@ -5,7 +5,7 @@ ao Giovani **antes** de mudar, mas não reabrir o que está marcado como decidid
 Detalhes técnicos: `testes/LEIAME.md`, `testes/PENDENCIAS_NA_MAQUINA.md`, `docs/TROCA_DE_DISPLAY.md`, `GUIA_TECNICO_COMPLETO.md`.
 
 ## 1. Regras de trabalho
-- Não mexer em `lava_car_485/` (produção estável) nem em `wave1_mestre/` (consulta). O trabalho novo fica em `testes/`.
+- Não mexer em `lixo/lava_car_485/` (produção estável) nem em `lixo/wave1_mestre/` (consulta). O trabalho novo fica em `testes/`.
 - Um passo de cada vez, validado na bancada; a IA lê os logs seriais.
 - **Gravar W1, W2 e câmera só com autorização do Giovani.** Displays novos e o display antigo (COM5) estão liberados para iterar.
 - **Banco de produção e migrations: nunca sem autorização explícita, a cada vez.**
@@ -72,7 +72,7 @@ Detalhes técnicos: `testes/LEIAME.md`, `testes/PENDENCIAS_NA_MAQUINA.md`, `docs
 
 ## 8. Decisão de 2026-10-24: migrar tudo para o firmware novo
 - **Ainda não há clientes usando o app**, então não há problema em operar só com o firmware novo enquanto a parte da nuvem é portada.
-- **Antes de migrar, o que funciona ficou guardado:** tag git `backup-w1-mestre-funcionando-2026-10-24` (no GitHub) e o antigo intacto em `lava_car_485/` + `firmware_camera/`.
+- **Antes de migrar, o que funciona ficou guardado:** tag git `backup-w1-mestre-funcionando-2026-10-24` (no GitHub) e o antigo intacto em `lixo/lava_car_485/` + `firmware_camera/`.
   Como restaurar e como ler a memória exata das placas: `docs/BACKUP_E_RESTAURACAO.md` (a leitura das placas depende delas conectadas).
 - **A migração segue a ordem de `docs/PARIDADE_ANTIGO_NOVO.md`:** (1) recuperação de boot, luz de erro, hard reset do display; (2) câmera + nuvem (canal, heartbeat, início pelo app,
   eventos com fila e ACK, licença, lâmpada, aspirador); (3) cadastro da máquina. **Decidido em 2026-10-24 (revisado no mesmo dia): a W1 fica SÓ com a operação; quem conversa com a câmera é o DISPLAY** (heartbeat, eventos com fila e ACK, licença, contagem de 15 dias ligada), pois assim um defeito na nuvem não derruba o controle no meio da lavagem. A W1 manda os eventos ao display e recebe dele as ordens (lâmpada, bloqueio de licença, aspirador, iniciar reserva do app). O teste de homem morto do movimento manual é só de operação e não muda.

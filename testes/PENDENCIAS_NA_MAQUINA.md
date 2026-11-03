@@ -36,7 +36,7 @@ reinicia em **COM X10 + BOMBA ON**, então não precisa reconfigurar a tela).
 
 ## C. Hardware / medições
 - [ ] **Instalar o filtro do RS-485** e repetir os testes de ruído (procedimento em
-  `testes_ruido_rs485/PROCEDIMENTO.md`, cenário B com o SAJ de volta no barramento).
+  `lixo/testes_ruido_rs485/PROCEDIMENTO.md`, cenário B com o SAJ de volta no barramento).
 - [ ] Confirmar **F0.10 do SAJ** (o firmware assume 55 Hz = 100% ; o relatório dos inversores diz 50 Hz).
 - [ ] Confirmar terminador de 120 Ω do lado do Delta.
 - [ ] **Display novo SEM flat de toque** (causa confirmada em `docs/TROCA_DE_DISPLAY.md` 5b): pedir ao vendedor a versão com toque. Antes: reencaixar o flat
@@ -47,7 +47,7 @@ reinicia em **COM X10 + BOMBA ON**, então não precisa reconfigurar a tela).
 ## D. Não precisa de máquina (andamento offline)
 - Telas de configuração (velocidades, tempos de giro, esperas dos modelos) com NVS.
 - Itens display↔W1: toque curto do painel, propagação do canal, evento de fim de ciclo.
-- Nuvem, e depois avaliar promover `testes/` no lugar de `lava_car_485/`.
+- Nuvem, e depois avaliar promover `testes/` no lugar de `lixo/lava_car_485/`.
 
 ## E. Câmera / app / backend (adiado de propósito — fazer quando formos mexer na câmera)
 - [ ] **Wi-Fi do display (aba TECNICO > WI-FI) e migração de canal — compilado, NÃO testado com a câmera.** Display: busca de redes pela
@@ -84,7 +84,7 @@ reinicia em **COM X10 + BOMBA ON**, então não precisa reconfigurar a tela).
 ## G. Mudanças de processo — estado em 2026-10-24
 - [ ] **NUVEM pelo DISPLAY (decisão de 2026-10-24, revisada: a W1 fica só com a operação) — W1, W2, câmera v5 e display COMPILADOS, NADA GRAVADO.** `testes/display/nuvem_display.h`: heartbeat para a câmera a cada 5 s,
   **eventos** (a W1 manda `MSG_NV_EVT`; o display guarda na SUA fila na NVS, confirma a W1 e entrega à câmera até o ACK do backend), **licença** (pagamento 40/50 dias; 15 dias LIGADA sem comunicação) e as
-  **ordens para a W1 a cada 2 s** (`MSG_NV_ORDEM`: lâmpada, licença, aspirador, iniciar reserva do app). `testes/waveshare1/nuvem_w1.h`: só executa as ordens (início pelo app com dedup, **lâmpada** + **vermelho piscando em erro**,
+  **ordens para a W1 a cada 2 s** (`MSG_NV_ORDEM`: lâmpada, licença, aspirador, iniciar reserva do app). `lixo/testes/waveshare1/nuvem_w1.h`: só executa as ordens (início pelo app com dedup, **lâmpada** + **vermelho piscando em erro**,
   **aspirador DO8**) e guarda até 16 eventos na NVS até o display confirmar. Sem ordens por 60 s: lâmpada apagada, aspirador off, não inicia pelo app. Câmera: `firmware_camera/release/camera_v5.bin` (obedece "vai para o canal N",
   sobe no canal combinado, pede **re-sync** ao display quando o roteador muda de canal). Display: aceita o re-sync da câmera e migra sem senha com a máquina parada. **Depende do display ligado** para app/eventos (painel e controle remoto seguem sem ele).
   **Ordem para gravar (com o Giovani na máquina):** (1) backup exato das placas (`docs/BACKUP_E_RESTAURACAO.md`); (2) W1 + display + W2; (3) câmera v5 pelo OTA (ver `firmware_camera/release/LEIAME.md`; é deploy de PRODUÇÃO).
@@ -176,7 +176,7 @@ Contexto: em 29–31/10 a W2 sumiu por 160–208 s (duas vezes), o envio de rád
 **Ainda NÃO implementado (conversado em 2026-11-01):** leitura do código de falha do Delta/SAJ (falta confirmar o endereço do registrador); telemetria de saúde (reinícios/silêncios) para o painel do admin (hoje só serial/NVS; exige evento novo display→câmera→backend); supervisor externo de hardware e separar a emergência da comunicação (projeto elétrico: `docs/SUPERVISOR_HARDWARE.md`); cron de expiração no Railway (confirmar no painel).
 
 ## K. HOME obrigatório + pulso de vida (2026-11-01) — compilado, NÃO gravado
-Fontes: testes/waveshare1 e testes/w1_w2_por_rxtx/waveshare1 (edições idênticas; build 954.407 B / 957.559 B).
+Fontes: lixo/testes/waveshare1 e testes/w1_w2_por_rxtx/waveshare1 (edições idênticas; build 954.407 B / 957.559 B).
 - [ ] **HOME obrigatório pelo botão** após energizar: desligue e religue a W1 com o braço fora do zero (ou depois de uma emergência). Esperado: nada se move, vermelho piscando, tela "Religou fora do zero: toque em HOME no display". Tocar em HOME: roda o HOME. Com carro no X15: mensagem de retirar o veículo; HOME não inicia. Religar já no zero: nada exigido.
 - [ ] Durante a espera, uma reserva do app não inicia ciclo.
 - [ ] **Pulso de vida em IO1** (GPIO1, borne do conector de expansão): multímetro VDC (ou LED + 330 Ω) entre IO1 e GND alterna ~0 V ↔ ~3,3 V a cada 3 s, com a máquina parada e em ciclo. Se não mexer, o borne não é o GPIO1: avisar antes de ligar qualquer supervisor.
@@ -186,8 +186,8 @@ Fontes: testes/waveshare1 e testes/w1_w2_por_rxtx/waveshare1 (edições idêntic
 ## L. Registro permanente de reinícios + envio para a nuvem (2026-11-02) — compilado, NÃO gravado, NÃO enviado
 Pedido do Giovani: guardar o histórico de reinícios (W1 e W2) e mandar para a nuvem a cada reconexão, para o admin ver; reinício no meio de lavagem avisa o lavador na hora.
 **Peças e onde estão**
-- W1: `testes/waveshare1/reset_log_w1.h` (novo) + edições em controle.h, maquina_estados.h, nuvem_w1.h, protocolo_teste.h, tipos_w1.h, waveshare1.ino (cópia do cabo `w1_w2_por_rxtx/waveshare1` igual, mas SEM o aviso de boot da W2: pelo cabo ele precisa de um quadro LT_ novo, pendente no projeto do link). Build 957.011 B (produção) / 960.111 B (cabo).
-- W2: `testes/waveshare2/waveshare2.ino` manda `MSG_W2_BOOT` (motivo + id do boot) 1x/s nos primeiros 20 s depois de cada boot. Build 900.827 B.
+- W1: `lixo/testes/waveshare1/reset_log_w1.h` (novo) + edições em controle.h, maquina_estados.h, nuvem_w1.h, protocolo_teste.h, tipos_w1.h, waveshare1.ino (cópia do cabo `w1_w2_por_rxtx/waveshare1` igual, mas SEM o aviso de boot da W2: pelo cabo ele precisa de um quadro LT_ novo, pendente no projeto do link). Build 957.011 B (produção) / 960.111 B (cabo).
+- W2: `lixo/testes/waveshare2/waveshare2.ino` manda `MSG_W2_BOOT` (motivo + id do boot) 1x/s nos primeiros 20 s depois de cada boot. Build 900.827 B.
 - Câmera: `firmware_camera/src/main.cpp` entende o evento tipo 4 e faz POST em `/api/machine/reset-log` (corpo `{key, info}`). Build OK (`pio run`).
 - Display: NÃO muda (repassa eventos de forma genérica).
 - Backend: branch local `backend-reset-log` (commit 9f40be9, em worktree no scratchpad, **não enviada**): `server/app/api/machine/reset-log/route.ts`, `server/lib/resets.ts`, seção no `server/app/admin/maquinas/page.tsx`, guias. Sem tabela nova (usa `Event` type `machine_reset`), sem migration.

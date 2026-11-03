@@ -8,7 +8,8 @@ lavagem (e, em algumas unidades, o aspirador de pó) automaticamente.
 pili-lave/
 ├── mobile/        App mobile (Expo/React Native) — ainda não publicado em loja
 ├── server/        Backend + painel admin + PWA (Next.js 16 + Prisma 6 + Postgres/Neon)
-├── lava_car_485/  Firmware do display (ESP32-S3, LVGL) + Waveshares (RS-485)
+├── testes/        Firmware atual da máquina: display (testes/display) + W1/W2 por cabo (testes/w1_w2_por_rxtx)
+├── lixo/          Firmwares antigos (lava_car_485, wave1_mestre, ESP-NOW…) — só consulta, ver lixo/LEIAME.md
 ├── firmware_camera/ Firmware da câmera (ESP32-CAM) — gateway de internet da máquina
 ├── loja/          Programa do computador da loja de conveniência (Next.js + SQLite local) — ver loja/README.md
 └── design/        Direção de marca (BRAND.md — "verniz molhado", dark-first)

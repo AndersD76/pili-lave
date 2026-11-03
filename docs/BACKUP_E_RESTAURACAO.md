@@ -6,9 +6,9 @@ antes, guardamos o que funciona hoje para não perder nada.
 ## 1. O que está guardado
 | O quê | Onde | Observação |
 |---|---|---|
-| **Firmware novo que roda na máquina** (W1 mestre, W2, display) | tag git **`backup-w1-mestre-funcionando-2026-10-24`** (commit `a0e377a`, enviada ao GitHub) | Código-fonte completo em `testes/waveshare1`, `testes/waveshare2`, `testes/display` |
-| **Firmware antigo com nuvem/app** (display mestre) | pasta `lava_car_485/` e `firmware_camera/` (já no git, intocados) | Tem início por app, eventos, licença, cadastro. Continua sendo a referência de produção do app |
-| Bancada de ruído do RS-485 | `testes_ruido_rs485/` | Para repetir os testes quando o filtro chegar |
+| **Firmware novo que roda na máquina** (W1 mestre, W2, display) | tag git **`backup-w1-mestre-funcionando-2026-10-24`** (commit `a0e377a`, enviada ao GitHub) | Código-fonte completo, **como estava na tag**, em `testes/waveshare1`, `testes/waveshare2`, `testes/display` (hoje essas pastas ESP-NOW estão em `lixo/testes/`; o firmware atual por cabo é `testes/w1_w2_por_rxtx/`) |
+| **Firmware antigo com nuvem/app** (display mestre) | pasta `lixo/lava_car_485/` e `firmware_camera/` (já no git, intocados) | Tem início por app, eventos, licença, cadastro. Continua sendo a referência de produção do app |
+| Bancada de ruído do RS-485 | `lixo/testes_ruido_rs485/` | Para repetir os testes quando o filtro chegar |
 
 **Atenção ao que a tag contém:** o commit tem tudo o que foi gravado e testado na máquina **mais** quatro alterações que só foram **compiladas**, ainda **não gravadas**:
 Cera d'água com o Y0 o processo todo, pressão da água (SAJ) na tela de velocidades, luzes da máquina (DO7) e a presença do técnico para as luzes.
@@ -36,7 +36,7 @@ arduino-cli upload -p COM11 --fqbn "esp32:esp32:esp32s3:PartitionScheme=huge_app
 (antes de `upload`, rode `arduino-cli compile` com o mesmo `--fqbn` e a mesma pasta.)
 
 ## 4. Voltar ao firmware ANTIGO (display mestre, com app)
-Gravar `lava_car_485/display`, `lava_car_485/waveshare1` e `lava_car_485/waveshare2` (FQBNs em `GUIA_TECNICO_COMPLETO.md`, seções 3 e 4) e a câmera
+Gravar `lixo/lava_car_485/display`, `lixo/lava_car_485/waveshare1` e `lixo/lava_car_485/waveshare2` (FQBNs em `GUIA_TECNICO_COMPLETO.md`, seções 3 e 4) e a câmera
 (`firmware_camera`). Atenção: o antigo usa **Modbus RS-485** entre display e Waveshares, então a **fiação do RS-485** precisa estar como era antes
 (SAJ de volta no barramento fica fora: foi o que causou o ruído).
 
