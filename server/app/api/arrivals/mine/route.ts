@@ -63,8 +63,8 @@ export async function GET(req: NextRequest) {
     // etapas: lista de tarefas do programa e em qual a máquina está (só enquanto lava) — o cliente acompanha pelo celular
     let etapas = null;
     if (arrival.reservation?.status === "ENTERED" && arrival.reservationId) {
-      const rv = await prisma.reservation.findUnique({ where: { id: arrival.reservationId }, select: { programId: true } });
-      if (rv) etapas = await etapasDaReserva(arrival.reservationId, rv.programId).catch(() => null);
+      const rv = await prisma.reservation.findUnique({ where: { id: arrival.reservationId }, select: { programId: true, machineId: true } });
+      if (rv) etapas = await etapasDaReserva(arrival.reservationId, rv.programId, rv.machineId).catch(() => null);
     }
     // reservaId: o app precisa dele para o botão de cancelar
     return NextResponse.json({
@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
       stationId: viva.stationId,
       lavagem: viva.status,
       reservaId: viva.id,
-      etapas: viva.status === "ENTERED" ? await etapasDaReserva(viva.id, viva.programId).catch(() => null) : null,
+      etapas: viva.status === "ENTERED" ? await etapasDaReserva(viva.id, viva.programId, viva.machineId).catch(() => null) : null,
       semChegada: true,   // a câmera ainda não leu a placa
     },
   });

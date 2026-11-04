@@ -19,7 +19,8 @@ export const PROC_NOME: Record<number, string> = {
   9: "Enxágue",
 };
 
-/** Processos de cada modelo, na ordem (ids do firmware: 1 pré-lavagem/enxágue, 3 espuma A, 5 cor mágica, 6 cera d'água, 7 alta pressão, 8 secagem). */
+/** Sequência PADRÃO (a de fábrica do firmware). A real vem do display (`/api/machine/sequencia`, evento `sequencia_modelo`) sempre que alguém a altera
+ *  na Configuração ou ao ligar; este padrão só vale enquanto a máquina nunca informou a dela. Processos de cada modelo, na ordem (ids do firmware: 1 pré-lavagem/enxágue, 3 espuma A, 5 cor mágica, 6 cera d'água, 7 alta pressão, 8 secagem). */
 export const SEQUENCIA: Record<number, number[]> = {
   1: [5, 7],
   2: [3, 5, 7, 3, 5, 7, 6, 1, 8],
@@ -28,6 +29,20 @@ export const SEQUENCIA: Record<number, number[]> = {
 };
 
 export type EtapasLavagem = { itens: string[]; atual: number | null };
+
+/** Sequência do modelo NESTA máquina: a última que o display informou; senão o padrão de fábrica. */
+export async function sequenciaDoModelo(machineId: string | null, modelo: number): Promise<number[] | null> {
+  if (machineId) {
+    const e = await prisma.event.findFirst({
+      where: { type: "sequencia_modelo", AND: [{ payload: { path: ["machineId"], equals: machineId } }, { payload: { path: ["modelo"], equals: modelo } }] },
+      orderBy: { createdAt: "desc" },
+      select: { payload: true },
+    });
+    const seq = (e?.payload as { seq?: unknown } | null)?.seq;
+    if (Array.isArray(seq) && seq.length > 0 && seq.every((p) => typeof p === "number")) return seq as number[];
+  }
+  return SEQUENCIA[modelo] ?? null;
+}
 
 /** Posição que o processo `proc` ocupa na sequência, partindo da posição `atual` (null = ainda não começou). null = não se aplica. */
 export function proximaPosicao(seq: number[], atual: number | null, proc: number): number | null {
@@ -54,7 +69,7 @@ export async function registrarEtapa(machineId: string, proc: number): Promise<v
     select: { id: true, programId: true },
   });
   if (!r) return;
-  const seq = SEQUENCIA[r.programId];
+  const seq = await sequenciaDoModelo(machineId, r.programId);
   if (!seq) return;
   const atual = await ultimaPosicao(r.id);
   const nova = proximaPosicao(seq, atual, proc);
@@ -65,8 +80,8 @@ export async function registrarEtapa(machineId: string, proc: number): Promise<v
 }
 
 /** Lista de etapas e a posição atual, para o app. Sem sequência conhecida (programa novo): null. */
-export async function etapasDaReserva(reservationId: string, programId: number): Promise<EtapasLavagem | null> {
-  const seq = SEQUENCIA[programId];
+export async function etapasDaReserva(reservationId: string, programId: number, machineId: string | null): Promise<EtapasLavagem | null> {
+  const seq = await sequenciaDoModelo(machineId, programId);
   if (!seq) return null;
   return { itens: seq.map((p) => PROC_NOME[p] ?? "Etapa"), atual: await ultimaPosicao(reservationId) };
 }

@@ -520,7 +520,8 @@ static void processarEvento() {
 
   MsgEvt ev; memcpy(&ev, (const void*)&g_evt, sizeof(ev));
 
-  const char* path = (ev.evt_tipo == 1) ? "/api/machine/car-entered"
+  const char* path = (ev.evt_tipo == 5) ? "/api/machine/sequencia"   // 5 = sequencia de processos de um modelo (alterada no display): ver body abaixo
+                   : (ev.evt_tipo == 1) ? "/api/machine/car-entered"
                    : (ev.evt_tipo == 2) ? "/api/machine/wash-complete"
                    : (ev.evt_tipo == 3) ? "/api/machine/fault"
                    : (ev.evt_tipo == 4) ? "/api/machine/reset-log" : nullptr;   // 4 = reinicio de placa (W1/W2): historico para o admin
@@ -528,7 +529,7 @@ static void processarEvento() {
 
   String body = "{";
   bool sep = false;
-  if (ev.evt_tipo != 4 && strlen(ev.res)) { body += String("\"reservationId\":\"") + ev.res + "\""; sep = true; }
+  if (ev.evt_tipo != 4 && ev.evt_tipo != 5 && strlen(ev.res)) { body += String("\"reservationId\":\"") + ev.res + "\""; sep = true; }
   if (ev.evt_tipo == 2 && ev.prog >= 1 && ev.prog <= 4) {
     if (sep) body += ",";
     body += String("\"programId\":") + ev.prog; sep = true;
@@ -541,6 +542,7 @@ static void processarEvento() {
   if (ev.evt_tipo == 4) {   // reinicio: key = chave unica ("W1-12", volta no ACK e evita duplicar no backend); info = "W1;m=6;e=5;u=1234;n=12;c=1;s=0"
     body += String("\"key\":\"") + ev.res + "\",\"info\":\"" + ev.errcode + "\"";
   }
+  if (ev.evt_tipo == 5) body += String("\"modelo\":") + ev.prog + ",\"seq\":\"" + ev.errcode + "\"";   // errcode = ids dos processos separados por ponto ("5.7")
   body += "}";
 
   HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
