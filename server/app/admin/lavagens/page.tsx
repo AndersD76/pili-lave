@@ -7,42 +7,136 @@ export const dynamic = "force-dynamic";
 function money(cents: number): string {
   return `R$ ${(cents / 100).toFixed(2).replace(".", ",")}`;
 }
+const quando = (d: Date) => d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
+type Origem = "App" | "Presencial" | "Sócio" | "Bônus";
+type Linha = {
+  chave: string; quando: Date; origem: Origem; cliente: string; placa: string; maquina: string;
+  programa: string; valor: string; status: "AGUARDANDO" | "CONCLUIDA" | "CANCELADA"; detalhe: string;
+};
+
+/**
+ * Lavagens de TODAS as origens: pelo app (compra paga com a carteira), presenciais (dinheiro nos botões da máquina), sócios (mensalistas) e
+ * bônus (promoção). Antes esta tela só listava as compras do app/voucher e as presenciais não apareciam em lugar nenhum além do resumo da
+ * máquina. Sócio e bônus ficam em LavagemPresencial com valor 0; o tipo está num Event "lavagem_tipo".
+ */
 export default async function AdminLavagens() {
   await requireAdminPage();
-  const orders = await prisma.order.findMany({
-    include: { program: true, user: true, vehicle: true, redeemedBy: true },
-    orderBy: { createdAt: "desc" },
-    take: 200,
+  const [orders, presenciais, tipos, appPorProg, presPorProg] = await Promise.all([
+    prisma.order.findMany({
+      include: { program: true, user: true, vehicle: true, redeemedBy: true },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    }),
+    prisma.lavagemPresencial.findMany({
+      include: { program: true, machine: { select: { name: true } } },
+      orderBy: { completedAt: "desc" },
+      take: 200,
+    }),
+    prisma.event.findMany({ where: { type: "lavagem_tipo" }, select: { payload: true } }),
+    prisma.reservation.groupBy({ by: ["programId"], where: { status: "COMPLETED" }, _count: { _all: true } }),
+    prisma.lavagemPresencial.groupBy({ by: ["programId"], _count: { _all: true } }),
+  ]);
+  const programas = await prisma.program.findMany({ orderBy: { id: "asc" }, select: { id: true, nome: true } });
+
+  // tipo (sócio/bônus) de cada lavagem presencial e contagem por programa
+  const tipoPorLavagem = new Map<string, string>();
+  const sociosPorProg = new Map<number, number>();
+  const bonusPorProg = new Map<number, number>();
+  for (const e of tipos) {
+    const p = (e.payload ?? {}) as { lavagemId?: string; tipo?: string; programId?: number };
+    if (p.lavagemId && p.tipo) tipoPorLavagem.set(p.lavagemId, p.tipo);
+    if (p.programId && p.tipo === "SOCIO") sociosPorProg.set(p.programId, (sociosPorProg.get(p.programId) ?? 0) + 1);
+    if (p.programId && p.tipo === "BONUS") bonusPorProg.set(p.programId, (bonusPorProg.get(p.programId) ?? 0) + 1);
+  }
+  const app = new Map(appPorProg.map((g) => [g.programId, g._count._all]));
+  const pres = new Map(presPorProg.map((g) => [g.programId, g._count._all]));
+  const resumo = programas.map((pr) => {
+    const so = sociosPorProg.get(pr.id) ?? 0, bo = bonusPorProg.get(pr.id) ?? 0;
+    const presencial = Math.max(0, (pres.get(pr.id) ?? 0) - so - bo);   // sócio/bônus também ficam em LavagemPresencial
+    const ap = app.get(pr.id) ?? 0;
+    return { nome: pr.nome, presencial, app: ap, socios: so, bonus: bo, total: presencial + ap + so + bo };
   });
+  const tot = resumo.reduce(
+    (t, l) => ({ presencial: t.presencial + l.presencial, app: t.app + l.app, socios: t.socios + l.socios, bonus: t.bonus + l.bonus, total: t.total + l.total }),
+    { presencial: 0, app: 0, socios: 0, bonus: 0, total: 0 }
+  );
+
+  const linhas: Linha[] = [
+    ...orders.map((o): Linha => ({
+      chave: "o" + o.id, quando: o.createdAt, origem: "App",
+      cliente: o.user.name ?? o.user.phone, placa: o.vehicle?.plate ?? "—", maquina: "—",
+      programa: o.program.nome, valor: money(o.amountCents),
+      status: o.status === "PAID" ? "AGUARDANDO" : o.status === "REDEEMED" ? "CONCLUIDA" : "CANCELADA",
+      detalhe: o.redeemedBy ? `resgatada por ${o.redeemedBy.name ?? o.redeemedBy.phone}` : o.voucherCode,
+    })),
+    ...presenciais.map((l): Linha => {
+      const t = tipoPorLavagem.get(l.id);
+      const origem: Origem = t === "SOCIO" ? "Sócio" : t === "BONUS" ? "Bônus" : "Presencial";
+      return {
+        chave: "p" + l.id, quando: l.completedAt, origem,
+        cliente: origem === "Presencial" ? "Pago na máquina (dinheiro)" : origem === "Sócio" ? "Sócio (mensalista)" : "Bônus (promoção)",
+        placa: "—", maquina: l.machine.name, programa: l.program.nome, valor: money(l.amountCents), status: "CONCLUIDA", detalhe: "",
+      };
+    }),
+  ].sort((a, b) => b.quando.getTime() - a.quando.getTime()).slice(0, 300);
+
+  const chipOrigem = (o: Origem) => (o === "App" ? "chip ok" : o === "Presencial" ? "chip at" : "chip");
 
   return (
     <main>
       <AdminNav />
-      <h2 className="section-title">Lavagens — últimas 200</h2>
+      <h2 className="section-title">Lavagens — por origem</h2>
+
       <div className="tbl-wrap">
         <table className="tbl">
           <thead>
-            <tr><th>Quando</th><th>Cliente</th><th>Placa</th><th>Programa</th><th>Valor</th><th>Status</th><th>Resgatada por</th><th>Voucher</th></tr>
+            <tr><th>Tipo de lavagem</th><th>Presencial</th><th>App</th><th>Sócios</th><th>Bônus</th><th>Total</th></tr>
           </thead>
           <tbody>
-            {orders.map((o) => (
-              <tr key={o.id}>
-                <td>{o.createdAt.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
-                <td>{o.user.name ?? o.user.phone}</td>
-                <td>{o.vehicle?.plate ?? "—"}</td>
-                <td>{o.program.nome}</td>
-                <td>{money(o.amountCents)}</td>
-                <td>
-                  {o.status === "PAID" && <span className="chip at">Aguardando</span>}
-                  {o.status === "REDEEMED" && <span className="chip ok">Liberada</span>}
-                  {o.status === "CANCELED" && <span className="chip err">Cancelada</span>}
-                </td>
-                <td>{o.redeemedBy ? (o.redeemedBy.name ?? o.redeemedBy.phone) : "—"}</td>
-                <td style={{ color: "var(--aco-d)" }}>{o.voucherCode}</td>
+            {resumo.map((l) => (
+              <tr key={l.nome}>
+                <td>{l.nome}</td><td>{l.presencial}</td><td>{l.app}</td><td>{l.socios}</td><td>{l.bonus}</td><td>{l.total}</td>
               </tr>
             ))}
-            {orders.length === 0 && <tr><td colSpan={8} style={{ color: "var(--aco-d)" }}>Sem lavagens ainda.</td></tr>}
+            <tr>
+              <td style={{ fontWeight: 700 }}>Total</td>
+              <td style={{ fontWeight: 700 }}>{tot.presencial}</td><td style={{ fontWeight: 700 }}>{tot.app}</td>
+              <td style={{ fontWeight: 700 }}>{tot.socios}</td><td style={{ fontWeight: 700 }}>{tot.bonus}</td><td style={{ fontWeight: 700 }}>{tot.total}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p style={{ color: "var(--aco-d)", fontSize: 13, margin: "6px 0 18px" }}>
+        Lavagens concluídas desde que o sistema passou a registrá-las (as presenciais só aparecem aqui a partir de 02/11; o contador do display
+        da máquina é de outra janela e pode ser maior).
+      </p>
+
+      <h3 className="section-title">Últimas 300 (todas as origens)</h3>
+      <div className="tbl-wrap">
+        <table className="tbl">
+          <thead>
+            <tr><th>Quando</th><th>Origem</th><th>Cliente</th><th>Placa</th><th>Máquina</th><th>Programa</th><th>Valor</th><th>Status</th><th>Detalhe</th></tr>
+          </thead>
+          <tbody>
+            {linhas.map((l) => (
+              <tr key={l.chave}>
+                <td>{quando(l.quando)}</td>
+                <td><span className={chipOrigem(l.origem)}>{l.origem}</span></td>
+                <td>{l.cliente}</td>
+                <td>{l.placa}</td>
+                <td>{l.maquina}</td>
+                <td>{l.programa}</td>
+                <td>{l.valor}</td>
+                <td>
+                  {l.status === "AGUARDANDO" && <span className="chip at">Aguardando</span>}
+                  {l.status === "CONCLUIDA" && <span className="chip ok">Concluída</span>}
+                  {l.status === "CANCELADA" && <span className="chip err">Cancelada</span>}
+                </td>
+                <td style={{ color: "var(--aco-d)" }}>{l.detalhe}</td>
+              </tr>
+            ))}
+            {linhas.length === 0 && <tr><td colSpan={9} style={{ color: "var(--aco-d)" }}>Sem lavagens ainda.</td></tr>}
           </tbody>
         </table>
       </div>

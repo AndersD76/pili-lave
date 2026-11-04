@@ -37,18 +37,18 @@ No topo, o menu vai te levar pras outras seções: **Lavagens**, **Usuários**, 
 
 ## 3. Lavagens (`/admin/lavagens`)
 
-Histórico das últimas 200 lavagens compradas, com:
-- Quando foi comprada.
-- Cliente e placa do veículo.
-- Programa e valor.
-- **Status**: 🟡 Aguardando (pagou, esperando usar) · 🟢 Liberada (lavagem concluída, é aí que o valor é debitado de verdade) · 🔴 Cancelada (estornada).
-- Quem resgatou (se foi validado manualmente no balcão) e o código do voucher.
+No topo, uma tabela **por tipo de lavagem x origem**: **Presencial** (dinheiro nos botões da máquina), **App** (compra pela carteira), **Sócios** (mensalistas) e **Bônus** (promoção), com o total de cada coluna. Abaixo, as **últimas 300 lavagens de todas as origens**, misturadas por data, com:
+- Quando foi feita e a **Origem** (etiqueta colorida).
+- Cliente e placa (no app); nas presenciais/sócios/bônus aparece a máquina e o tipo.
+- Programa e valor (sócio e bônus têm valor R$ 0,00).
+- **Status**: 🟡 Aguardando (pagou, esperando usar) · 🟢 Concluída (é aí que o valor é debitado de verdade) · 🔴 Cancelada (estornada).
+- Detalhe: quem resgatou no balcão ou o código do voucher (app).
 
 ![Tela de lavagens](imagens/admin/03-lavagens.png)
 
-**Quando usar:** pra conferir se uma lavagem específica de um cliente foi processada, ou pra investigar reclamação ("paguei e não lavou").
+**Quando usar:** pra conferir se uma lavagem específica de um cliente foi processada, pra investigar reclamação ("paguei e não lavou") e pra ver quantas lavagens vieram de cada origem.
 
-> ⚠️ Essa lista mostra só as lavagens compradas **pelo app**. Lavagens pagas em dinheiro na hora (pelos botões da própria máquina) aparecem na tela de Máquinas, coluna "Presencial" (seção 6).
+> ℹ️ As presenciais só são registradas na nuvem a partir de 02/11/2026; o contador por modelo do display da máquina (Presencial/Aplicativo/Sócios/Bônus) é de outra janela ("desde o último acerto") e pode ser maior. O fechamento financeiro por máquina continua na tela de **Máquinas** (seção 6).
 
 ---
 
