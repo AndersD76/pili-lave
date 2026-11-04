@@ -30,13 +30,16 @@ export async function GET(req: NextRequest) {
   const img = req.nextUrl.searchParams.get("img");
   if (img) {
     const buf = await readFrame(img);
-    if (!buf) return NextResponse.json({ error: "Captura não encontrada" }, { status: 404 });
+    // foto já limpa (a limpeza periódica zera os bytes após 2 min): 404, não um JPEG vazio — vazio vira ícone de imagem quebrada no app
+    if (!buf || buf.length === 0) return NextResponse.json({ error: "Captura não encontrada" }, { status: 404 });
     return new NextResponse(new Uint8Array(buf), {
       headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=60" },
     });
   }
 
+  // só capturas que AINDA TÊM a foto: a mais recente pode estar com os bytes zerados (câmera parada há mais de 2 min) e o app mostraria imagem quebrada
   const c = await prisma.capture.findFirst({
+    where: { bytes: { gt: 0 } },
     orderBy: { at: "desc" },
     select: { id: true, at: true, plate: true, clientName: true },
   });
