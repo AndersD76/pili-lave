@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { ARRIVAL_TTL_MIN } from "@/lib/device";
+import { etapasDaReserva } from "@/lib/etapas";
 
 /** Chegada ativa do usuário (o app faz polling p/ mostrar "seu carro chegou"). */
 export async function GET(req: NextRequest) {
@@ -58,15 +59,23 @@ export async function GET(req: NextRequest) {
       reservation: { select: { status: true } },
     },
   });
-  if (arrival)
+  if (arrival) {
+    // etapas: lista de tarefas do programa e em qual a máquina está (só enquanto lava) — o cliente acompanha pelo celular
+    let etapas = null;
+    if (arrival.reservation?.status === "ENTERED" && arrival.reservationId) {
+      const rv = await prisma.reservation.findUnique({ where: { id: arrival.reservationId }, select: { programId: true } });
+      if (rv) etapas = await etapasDaReserva(arrival.reservationId, rv.programId).catch(() => null);
+    }
     // reservaId: o app precisa dele para o botão de cancelar
     return NextResponse.json({
       arrival: {
         ...arrival,
         lavagem: arrival.reservation?.status ?? null,
         reservaId: arrival.reservationId,
+        etapas,
       },
     });
+  }
 
   /* Sem chegada, mas com lavagem paga esperando o carro: quem compra pela
    * tela "Nova lavagem" só ganha uma chegada quando a câmera lê a placa.
@@ -87,6 +96,7 @@ export async function GET(req: NextRequest) {
       stationId: viva.stationId,
       lavagem: viva.status,
       reservaId: viva.id,
+      etapas: viva.status === "ENTERED" ? await etapasDaReserva(viva.id, viva.programId).catch(() => null) : null,
       semChegada: true,   // a câmera ainda não leu a placa
     },
   });

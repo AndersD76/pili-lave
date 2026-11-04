@@ -294,7 +294,10 @@ typedef struct __attribute__((packed)) {
   CabEspNow cab;
   char      state[12];
   uint32_t  restanteSeg;
+  uint8_t   proc;      // v8: processo em execucao na maquina (0 = nenhum) — acompanhamento por etapas no app
+  uint8_t   modelo;    // v8: modelo (1..4) da lavagem em andamento
 } MsgHbState;
+#define HB_STATE_BASE_LEN ((int)offsetof(MsgHbState, proc))   // tamanho antigo (display sem proc/modelo): continua aceito
 
 typedef struct __attribute__((packed)) {
   CabEspNow cab;
@@ -350,6 +353,7 @@ static volatile bool g_scan_pedido = false;          // recebeu MSG_SCAN_REQ (fa
 // Estado recebido do display p/ o heartbeat
 static volatile char     g_hb_state[12] = "FREE";
 static volatile uint32_t g_hb_restante  = 0;
+static volatile uint8_t  g_hb_proc      = 0;   // v8: processo em execucao (vem do display; 0 = nenhum / display antigo)
 
 // Evento pendente recebido do display (1 slot; o display reenvia até o ACK)
 static volatile bool     g_evt_pende = false;
@@ -427,8 +431,9 @@ static void onRecvImpl(const uint8_t* mac, const uint8_t* data, int len) {
   if (len < (int)sizeof(CabEspNow)) return;
   const CabEspNow* cab = (const CabEspNow*)data;
   if (cab->id_maquina != ID_MAQUINA) return;
-  if (cab->tipo == MSG_HB_STATE && len >= (int)sizeof(MsgHbState)) {
+  if (cab->tipo == MSG_HB_STATE && len >= HB_STATE_BASE_LEN) {
     const MsgHbState* m = (const MsgHbState*)data;
+    g_hb_proc = (len >= (int)sizeof(MsgHbState)) ? m->proc : 0;
     strncpy((char*)g_hb_state, m->state, sizeof(g_hb_state) - 1);
     g_hb_state[sizeof(g_hb_state) - 1] = '\0';
     g_hb_restante = m->restanteSeg;
@@ -1097,7 +1102,8 @@ static void fazerHeartbeat() {
   http.addHeader("Content-Type", "application/json");
   if (g_dev_key.length()) http.addHeader("x-device-key", g_dev_key);
   String body = String("{\"state\":\"") + (const char*)g_hb_state +
-                "\",\"restanteSeg\":" + String((uint32_t)g_hb_restante) + "}";
+                "\",\"restanteSeg\":" + String((uint32_t)g_hb_restante) +
+                (g_hb_proc ? String(",\"proc\":") + String((uint32_t)g_hb_proc) : String()) + "}";
   int code = http.POST(body);
   String resp = (code == 200) ? http.getString() : String();
   http.end();

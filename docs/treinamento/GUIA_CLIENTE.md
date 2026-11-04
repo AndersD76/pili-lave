@@ -122,6 +122,8 @@ Vai aparecer um aviso confirmando que, ao liberar assim, o valor será cobrado n
 
 Enquanto o carro está sendo lavado, a tela mostra o progresso e, se disponível, a câmera ao vivo da máquina.
 
+Na etapa **"Lavando"** aparece a **lista de tarefas** da lavagem que você escolheu (por exemplo: Espuma, Cor mágica, Jato de alta pressão, Cera, Enxágue, Secagem), com a que a máquina está fazendo agora destacada e marcada **"agora"**. As já concluídas ficam com ✓ e as que faltam com ○; o topo da lista diz "Etapa 3 de 9". Assim dá para acompanhar tudo de dentro do carro. (Se a máquina ainda não informou a etapa, a lista aparece com "começando…".)
+
 ![Progresso da lavagem](imagens/cliente/14-progresso.png)
 
 Ao final, aparece **"Pode sair!"** — a lavagem foi concluída e o valor debitado definitivamente.

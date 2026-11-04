@@ -658,6 +658,7 @@ static void ui_evento_atualiza(bool contato, const MsgTesteStatus& s) {
     if (s.estado_auto >= 1 && s.estado_auto <= 5) { if (pop_ev) lv_obj_add_flag(pop_ev, LV_OBJ_FLAG_HIDDEN); }   // novo ciclo em andamento
     if (s.ev_seq == ev_visto) return;
     ev_visto = s.ev_seq;
+    if (s.ev_tipo == 0) return;   // a W1 reiniciou (seq e tipo voltam a 0): nao ha evento de ciclo — antes isso abria um "ERRO NO CICLO (modelo 0)" falso com OK
     char b[120];
     if (s.ev_tipo == 1) {   // concluido com sucesso: so um aviso curto na linha de mensagens (sem pop-up e sem OK)
         snprintf(g_aviso, sizeof(g_aviso), "Ciclo concluido (modelo %u)", (unsigned)s.ev_modelo); g_aviso_ms = millis();

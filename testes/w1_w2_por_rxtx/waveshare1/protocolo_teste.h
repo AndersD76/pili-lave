@@ -112,6 +112,7 @@ typedef struct __attribute__((packed)) {                                        
 enum : uint8_t { MSG_HB_STATE = 7, MSG_HB_RESP = 8, MSG_EVT = 9, MSG_EVT_ACK = 10 };
 typedef struct __attribute__((packed)) {      // Display -> Camera (a cada 5 s): estado para o heartbeat
     CabEspNow cab; char state[12]; uint32_t restanteSeg;   // state = "FREE" / "WASHING"
+    uint8_t proc, modelo;   // processo em execucao na W1 (0 = nenhum) e modelo (1..4): a camera leva no heartbeat para o app mostrar a etapa (camera v8+; camera antiga ignora os 2 bytes a mais)
 } MsgHbState;
 typedef struct __attribute__((packed)) {      // Camera -> Display: resposta do backend
     CabEspNow cab; uint8_t ok; uint8_t lightState; uint16_t lic_days; uint8_t lic_blocked;

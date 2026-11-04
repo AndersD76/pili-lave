@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api, fmtPlate, getToken, money, type Me, type Order, type Program, type Vehicle } from "./client";
 import { Nav } from "./nav";
-import { ProgressoLavagem, type StatusLavagem } from "./ProgressoLavagem";
+import { ProgressoLavagem, type StatusLavagem, type EtapasLavagem } from "./ProgressoLavagem";
 import CameraAoVivo from "./CameraAoVivo";
 import { Logo } from "./Logo";
 
@@ -16,6 +16,8 @@ type Arrival = {
   /** status da reserva: é ele que diz o que aconteceu na máquina */
   lavagem?: StatusLavagem;
   reservaId?: string | null;
+  /** tarefas do programa e a que a máquina está fazendo (só enquanto lava) */
+  etapas?: EtapasLavagem | null;
 };
 
 export default function Home() {
@@ -113,7 +115,7 @@ export default function Home() {
       )}
       {/* Onde a lavagem está, em etapas — e a câmera junto, para o cliente
           ver o próprio carro sem sair do app. */}
-      {arrival?.lavagem && <ProgressoLavagem status={arrival.lavagem} />}
+      {arrival?.lavagem && <ProgressoLavagem status={arrival.lavagem} etapas={arrival.etapas} />}
 
       {/* Lavagem paga esperando a câmera: o botão de liberar sem ela fica
           AQUI, em destaque. Antes só existia dentro da tela de compra —

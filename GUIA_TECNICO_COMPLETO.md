@@ -210,7 +210,7 @@ Um único arquivo. Sem rádio, sem lógica de ciclo: lê as 8 entradas (X10–X1
 
 ## 5. Firmware da Câmera — `firmware_camera/`
 
-Roda num ESP32-CAM (AI-Thinker, sensor OV2640). Arquivo único `src/main.cpp` + `src/pili_cam_config.h`. **Versão atual: v7** (`PILI_FW_VERSION`): v5 = comando de canal do display e re-sync automático; v6 = informa ao display a rede Wi-Fi conectada (`MSG_REDE_INFO`); v7 = evento tipo 4 (reinícios, retrato e ocorrências das placas) com `POST /api/machine/reset-log` e **hora por NTP** repassada à W1 (`MSG_HORA`). Regra de publicação por OTA: `firmware_camera/release/LEIAME.md`.
+Roda num ESP32-CAM (AI-Thinker, sensor OV2640). Arquivo único `src/main.cpp` + `src/pili_cam_config.h`. **Versão atual: v8** (`PILI_FW_VERSION`; v8 = diagnóstico da câmera para a nuvem e etapa da lavagem no heartbeat): v5 = comando de canal do display e re-sync automático; v6 = informa ao display a rede Wi-Fi conectada (`MSG_REDE_INFO`); v7 = evento tipo 4 (reinícios, retrato e ocorrências das placas) com `POST /api/machine/reset-log` e **hora por NTP** repassada à W1 (`MSG_HORA`). Regra de publicação por OTA: `firmware_camera/release/LEIAME.md`.
 
 **Papel: gateway de nuvem "burro de propósito".** Não tem sensor de presença, não decide nada — manda uma foto crua pro backend a cada 8s (`PILI_ENVIO_INTERVALO_MS`), sempre, tenha carro ou não. Toda a inteligência (ler a placa, decidir se tem carro, liberar a máquina) roda na **nuvem** via IA.
 
@@ -230,6 +230,8 @@ Funções principais:
 - **Recebe identidade** (`MSG_IDPUSH_REQ`, troca de câmera, 09-19): aplica localmente o que o display mandou (`aplicarIdPush()`), sem chamada nenhuma pra nuvem.
 - **Reinícios e ocorrências das placas (v7):** recebe do display o evento tipo 4 (texto compacto `W1;m=..;e=..` / `J;…` / `O;…`) e faz `POST /api/machine/reset-log` com `{key, info}`; só confirma (`MSG_EVT_ACK`) com resposta 200.
 - **Hora (v7):** NTP (`pool.ntp.org`/`time.google.com`); manda `MSG_HORA` (epoch UTC) à W1 a cada 30 s, só com a hora válida.
+- **Etapa da lavagem (v8):** o display acrescentou `proc` e `modelo` ao `MsgHbState` (só durante o ciclo: PROCESSO/PAUSADO); a câmera os leva no heartbeat como `"proc"` (aceita o `MsgHbState` antigo, sem os 2 bytes). A nuvem usa isso para o app listar as tarefas e marcar a atual (seção 6.13).
+- **Diagnóstico (v8):** a cada 5 min (e se 3+ fotos seguidas falham, no máx. 1/min) faz `POST /api/machine/camera-diag` com Wi-Fi (RSSI mín/méd/máx, canal, quedas, maior tempo desconectada, buscas de rede), memória (heap e maior bloco livre, mínimos da janela), fotos/heartbeats ok e falha + último código de erro, motivo do último reinício (inclui o motivo do boot frio, antes do hard reset) e tempo ligada. Se o POST não sai, os contadores seguem acumulando. Só observa: não muda canal, conexão nem envio.
 - **Comando serial de emergência** (`atenderComandoSerial()`, novo 10-06): aceita `WIFI:<ssid>:<senha>` via USB — grava direto na NVS sem precisar da tela do display, útil quando o touch não alcança o botão Salvar.
 
 ### 5.1 OTA (atualização por Wi-Fi) — novo 10-06
@@ -462,6 +464,11 @@ Produto paralelo à lavagem, no mesmo app. O conceito, as decisões e a ordem de
 Ainda não existe: leitura de nota em PDF, e tudo das etapas seguintes (pagamento de verdade no caixa, sincronização, entrada por BLE, câmeras). O bloqueio ainda não impede nada fisicamente — passa a valer quando a entrada por BLE consultar `LojaBloqueio`.
 
 ---
+
+### 6.13 Etapas da lavagem no app e diagnóstico da câmera (v8)
+
+- **Etapas (`lib/etapas.ts`):** o heartbeat passa a aceitar `proc` (processo em execução: 1 enxágue, 3 espuma, 5 cor mágica, 6 cera, 7 alta pressão, 8 secagem; 0 = nenhum). `registrarEtapa()` guarda **1 `Event` `lavagem_etapa` por mudança** (`{reservationId, idx, proc, programId}`), não por batida, sem tabela nova. A **sequência de cada modelo** (`SEQUENCIA`, modelo = `programId`) é uma cópia de `g_modelos` do firmware (`tipos_w1.h`) — **se mudar lá, mude em `lib/etapas.ts`**. Como o mesmo processo se repete na sequência (Espuma duas vezes), a posição é um ponteiro que só avança (`proximaPosicao`). `GET /api/arrivals/mine` devolve `etapas: {itens, atual}` enquanto a reserva está ENTERED; o app (`ProgressoLavagem.tsx`) mostra a lista com ✓ / ● agora / ○. Os nomes mostrados ficam em `PROC_NOME`.
+- **Diagnóstico da câmera (`/api/machine/camera-diag`):** cada relatório da câmera v8 vira um `Event` `camera_diag` (campos numéricos validados por zod; 200 mesmo para corpo ilegível). Serve para analisar por que a câmera fica sem enviar fotos (Wi-Fi × memória × envio × reinício); não decide nada nem avisa ninguém.
 
 ### 6.12 Reinícios das placas, retrato e ocorrências (`/api/machine/reset-log`, `lib/resets.ts`)
 

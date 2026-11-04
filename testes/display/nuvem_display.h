@@ -86,6 +86,8 @@ static const char* nd_estado_str() {
 static void nd_enviar_hb() {
     MsgHbState m = {}; m.cab.tipo = MSG_HB_STATE; m.cab.id_maquina = ID_MAQUINA; m.cab.origem = ORIGEM_DISPLAY; m.cab.seq = g_seq++;
     strncpy(m.state, nd_estado_str(), sizeof(m.state) - 1); m.restanteSeg = 0;
+    // etapa em andamento (so durante o ciclo: PROCESSO ou PAUSADO): a camera leva no heartbeat e o app mostra a lista de tarefas com a atual marcada
+    if (g_st_ok && (millis() - g_st_ms) <= 5000 && (g_st.estado_auto == 5 || g_st.estado_auto == 8)) { m.proc = g_st.proc_ativo; m.modelo = g_st.programa_sel; }
     esp_now_send((uint8_t*)MAC_CAMERA, (uint8_t*)&m, sizeof(m));
 }
 static void nd_enviar_cabeca_camera() {
