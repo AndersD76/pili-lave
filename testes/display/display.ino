@@ -1134,6 +1134,58 @@ static void seq_sync_tick() {
     }
 }
 
+// ---- CONTADORES DE LAVAGEM -> NUVEM (2026-11-04) ----
+// O contador do display/W1 (por modelo: presencial, aplicativo, socios, bonus, desde o ultimo "acerto") e a REFERENCIA. A cada 15 min (1o: 60 s depois de
+// ligar; e ~25 s depois de cada ciclo concluido) o display le a tabela 5 da W1 e poe 2 eventos (tipo 4, texto "C;...") na fila da nuvem; a nuvem confere com o
+// banco e avisa o admin se diferir (lib/contadores.ts). So com a maquina parada e com TODAS as filas vazias (nada em transito que explique a diferenca).
+static uint32_t g_ct_prox_ms = 0, g_ct_pedido_ms = 0, g_ct_n = 0;
+static uint8_t  g_ct_evseq = 255;
+static void ct_fila_limpa_antigos() {   // um relatorio novo vale mais que os velhos ainda nao enviados (a cabeca pode estar em envio: o ACK dela nao casa e nao tira nada)
+    for (int q = g_nd_evq_n - 1; q >= 1; q--) if (g_nd_evq[q].tipo == 4 && g_nd_evq[q].res[0] == 'C' && g_nd_evq[q].res[1] == 'T') {
+        memmove(&g_nd_evq[q], &g_nd_evq[q + 1], sizeof(EvtD) * (g_nd_evq_n - q - 1)); g_nd_evq_n--;
+    }
+}
+static void ct_empurra(uint8_t parte, const char* corpo) {
+    EvtD d = {}; d.id = 0; d.tipo = 4; d.prog = 0;
+    snprintf(d.res, sizeof(d.res), "CT%u-%lu", (unsigned)parte, (unsigned long)(++g_ct_n * 7919UL + (millis() & 0xFFFFUL)));
+    strncpy(d.err, corpo, sizeof(d.err) - 1);
+    nd_fila_push(d);
+}
+static void ct_sync_tick() {
+    uint32_t agora = millis();
+    static uint32_t t_cab = 0;
+    if (g_nd_evq_n && g_nd_evq[0].tipo == 4 && g_nd_evq[0].res[0] == 'C' && g_nd_evq[0].res[1] == 'T') {   // trava de seguranca: relatorio na cabeca ha mais de 5 min sem ACK (camera sem suporte): descarta
+        if (!t_cab) t_cab = agora | 1UL; else if ((int32_t)(agora - t_cab) > 300000) { nd_fila_pop(); t_cab = 0; }
+    } else t_cab = 0;
+    if (!g_st_ok) return;
+    if (g_ct_evseq == 255) g_ct_evseq = g_st.ev_seq;                                   // 1a leitura: nao e ciclo novo
+    else if (g_st.ev_seq != g_ct_evseq) { g_ct_evseq = g_st.ev_seq; if (!g_ct_pedido_ms) g_ct_prox_ms = (agora + 25000UL) | 1UL; }   // terminou um ciclo
+    if (!g_ct_prox_ms && !g_ct_pedido_ms) g_ct_prox_ms = (agora + 60000UL) | 1UL;
+    if (g_ct_pedido_ms) {
+        if (g_cfg_ok[5][0] && g_cfg_ok[5][1]) {
+            g_ct_pedido_ms = 0; g_ct_prox_ms = (agora + 900000UL) | 1UL;
+            const uint16_t* a = g_cfg[5][0]; const uint16_t* b = g_cfg[5][1];
+            unsigned dia = a[12] & 0xFF, mes = (a[12] >> 8) & 0xFF, ano = (a[13] >= 2020 && a[13] < 2100) ? a[13] : 0;
+            if (!ano) { dia = 0; mes = 0; }
+            auto c = [](uint16_t v) -> unsigned { return v > 9999 ? 9999u : (unsigned)v; };
+            char t[64];
+            ct_fila_limpa_antigos();
+            snprintf(t, sizeof(t), "C;1;d=%u.%u.%u;p=%u.%u.%u.%u;a=%u.%u.%u.%u", dia, mes, ano, c(a[0]), c(a[1]), c(a[2]), c(a[3]), c(a[4]), c(a[5]), c(a[6]), c(a[7]));
+            ct_empurra(1, t);
+            snprintf(t, sizeof(t), "C;2;d=%u.%u.%u;s=%u.%u.%u.%u;b=%u.%u.%u.%u", dia, mes, ano, c(a[8]), c(a[9]), c(a[10]), c(a[11]), c(b[0]), c(b[1]), c(b[2]), c(b[3]));
+            ct_empurra(2, t);
+        } else if ((int32_t)(agora - g_ct_pedido_ms) > 6000) { g_ct_pedido_ms = 0; g_ct_prox_ms = (agora + 30000UL) | 1UL; }   // a W1 nao respondeu: tenta de novo daqui a pouco
+        return;
+    }
+    if ((int32_t)(agora - g_ct_prox_ms) >= 0) {
+        if (g_st.estado_auto == 0 && g_nd_evq_n == 0 && g_st.evq_n == 0) {
+            g_cfg_ok[5][0] = false; g_cfg_ok[5][1] = false;
+            cfg_pedir(5, 0); cfg_pedir(5, 1);
+            g_ct_pedido_ms = agora | 1UL;
+        } else g_ct_prox_ms = (agora + 20000UL) | 1UL;      // em ciclo ou com evento em transito: espera
+    }
+}
+
 void loop() {
     esp_task_wdt_reset();
     tx_watchdog_tick();  // envio de radio travado -> reinicializa o ESP-NOW (e reinicia o display se nao resolver)
@@ -1149,5 +1201,6 @@ void loop() {
     cad_tick();          // cadastro da maquina (busca de unidade, cadastro, identidade)
     nd_tick();           // nuvem: heartbeat/eventos com a camera e ordens para a W1
     seq_sync_tick();     // sequencia dos modelos alterada -> evento para a nuvem
+    ct_sync_tick();      // contadores de lavagem (referencia) -> nuvem confere e avisa o admin
     delay(5);
 }

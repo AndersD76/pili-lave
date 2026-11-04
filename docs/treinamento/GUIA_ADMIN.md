@@ -48,6 +48,10 @@ No topo, uma tabela **por tipo de lavagem x origem**: **Presencial** (dinheiro n
 
 **Quando usar:** pra conferir se uma lavagem específica de um cliente foi processada, pra investigar reclamação ("paguei e não lavou") e pra ver quantas lavagens vieram de cada origem.
 
+**Contadores diferentes (acerto):** o display da máquina é a referência. Se os números dele (por modelo: presencial, app, sócios, bônus, desde o último acerto) forem diferentes dos da nuvem em duas conferências seguidas (a cada ~15 min), chega o alerta **"Contadores diferentes"** e, no topo desta tela, aparece um cartão com a tabela **Display × Nuvem** e dois botões — **você escolhe qual lista vale**:
+- **Usar a lista do display:** o que o display tem a mais em presencial, sócios e bônus é registrado agora como lavagem (presencial ao preço atual da unidade; sócio e bônus com valor R$ 0,00) e entra no fechamento. Diferenças no app, ou a nuvem ter mais que o display, ficam só como ajuste aceito: nada é apagado.
+- **Manter a lista da nuvem:** o display continua com os números dele até o próximo acerto na máquina; o aviso é encerrado.
+
 > ℹ️ As presenciais só são registradas na nuvem a partir de 02/11/2026; o contador por modelo do display da máquina (Presencial/Aplicativo/Sócios/Bônus) é de outra janela ("desde o último acerto") e pode ser maior. O fechamento financeiro por máquina continua na tela de **Máquinas** (seção 6).
 
 ---

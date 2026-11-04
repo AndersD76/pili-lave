@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireAdminPage } from "@/lib/admin";
 import { AdminNav } from "../nav";
+import { divergenciasAtuais } from "@/lib/contadores";
+import { escolherListaContadores } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +40,12 @@ export default async function AdminLavagens() {
     prisma.lavagemPresencial.groupBy({ by: ["programId"], _count: { _all: true } }),
   ]);
   const programas = await prisma.program.findMany({ orderBy: { id: "asc" }, select: { id: true, nome: true } });
+
+  // Conferência com o display (referência): por máquina, o que difere. O admin escolhe qual lista vale (acerto).
+  const maquinas = await prisma.machine.findMany({ select: { id: true, name: true } });
+  const conferencias = (
+    await Promise.all(maquinas.map(async (m) => ({ m, div: await divergenciasAtuais(m.id).catch(() => null) })))
+  ).filter((x) => x.div);
 
   // tipo (sócio/bônus) de cada lavagem presencial e contagem por programa
   const tipoPorLavagem = new Map<string, string>();
@@ -87,6 +95,48 @@ export default async function AdminLavagens() {
     <main>
       <AdminNav />
       <h2 className="section-title">Lavagens — por origem</h2>
+
+      {conferencias.map(({ m, div }) => (
+        <div key={m.id} className="card" style={{ borderColor: "var(--atencao)", borderWidth: 2, marginBottom: 18 }}>
+          <div className="lab" style={{ color: "var(--atencao)" }}>
+            Contadores diferentes — {m.name} (desde {div!.desdeTxt})
+          </div>
+          <p style={{ margin: "6px 0 10px" }}>
+            O display da máquina e a nuvem contam lavagens diferentes. Escolha qual lista vale — o display é a referência da máquina.
+          </p>
+          <div className="tbl-wrap">
+            <table className="tbl">
+              <thead><tr><th>Tipo</th><th>Modelo</th><th>Display</th><th>Nuvem</th><th>Diferença</th></tr></thead>
+              <tbody>
+                {div!.itens.map((d, i) => (
+                  <tr key={i}>
+                    <td>{d.grupo}</td><td>{d.modelo}</td><td>{d.display}</td><td>{d.nuvem}</td>
+                    <td style={{ fontWeight: 700 }}>{d.display - d.nuvem > 0 ? "+" : ""}{d.display - d.nuvem}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+            <form action={escolherListaContadores}>
+              <input type="hidden" name="machineId" value={m.id} />
+              <input type="hidden" name="fonte" value="display" />
+              <button className="btn" type="submit">Usar a lista do display</button>
+            </form>
+            <form action={escolherListaContadores}>
+              <input type="hidden" name="machineId" value={m.id} />
+              <input type="hidden" name="fonte" value="nuvem" />
+              <button className="btn ghost" type="submit">Manter a lista da nuvem</button>
+            </form>
+          </div>
+          <p style={{ color: "var(--aco-d)", fontSize: 13, marginTop: 8 }}>
+            <b>Usar o display:</b> o que o display tem a mais em presencial, sócios e bônus é registrado agora como lavagem (presencial ao preço atual; sócio e
+            bônus com valor 0) e entra no fechamento. Diferenças no app, ou a nuvem ter mais que o display, ficam só como ajuste aceito — nada é apagado.
+            <br />
+            <b>Manter a nuvem:</b> o display continua com os números dele até o próximo acerto na máquina; o aviso é encerrado.
+          </p>
+        </div>
+      ))}
 
       <div className="tbl-wrap">
         <table className="tbl">

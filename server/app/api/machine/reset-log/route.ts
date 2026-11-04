@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireMachine } from "@/lib/device";
 import { avisarAdmins, avisarCliente } from "@/lib/push";
+import { interpretarContadores, registrarContadores } from "@/lib/contadores";
 import { causaDoReset, horaPlausivel, interpretarEtapa, interpretarOcorrencia, interpretarReset } from "@/lib/resets";
 
 const Body = z.object({
@@ -33,6 +34,14 @@ export async function POST(req: NextRequest) {
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ ok: false, ignorado: "corpo inválido" });
   const { key, info } = parsed.data;
+
+  // Contadores de lavagem do display ("C;1;d=2.11.2026;p=5.22.4.4;a=6.6.1.0"): o display é a referência; a nuvem confere e avisa o admin se diferir (lib/contadores.ts).
+  if (info.startsWith("C;")) {
+    const rel = interpretarContadores(info);
+    if (!rel) return NextResponse.json({ ok: false, ignorado: "contadores não reconhecidos" });
+    await registrarContadores(auth.machine, rel).catch((e) => console.error("contadores falhou:", e));
+    return NextResponse.json({ ok: true });
+  }
 
   // Fase 0 da retomada: retrato da etapa ("J;...") e ocorrências observadas ("O;..."): só registro, não cancela nem avisa.
   if (info.startsWith("J;") || info.startsWith("O;")) return registrarFase0(auth.machine.id, key, info);

@@ -22,13 +22,14 @@ export const TIPOS_ALERTA = [
   { k: "DISPLAY_OFFLINE", label: "Display fora" },
   { k: "MAQUINA_FALHA", label: "Falha da máquina" },
   { k: "POSICAO_X15", label: "Carro não posicionou" },
+  { k: "CONTADORES_DIVERGENTES", label: "Contadores diferentes" },
   { k: "voltou", label: "Só os \"voltou\"" },
 ];
 
 type PayloadAlerta = { tipo?: string; mensagem?: string; machineId?: string | null };
 
 // Só estes ficam "abertos" até um "voltou". Os demais (ex.: POSICAO_X15) são eventos pontuais e não têm "voltou".
-const PERSISTENTES = ["MAQUINA_FALHA", "DISPLAY_OFFLINE", "CAMERA_OFFLINE"];
+const PERSISTENTES = ["MAQUINA_FALHA", "DISPLAY_OFFLINE", "CAMERA_OFFLINE", "CONTADORES_DIVERGENTES"];
 
 function fmtDataHora(d: Date): string {
   return d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
