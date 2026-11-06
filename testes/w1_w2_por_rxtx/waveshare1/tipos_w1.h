@@ -115,6 +115,10 @@ void nuvem_res_limpar();
 bool nuvem_res_ativa();
 extern bool g_armado_painel;   // ciclo armado por PULSO do painel/controle remoto (expira sem carro; ver auto_tick)
 extern bool g_pausa_w2;        // true = o ciclo esta PAUSADO porque a W2 sumiu (retoma sozinho quando ela voltar)
+extern bool g_braco_lado2;          // contraprova: X7 (sensor do braco na posicao 2) estavel ha mais de 100 ms. Nao participa de nenhuma rotina do giro
+extern bool g_delta_pausa_pedida;   // true = uma ordem ao Delta se perdeu: o auto_tick PAUSA o ciclo (em vez de dar erro) e retoma quando o Delta responder
+extern bool g_pausa_delta;          // true = o ciclo esta PAUSADO por falta de resposta do Delta (retoma sozinho quando voltar)
+extern bool g_x10_ausente_ok;   // true = o proprio processo tirou o carrinho do X10 (avanco confirmado) e ainda nao voltou: X10 ausente e ESPERADO (nao pausa)
 extern bool g_pausa_x10;       // true = o ciclo esta PAUSADO porque o X10 (carro sob a mesa) sumiu durante o giro (retoma sozinho quando voltar)
 bool recuperacao_fase1();      // recuperacao de boot esperando retirar o veiculo (X15 ocupada): libera o MANUAL
 String nvs_get_last_res_id();

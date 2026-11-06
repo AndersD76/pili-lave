@@ -47,6 +47,11 @@ static inline bool painel_prazo_vencido(uint32_t agora) { return g_armado_painel
 static bool     _retomando = false;
 static uint32_t _ret_t0    = 0;
 bool            g_pausa_x10 = false;   // PAUSADO por falta do X10 no meio de uma etapa (ver x10_pausa_tick)
+bool            g_braco_lado2 = false;          // X7 = braco na posicao 2 (contraprova; ver braco_lado2_tick)
+bool            g_delta_pausa_pedida = false;  // uma ordem ao Delta se perdeu (delta_falhou em processos.h): delta_pausa_tick PAUSA o ciclo
+bool            g_pausa_delta = false;          // PAUSADO por falta de resposta do Delta (ver delta_pausa_tick)
+static bool     g_delta_liberando = false;      // true so enquanto delta_pausa_tick chama auto_retomar (o resto fica barrado enquanto o Delta esta fora)
+bool            g_x10_ausente_ok = false;  // avanco confirmou a saida do X10: a ausencia e esperada ate o retorno achar o X10 (ou o X12)
 bool            g_x10_segura = false;  // sem X10 antes de iniciar a etapa: a etapa NAO comeca (G3)
 static void auto_retomar_efetivo();
 
@@ -314,6 +319,8 @@ void executar_processo_tick();
 void processos_reset();
 void processos_shift_timers(uint32_t delta);   // desloca cronometros (usado ao retomar da pausa)
 void x10_pausa_tick(uint32_t agora);
+void delta_pausa_tick(uint32_t agora);
+void braco_lado2_tick(uint32_t agora);
 extern bool g_giro_rewind;
 extern bool g_giro_ativo;   // true enquanto um giro roda (definido em processos.h)
 
@@ -353,6 +360,8 @@ void auto_tick() {
     tx_watchdog_tick(agora);             // envio de radio travado -> reinicializa o ESP-NOW (e so pausa/reinicia se preciso)
     w2_pausa_tick(agora);                // W2 perdida (ou envio travado) no processo -> PAUSADO (retoma sozinho)
     x10_pausa_tick(agora);               // X10 perdido durante o giro -> PAUSADO (retoma sozinho, rebobina o giro 1->2)
+    delta_pausa_tick(agora);             // ordem ao Delta perdida -> PAUSADO (retoma sozinho quando o Delta responder)
+    braco_lado2_tick(agora);             // X7 filtrado (contraprova de que o braco esta no lado 2)
     if (radio_ruim() && (g_estado_auto == AUTO_CARRO_ENTRANDO || g_estado_auto == AUTO_AGUARDA_POS || g_estado_auto == AUTO_INICIANDO))
         return;                          // sem dado confiavel da W2 antes do processo: segura (nao avanca nem acusa X15 com valor velho)
 
@@ -523,8 +532,9 @@ void auto_tick() {
             // esta recebendo ordens. Para tudo e acusa, em vez de seguir como se nada tivesse acontecido.
             if (g_vfd_falhas_seguidas >= 6) {
                 g_vfd_falhas_seguidas = 0;
-    g_manual_cmd = 0;   // cancela qualquer movimento manual em curso (manual_tick completa a parada)
-                auto_erro("RS-485: Delta sem resposta (6 escritas perdidas seguidas)");
+                g_manual_cmd = 0;   // cancela qualquer movimento manual em curso (manual_tick completa a parada)
+                if (g_teste_seco || g_teste_rodando) auto_erro("RS-485: Delta sem resposta (6 escritas perdidas seguidas)");
+                else g_delta_pausa_pedida = true;   // ciclo real: PAUSA e retoma quando o Delta voltar (delta_pausa_tick)
                 break;
             }
             if (g_x10_segura) break;      // G3: sem X10 a etapa nao comeca (x10_pausa_tick libera)
@@ -710,6 +720,7 @@ void auto_pausar() {
 // (auto_retomar_efetivo, chamada pelo auto_tick quando os 2 s passam).
 void auto_retomar() {
     if (_retomando) return;
+    if (g_pausa_delta && !g_delta_liberando) { g_manual_msg = "Delta sem resposta: aguarde o inversor voltar para continuar"; g_manual_msg_ms = millis(); return; }
     if (g_pausa_x10 && !X10) { g_manual_msg = "Sem X10 (carro sob a mesa): coloque o carro para continuar"; g_manual_msg_ms = millis(); return; }
     if (radio_ruim()) { g_manual_msg = "Radio/W2 sem contato: aguarde para continuar"; g_manual_msg_ms = millis(); return; }   // nao religa saidas sem a W2
     // Solenoides ANTES da bomba de espuma (Y7 so liga com um solenoide ativo).
@@ -746,6 +757,7 @@ static void auto_retomar_efetivo() {
 //         1500 ms -> RETOMA sozinho (religa as saidas, 2 s de pressao, re-emite o movimento). Giro 1->2: rebobina ate a posicao 1 e refaz o giro.
 //  Sem X10 por 60 s (segurando ou pausado): ERRO (cancela e estorna).
 #define X10_PERDIDO_MS     500UL      // X10 apagado por isso para pausar (filtra o fantasma do jato de agua)
+#define X10_PERDIDO_GIRO_MS 1500UL    // durante o GIRO o filtro e maior: o jato de agua da Alta Pressao apagava o X10 por ~0,5 s e fazia pausar e rebobinar o braco (2026-11-03)
 #define X10_VOLTA_MS       1500UL     // X10 de volta e estavel por isso -> retoma / libera a etapa
 #define X10_PAUSA_MAX_MS   60000UL    // 60 s sem X10 -> erro
 bool giro_x10_pausa_marcar();
@@ -755,10 +767,12 @@ void x10_pausa_tick(uint32_t agora) {
     uint32_t dt = t_ult ? agora - t_ult : 0; t_ult = agora; if (dt > 1000) dt = 0;
     bool y14 = (g_io2.do_ & 0x08) != 0;
     if (y14) y14_ms += dt; else if (X10) y14_ms = 0;           // deslocamento acumulado desde a ultima vez que o X10 foi visto com o carrinho parado
-    bool indevido = !X10 && y14_ms < 3000UL;
+    bool sem_x10 = !X10 && y14_ms < 3000UL;                          // X10 ausente sem o deslocamento de 3 s
+    bool indevido = sem_x10 && !g_x10_ausente_ok;                    // so conta onde o carro precisa ser visto (nao no retorno)   // ausencia esperada (processo saiu do X10 de proposito) nao conta
     bool vale = !g_teste_seco && !g_teste_rodando;
     if (g_estado_auto == AUTO_PROCESSO && vale) {
-        if (!g_x10_segura && indevido && proc_estado() == 0) {   // G3: a etapa ainda nao comecou
+        if (proc_estado() == 0 && X10) g_x10_ausente_ok = false;     // etapa nova com o carro visto: o X10 volta a valer
+        if (!g_x10_segura && sem_x10 && proc_estado() == 0) {   // G3: a etapa ainda nao comecou (vale mesmo depois de um retorno)
             g_x10_segura = true; t_seg = agora ? agora : 1; t_ok = 0; t_sem = 0;
             DBG_PRINTLN("[X10] sem X10 antes de iniciar a etapa: aguardando (nada liga ate o X10 voltar)");
         }
@@ -767,7 +781,7 @@ void x10_pausa_tick(uint32_t agora) {
             else t_ok = 0;
             if ((int32_t)(agora - t_msg) >= 1000) { t_msg = agora; g_manual_msg = X10 ? "X10 voltou: iniciando..." : "Aguardando X10 (carro sob a mesa)"; g_manual_msg_ms = millis(); }
             if (g_x10_segura && (int32_t)(agora - t_seg) >= (int32_t)X10_PAUSA_MAX_MS) { g_x10_segura = false; auto_erro("Sem X10 (carro sob a mesa) por 60 s - lavagem cancelada"); return; }
-        } else if (indevido) {                                     // G4/G5: no meio da etapa
+        } else if (indevido && !g_giro_ativo) {                    // G4/G5: no meio da etapa. DURANTE O GIRO o X10 NAO e vigiado (2026-11-06: o lavador relatou 3 pausas falsas por leitura do X10 no dia; vale so nos deslocamentos e no inicio da etapa)
             if (!t_sem) t_sem = agora ? agora : 1;
             if ((int32_t)(agora - t_sem) >= (int32_t)X10_PERDIDO_MS) {
                 t_sem = 0;
@@ -781,7 +795,7 @@ void x10_pausa_tick(uint32_t agora) {
             t_sem = 0;
         }
     } else if (g_estado_auto != AUTO_PAUSADO) {
-        t_sem = 0; g_x10_segura = false;
+        t_sem = 0; g_x10_segura = false; g_x10_ausente_ok = false;
     }
     if (g_estado_auto == AUTO_PAUSADO && g_pausa_x10) {
         if ((int32_t)(agora - t_msg) >= 1000) { t_msg = agora; g_manual_msg = X10 ? "X10 voltou: retomando..." : "PAUSADO: sem X10 (carro sob a mesa)"; g_manual_msg_ms = millis(); }
@@ -798,6 +812,60 @@ void x10_pausa_tick(uint32_t agora) {
         }
     } else if (g_estado_auto != AUTO_PAUSADO) {
         g_pausa_x10 = false;                                    // saiu da pausa por outro caminho (cancelar, erro): zera a marca
+    }
+}
+
+// ---- X7 = CONTRAPROVA DO BRACO NO LADO 2 (2026-11-03) ----
+// O X7 foi tirado de todas as rotinas do giro (busca fina do home, vigia de braco parado, memoria de direcao). Fisicamente fica na posicao 2:
+// se a maquina perder qualquer informacao (reinicio, pausa, sensor duvidoso), g_braco_lado2 diz que o braco esta no lado 2. Mesmo filtro de ruido
+// dos X16/X17: so vale (e so deixa de valer) depois de ficar CONSTANTE por mais de SENSOR_HOME_DEBOUNCE_MS (100 ms). Por ora so informa e
+// registra no serial; nada decide por ele.
+#define X7_DEBOUNCE_MS 100UL
+void braco_lado2_tick(uint32_t agora) {
+    static bool lido = false, ult = false;
+    static uint32_t t_mud = 0;
+    bool x7 = X7;
+    if (!lido || x7 != ult) { lido = true; ult = x7; t_mud = agora; }          // mudou: recomeca a contar a estabilidade
+    if ((int32_t)(agora - t_mud) >= (int32_t)X7_DEBOUNCE_MS && g_braco_lado2 != ult) {
+        g_braco_lado2 = ult;
+        DBG_PRINTF("[X7] braco %s o lado 2 (X7 estavel %lu ms)\n", g_braco_lado2 ? "NO" : "FORA do", (unsigned long)X7_DEBOUNCE_MS);
+    }
+}
+
+// ---- DELTA SEM RESPONDER NO CICLO (2026-11-03) ----
+// Uma ordem de movimento ao Delta que se perde de vez (delta_falhou em processos.h) ou 6 escritas perdidas seguidas NAO cancelam mais o ciclo:
+// PAUSA (mesmo auto_pausar do X10: motor parado, bombas/solenoides desligados, movimento guardado). A pausa reenvia o vfd_stop a cada 300 ms;
+// quando o Delta aceita as ordens de forma estavel por DELTA_VOLTA_MS, RETOMA sozinho (religa as saidas, 2 s de pressao, reemite o movimento).
+// Sem o Delta por 60 s: ERRO (cancela e estorna). Nao le o Delta nem cria polling novo: so reage a falha de escrita.
+#define DELTA_VOLTA_MS      1500UL
+#define DELTA_PAUSA_MAX_MS  60000UL
+void delta_pausa_tick(uint32_t agora) {
+    static uint32_t t_pausa = 0, t_ok = 0, t_msg = 0;
+    if (g_delta_pausa_pedida) {
+        g_delta_pausa_pedida = false;
+        if (g_estado_auto == AUTO_PROCESSO) {
+            auto_pausar();
+            g_pausa_delta = true; t_pausa = agora; t_ok = 0;
+            Preferences p; if (p.begin("delta", false)) { p.putUInt("pz", p.getUInt("pz", 0) + 1); p.end(); }   // quantas pausas por Delta (admin/diagnostico)
+            DBG_PRINTLN("[DELTA] sem resposta no ciclo -> PAUSADO (reenvia o stop; retoma sozinho quando o Delta voltar)");
+        }
+    }
+    if (g_estado_auto == AUTO_PAUSADO && g_pausa_delta) {
+        if ((int32_t)(agora - t_msg) >= 1000) { t_msg = agora; g_manual_msg = "PAUSADO: Delta sem resposta - retoma sozinho"; g_manual_msg_ms = millis(); }
+        bool ok = g_vfd_run_ok && g_vfd_falhas_seguidas == 0;       // o ultimo vfd_stop (a cada 300 ms) foi aceito
+        if (!ok) {
+            t_ok = 0;
+            if ((int32_t)(agora - t_pausa) >= (int32_t)DELTA_PAUSA_MAX_MS) { g_pausa_delta = false; auto_erro("RS-485: Delta sem resposta por 60 s - lavagem cancelada"); }
+        } else if (!_retomando) {
+            if (!t_ok) t_ok = agora ? agora : 1;
+            else if ((int32_t)(agora - t_ok) >= (int32_t)DELTA_VOLTA_MS) {
+                DBG_PRINTLN("[DELTA] voltou e estavel -> CONTINUANDO");
+                g_delta_liberando = true; auto_retomar(); g_delta_liberando = false;   // pode recusar (X10 ausente / W2): tenta de novo no proximo tick
+                if (_retomando) { g_pausa_delta = false; t_ok = 0; }
+            }
+        }
+    } else if (g_estado_auto != AUTO_PAUSADO) {
+        g_pausa_delta = false;                                  // saiu da pausa por outro caminho (cancelar, erro): zera a marca
     }
 }
 
@@ -847,6 +915,8 @@ const char* recuperacao_pedir_home() {
 }
 const char* recuperacao_mensagem() {
     if (g_rec_estado != REC_ATIVA || home_rodando() || g_rec_home_iniciado) return nullptr;
+    // X7 = contraprova do lado 2 (braco_lado2_tick): diz ao operador onde a W1 sabe que o braco esta. Nao muda nenhuma decisao de movimento.
+    if (g_braco_lado2) return X15 ? "Religou fora do zero (braco no LADO 2 - X7): retire o veiculo e toque em HOME" : "Religou fora do zero (braco no LADO 2 - X7): toque em HOME no display";
     return X15 ? "Religou fora do zero: retire o veiculo e toque em HOME" : "Religou fora do zero: toque em HOME no display";
 }
 
@@ -861,7 +931,8 @@ void recuperacao_tick() {
         if (no_zero) { g_rec_estado = REC_CONCLUIDA; return; }   // ja referenciado
         desligar_tudo();          // zera saidas presas de um ciclo interrompido (Y13, solenoides, etc.)
         g_rec_estado = REC_ATIVA; g_rec_home_iniciado = false;
-        DBG_PRINTLN("[REC] boot fora do zero -> recuperacao ativa (saidas zeradas)");
+        DBG_PRINTF("[REC] boot fora do zero -> recuperacao ativa (saidas zeradas). Braco: %s\n",
+                   g_braco_lado2 ? "LADO 2 (X7 estavel)" : HOME_GIRO ? "LADO 1 (X16)" : "posicao desconhecida (nem X7 nem X16)");
         return;
     }
     if (g_rec_estado != REC_ATIVA) return;

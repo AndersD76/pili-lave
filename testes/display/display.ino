@@ -95,6 +95,12 @@ static void enviar(uint8_t acao, uint8_t repeticoes = 1, uint8_t arg = 0) {
     }
 }
 
+// ---- SEQUENCIA DOS MODELOS -> NUVEM (2026-11-04): o app mostra a lista de tarefas da lavagem; ela tem de ser a MESMA que a W1 executa. Quando a
+// sequencia de um modelo e alterada aqui (ou ao ligar), o display confere o que a W1 realmente gravou e poe um evento tipo 5 na fila da nuvem
+// (NVS + ACK, como os eventos de lavagem): a camera faz POST /api/machine/sequencia {modelo, seq:"5.7"} ate receber 200.
+static uint32_t g_seq_sync_ms[4]  = {0, 0, 0, 0};   // quando conferir/enviar (0 = nada pendente)
+static uint32_t g_seq_pedido_ms[4] = {0, 0, 0, 0};  // quando pediu o dump a W1 (0 = nao esta aguardando)
+
 static void cfg_pedir(uint8_t tabela, uint8_t i1) {
     MsgTesteCfgReq r;
     r.cab.tipo = MSG_TESTE_CFG_REQ; r.cab.id_maquina = ID_MAQUINA; r.cab.origem = ORIGEM_DISPLAY; r.cab.seq = g_seq++;
@@ -392,6 +398,7 @@ static void cb_ed_ajusta(lv_event_t* e) {
     }
     g_cfg[g_ed_tab][m][i] = nv;
     cfg_set(g_ed_tab, (ED_COM_MODELO) ? m : i, (ED_COM_MODELO) ? i : 0, nv);
+    if (g_ed_tab == 4) g_seq_sync_ms[m] = (millis() + 4000UL) | 1UL;     // mexeu na SEQUENCIA do modelo: 4 s depois do ultimo toque confere com a W1 e atualiza a nuvem (seq_sync_tick)
     g_ed_refetch_ms = millis() + 500;     // confere com o que a W1 realmente gravou
 }
 
@@ -658,6 +665,7 @@ static void ui_evento_atualiza(bool contato, const MsgTesteStatus& s) {
     if (s.estado_auto >= 1 && s.estado_auto <= 5) { if (pop_ev) lv_obj_add_flag(pop_ev, LV_OBJ_FLAG_HIDDEN); }   // novo ciclo em andamento
     if (s.ev_seq == ev_visto) return;
     ev_visto = s.ev_seq;
+    if (s.ev_tipo == 0) return;   // a W1 reiniciou (seq e tipo voltam a 0): nao ha evento de ciclo — antes isso abria um "ERRO NO CICLO (modelo 0)" falso com OK
     char b[120];
     if (s.ev_tipo == 1) {   // concluido com sucesso: so um aviso curto na linha de mensagens (sem pop-up e sem OK)
         snprintf(g_aviso, sizeof(g_aviso), "Ciclo concluido (modelo %u)", (unsigned)s.ev_modelo); g_aviso_ms = millis();
@@ -1088,6 +1096,96 @@ void setup() {
     Serial.println("[TESTE] display de testes pronto");
 }
 
+static uint32_t g_seq_idn = 0;
+static void seq_sync_tick() {
+    static bool boot_feito = false;
+    uint32_t agora = millis();
+    if (!boot_feito && g_st_ok && agora > 20000UL) {   // 1x ao ligar: a nuvem passa a ter as sequencias reais, mesmo sem ninguem editar
+        boot_feito = true;
+        for (int m = 0; m < 4; m++) if (!g_seq_sync_ms[m]) g_seq_sync_ms[m] = (agora + 2000UL * (uint32_t)(m + 1)) | 1UL;
+    }
+    for (int m = 0; m < 4; m++) {
+        if (g_seq_pedido_ms[m]) {
+            if (g_cfg_ok[4][m]) {   // chegou o dump da W1: o que esta na W1 e o que vai para a nuvem
+                g_seq_pedido_ms[m] = 0;
+                char ids[40] = ""; int n = 0;
+                for (int s = 0; s < 14; s++) {
+                    uint16_t v = g_cfg[4][m][s];
+                    if (v < 1 || v > 9) break;                    // 10 = fim da sequencia
+                    n += snprintf(ids + n, sizeof(ids) - n, n ? ".%u" : "%u", (unsigned)v);
+                }
+                if (n > 0) {
+                    // tira da fila uma versao anterior ainda nao enviada deste modelo (o evento mais novo vale; a cabeca pode estar em envio: o ACK dela nao casa e nao tira nada)
+                    for (int q = g_nd_evq_n - 1; q >= 0; q--) if (g_nd_evq[q].tipo == 5 && g_nd_evq[q].prog == m + 1) {
+                        memmove(&g_nd_evq[q], &g_nd_evq[q + 1], sizeof(EvtD) * (g_nd_evq_n - q - 1)); g_nd_evq_n--;
+                    }
+                    EvtD d = {}; d.id = 0; d.tipo = 5; d.prog = (uint8_t)(m + 1);
+                    snprintf(d.res, sizeof(d.res), "SQ%d-%lu", m + 1, (unsigned long)(++g_seq_idn ^ (agora & 0xFFFF)));
+                    strncpy(d.err, ids, sizeof(d.err) - 1);
+                    nd_fila_push(d);
+                }
+            } else if ((int32_t)(agora - g_seq_pedido_ms[m]) > 5000) { g_seq_pedido_ms[m] = 0; g_seq_sync_ms[m] = (agora + 1000UL) | 1UL; }   // W1 nao respondeu: tenta de novo
+        } else if (g_seq_sync_ms[m] && (int32_t)(agora - g_seq_sync_ms[m]) >= 0) {
+            if (g_st_ok && g_st.estado_auto == 0) {            // so com a maquina parada (o mesmo vale para editar a tabela)
+                g_cfg_ok[4][m] = false; cfg_pedir(4, (uint8_t)m);
+                g_seq_pedido_ms[m] = agora | 1UL; g_seq_sync_ms[m] = 0;
+            } else g_seq_sync_ms[m] = (agora + 5000UL) | 1UL;  // sem contato / em ciclo: espera
+        }
+    }
+}
+
+// ---- CONTADORES DE LAVAGEM -> NUVEM (2026-11-04) ----
+// O contador do display/W1 (por modelo: presencial, aplicativo, socios, bonus, desde o ultimo "acerto") e a REFERENCIA. A cada 15 min (1o: 60 s depois de
+// ligar; e ~25 s depois de cada ciclo concluido) o display le a tabela 5 da W1 e poe 2 eventos (tipo 4, texto "C;...") na fila da nuvem; a nuvem confere com o
+// banco e avisa o admin se diferir (lib/contadores.ts). So com a maquina parada e com TODAS as filas vazias (nada em transito que explique a diferenca).
+static uint32_t g_ct_prox_ms = 0, g_ct_pedido_ms = 0, g_ct_n = 0;
+static uint8_t  g_ct_evseq = 255;
+static void ct_fila_limpa_antigos() {   // um relatorio novo vale mais que os velhos ainda nao enviados (a cabeca pode estar em envio: o ACK dela nao casa e nao tira nada)
+    for (int q = g_nd_evq_n - 1; q >= 1; q--) if (g_nd_evq[q].tipo == 4 && g_nd_evq[q].res[0] == 'C' && g_nd_evq[q].res[1] == 'T') {
+        memmove(&g_nd_evq[q], &g_nd_evq[q + 1], sizeof(EvtD) * (g_nd_evq_n - q - 1)); g_nd_evq_n--;
+    }
+}
+static void ct_empurra(uint8_t parte, const char* corpo) {
+    EvtD d = {}; d.id = 0; d.tipo = 4; d.prog = 0;
+    snprintf(d.res, sizeof(d.res), "CT%u-%lu", (unsigned)parte, (unsigned long)(++g_ct_n * 7919UL + (millis() & 0xFFFFUL)));
+    strncpy(d.err, corpo, sizeof(d.err) - 1);
+    nd_fila_push(d);
+}
+static void ct_sync_tick() {
+    uint32_t agora = millis();
+    static uint32_t t_cab = 0;
+    if (g_nd_evq_n && g_nd_evq[0].tipo == 4 && g_nd_evq[0].res[0] == 'C' && g_nd_evq[0].res[1] == 'T') {   // trava de seguranca: relatorio na cabeca ha mais de 5 min sem ACK (camera sem suporte): descarta
+        if (!t_cab) t_cab = agora | 1UL; else if ((int32_t)(agora - t_cab) > 300000) { nd_fila_pop(); t_cab = 0; }
+    } else t_cab = 0;
+    if (!g_st_ok) return;
+    if (g_ct_evseq == 255) g_ct_evseq = g_st.ev_seq;                                   // 1a leitura: nao e ciclo novo
+    else if (g_st.ev_seq != g_ct_evseq) { g_ct_evseq = g_st.ev_seq; if (!g_ct_pedido_ms) g_ct_prox_ms = (agora + 25000UL) | 1UL; }   // terminou um ciclo
+    if (!g_ct_prox_ms && !g_ct_pedido_ms) g_ct_prox_ms = (agora + 60000UL) | 1UL;
+    if (g_ct_pedido_ms) {
+        if (g_cfg_ok[5][0] && g_cfg_ok[5][1]) {
+            g_ct_pedido_ms = 0; g_ct_prox_ms = (agora + 900000UL) | 1UL;
+            const uint16_t* a = g_cfg[5][0]; const uint16_t* b = g_cfg[5][1];
+            unsigned dia = a[12] & 0xFF, mes = (a[12] >> 8) & 0xFF, ano = (a[13] >= 2020 && a[13] < 2100) ? a[13] : 0;
+            if (!ano) { dia = 0; mes = 0; }
+            auto c = [](uint16_t v) -> unsigned { return v > 9999 ? 9999u : (unsigned)v; };
+            char t[64];
+            ct_fila_limpa_antigos();
+            snprintf(t, sizeof(t), "C;1;d=%u.%u.%u;p=%u.%u.%u.%u;a=%u.%u.%u.%u", dia, mes, ano, c(a[0]), c(a[1]), c(a[2]), c(a[3]), c(a[4]), c(a[5]), c(a[6]), c(a[7]));
+            ct_empurra(1, t);
+            snprintf(t, sizeof(t), "C;2;d=%u.%u.%u;s=%u.%u.%u.%u;b=%u.%u.%u.%u", dia, mes, ano, c(a[8]), c(a[9]), c(a[10]), c(a[11]), c(b[0]), c(b[1]), c(b[2]), c(b[3]));
+            ct_empurra(2, t);
+        } else if ((int32_t)(agora - g_ct_pedido_ms) > 6000) { g_ct_pedido_ms = 0; g_ct_prox_ms = (agora + 30000UL) | 1UL; }   // a W1 nao respondeu: tenta de novo daqui a pouco
+        return;
+    }
+    if ((int32_t)(agora - g_ct_prox_ms) >= 0) {
+        if (g_st.estado_auto == 0 && g_nd_evq_n == 0 && g_st.evq_n == 0) {
+            g_cfg_ok[5][0] = false; g_cfg_ok[5][1] = false;
+            cfg_pedir(5, 0); cfg_pedir(5, 1);
+            g_ct_pedido_ms = agora | 1UL;
+        } else g_ct_prox_ms = (agora + 20000UL) | 1UL;      // em ciclo ou com evento em transito: espera
+    }
+}
+
 void loop() {
     esp_task_wdt_reset();
     tx_watchdog_tick();  // envio de radio travado -> reinicializa o ESP-NOW (e reinicia o display se nao resolver)
@@ -1102,5 +1200,7 @@ void loop() {
     wifi_tick();         // busca de redes / migracao de canal (maquina de estados, fora do LVGL)
     cad_tick();          // cadastro da maquina (busca de unidade, cadastro, identidade)
     nd_tick();           // nuvem: heartbeat/eventos com a camera e ordens para a W1
+    seq_sync_tick();     // sequencia dos modelos alterada -> evento para a nuvem
+    ct_sync_tick();      // contadores de lavagem (referencia) -> nuvem confere e avisa o admin
     delay(5);
 }

@@ -28,20 +28,23 @@ export default function Home() {
   const [liberando, setLiberando] = useState(false);
   const [erroLiberar, setErroLiberar] = useState("");
   const [cancelando, setCancelando] = useState(false);
+  const [confirmaCancel, setConfirmaCancel] = useState(false);   // 1o toque arma, 2o cancela (no lugar do confirm(), que alguns navegadores do celular bloqueiam em silencio)
+  const [erroCancel, setErroCancel] = useState("");
 
   /* Cancelar só vale ANTES de o carro entrar; o servidor recusa depois do
      X14. Devolve o valor pago ao saldo. */
   async function cancelar() {
-    if (!arrival?.reservaId) return;
-    if (!confirm("Cancelar a lavagem? O valor volta para o seu saldo.")) return;
-    setErroLiberar(""); setCancelando(true);
+    if (!arrival?.reservaId) { setErroCancel("Não achei a reserva para cancelar. Feche e abra o app."); return; }
+    if (!confirmaCancel) { setConfirmaCancel(true); setErroCancel(""); setTimeout(() => setConfirmaCancel(false), 8000); return; }
+    setConfirmaCancel(false); setErroCancel(""); setErroLiberar(""); setCancelando(true);
     try {
       await api(`/api/reservations/${arrival.reservaId}/cancel`, { body: {} });
       const r = await api<{ arrival: Arrival | null }>("/api/arrivals/mine");
       setArrival(r.arrival);
       load();   // saldo atualizado
     } catch (e) {
-      setErroLiberar(e instanceof Error ? e.message : "Não foi possível cancelar");
+      // o erro aparece JUNTO do botao (antes ia para um texto acima do outro botao e passava despercebido)
+      setErroCancel(e instanceof Error ? e.message : "Não foi possível cancelar. Verifique a conexão e tente de novo.");
     } finally {
       setCancelando(false);
     }
@@ -85,11 +88,12 @@ export default function Home() {
   useEffect(() => {
     if (!getToken()) { router.replace("/app/cadastro"); return; }
     load();
-    const poll = setInterval(() => {
+    const buscaChegada = () =>
       api<{ arrival: Arrival | null }>("/api/arrivals/mine")
         .then((r) => setArrival(r.arrival))
         .catch(() => {});
-    }, 4000);
+    buscaChegada();   // ja ao abrir: antes so buscava depois de 4 s e a tela abria sem o acompanhamento da lavagem
+    const poll = setInterval(buscaChegada, 4000);
     return () => clearInterval(poll);
   }, [router, load]);
 
@@ -135,8 +139,9 @@ export default function Home() {
           {/* Desistiu: cancelar e receber o dinheiro de volta. Só aparece
               ANTES de o carro entrar — depois disso o ciclo já começou. */}
           <button className="btn ghost" onClick={cancelar} disabled={cancelando} style={{ marginTop: 8 }}>
-            {cancelando ? "Cancelando…" : "Cancelar lavagem e receber de volta"}
+            {cancelando ? "Cancelando…" : confirmaCancel ? "Toque de novo para confirmar o cancelamento" : "Cancelar lavagem e receber de volta"}
           </button>
+          {erroCancel && <p className="err">{erroCancel}</p>}
           {/* O QR ainda serve para validar no balcão (fluxo do lavador) —
               fica a um toque, sem ocupar a tela. */}
           {ultima?.status === "PAID" && (

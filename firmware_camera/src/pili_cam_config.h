@@ -38,6 +38,8 @@
 //   na nuvem, não aqui.
 #define PILI_LPR_PATH        "/api/lpr/frame"
 #define PILI_HB_PATH         "/api/machine/heartbeat"
+#define PILI_DIAG_PATH       "/api/machine/camera-diag"
+#define PILI_DIAG_MS         (5UL * 60UL * 1000UL)   // relatorio de diagnostico a cada 5 min (e ao falhar varias fotos seguidas, no maximo 1 por minuto)
 // Achado real (2026-10-06): upload de foto falhando quase sempre
 // ("Failed to send chunk") -- a TLS write precisa de um bloco de memória
 // GRANDE e contíguo; com heap fragmentado (câmera+Wi-Fi+ESP-NOW rodando
@@ -77,7 +79,7 @@
 //   se a gravação fechar certinho (senão continua rodando o firmware atual
 //   -- o ESP32 nunca troca pra uma imagem incompleta/corrompida sozinho).
 //   SUBIR A VERSÃO aqui a cada firmware novo, senão ele nunca se atualiza.
-#define PILI_FW_VERSION       7   // v7: evento tipo 4 (reinicio das placas) -> /api/machine/reset-log; hora por NTP para a W1 (MSG_HORA, 41). v6: informa ao display a rede Wi-Fi conectada (MSG_REDE_INFO). v5: comando de canal do display, re-sync automatico, respostas da nuvem tambem para a W1
+#define PILI_FW_VERSION       8   // v8: diagnostico da camera para a nuvem (POST /api/machine/camera-diag: Wi-Fi, memoria, falhas de foto/heartbeat, motivo do reinicio) — so observa, nao muda nenhuma decisao. v7: evento tipo 4 (reinicio das placas) -> /api/machine/reset-log; hora por NTP para a W1 (MSG_HORA, 41). v6: informa ao display a rede Wi-Fi conectada (MSG_REDE_INFO). v5: comando de canal do display, re-sync automatico, respostas da nuvem tambem para a W1
 #define PILI_OTA_VERSION_PATH "/firmware/camera-version.json"
 #define PILI_OTA_BIN_PATH     "/firmware/camera.bin"
 #define PILI_OTA_CHECK_MS     (10UL * 60UL * 1000UL)  // confere a cada 10min

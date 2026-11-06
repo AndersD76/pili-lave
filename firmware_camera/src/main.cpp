@@ -43,6 +43,35 @@
 #include <esp_task_wdt.h>
 #include "pili_cam_config.h"
 
+/* ===================== DIAGNOSTICO DA CAMERA (v8) =====================
+ * So OBSERVA: conta o que acontece com o Wi-Fi, a memoria, as fotos e o heartbeat e manda um resumo a nuvem (POST PILI_DIAG_PATH) a cada
+ * PILI_DIAG_MS e quando varias fotos seguidas falham. Se o resumo nao sai (rede fora), os contadores continuam acumulando e saem depois,
+ * contando o que aconteceu durante a queda. Nada aqui muda decisao de canal, conexao ou envio. */
+struct CamDiag {
+  uint32_t fotoOk, fotoFalha, fotoSeguidas, fotoSeguidasMax; int32_t fotoUltCode;
+  uint32_t hbOk, hbFalha; int32_t hbUltCode;
+  uint32_t quedasWifi, scans, fbFalhas, descMaxS;
+  int32_t  rssiMin, rssiMax, rssiSoma; uint32_t rssiN;
+  uint32_t heapMin, blocoMin;
+};
+static CamDiag g_dg;   // zerado; dgZera() (no setup) poe os minimos/maximos em valores iniciais
+static esp_reset_reason_t g_dg_rst = ESP_RST_UNKNOWN;   // motivo do ultimo reinicio (lido no setup)
+RTC_NOINIT_ATTR static uint32_t g_dg_rst_marca;   // o hard reset do boot frio faz 2 boots: guarda o motivo do 1o (energizou/queda) para o relatorio
+RTC_NOINIT_ATTR static uint32_t g_dg_rst_orig;
+#define DG_MARCA 0x44494147UL
+static bool     g_dg_estava_conectada = false;
+static uint32_t g_dg_desc_ini = 0;
+static uint32_t g_dg_t_rel = 0;       // ultimo relatorio enviado com sucesso
+static bool     g_dg_pedido = false;  // varias fotos seguidas falharam: relatar logo
+static bool     g_dg_primeiro = true; // 1o relatorio do boot (leva o motivo do reinicio)
+static void dgZera() {
+  g_dg.fotoOk = g_dg.fotoFalha = g_dg.fotoSeguidasMax = 0; g_dg.fotoUltCode = 0;
+  g_dg.hbOk = g_dg.hbFalha = 0; g_dg.hbUltCode = 0;
+  g_dg.quedasWifi = g_dg.scans = g_dg.fbFalhas = g_dg.descMaxS = 0;
+  g_dg.rssiMin = 127; g_dg.rssiMax = -127; g_dg.rssiSoma = 0; g_dg.rssiN = 0;
+  g_dg.heapMin = 0xFFFFFFFFUL; g_dg.blocoMin = 0xFFFFFFFFUL;
+}
+
 /* ===================== HARD RESET no boot (via firmware) =====================
  * Ao ENERGIZAR, reinicia o chip inteiro UMA vez (CPU + todos os periféricos) com a
  * alimentação já estável (a ESP32-CAM é conhecida por subir com o OV2640/PSRAM
@@ -60,6 +89,7 @@ static void hardResetFase1(const char* nome) {
   bool energizou = (r == ESP_RST_POWERON || r == ESP_RST_BROWNOUT || r == ESP_RST_UNKNOWN);
   if (energizou && g_hr_marca != HR_MARCA) {
     g_hr_marca = HR_MARCA;
+    g_dg_rst_orig = (uint32_t)r; g_dg_rst_marca = DG_MARCA;   // diagnostico: o relatorio mostra POR QUE energizou (poweron/brownout), nao o "software" do 2o boot
 #if HARD_RESET_APAGA_NVS
     nvs_flash_erase(); nvs_flash_init();
 #endif
@@ -264,7 +294,10 @@ typedef struct __attribute__((packed)) {
   CabEspNow cab;
   char      state[12];
   uint32_t  restanteSeg;
+  uint8_t   proc;      // v8: processo em execucao na maquina (0 = nenhum) — acompanhamento por etapas no app
+  uint8_t   modelo;    // v8: modelo (1..4) da lavagem em andamento
 } MsgHbState;
+#define HB_STATE_BASE_LEN ((int)offsetof(MsgHbState, proc))   // tamanho antigo (display sem proc/modelo): continua aceito
 
 typedef struct __attribute__((packed)) {
   CabEspNow cab;
@@ -320,6 +353,7 @@ static volatile bool g_scan_pedido = false;          // recebeu MSG_SCAN_REQ (fa
 // Estado recebido do display p/ o heartbeat
 static volatile char     g_hb_state[12] = "FREE";
 static volatile uint32_t g_hb_restante  = 0;
+static volatile uint8_t  g_hb_proc      = 0;   // v8: processo em execucao (vem do display; 0 = nenhum / display antigo)
 
 // Evento pendente recebido do display (1 slot; o display reenvia até o ACK)
 static volatile bool     g_evt_pende = false;
@@ -397,8 +431,9 @@ static void onRecvImpl(const uint8_t* mac, const uint8_t* data, int len) {
   if (len < (int)sizeof(CabEspNow)) return;
   const CabEspNow* cab = (const CabEspNow*)data;
   if (cab->id_maquina != ID_MAQUINA) return;
-  if (cab->tipo == MSG_HB_STATE && len >= (int)sizeof(MsgHbState)) {
+  if (cab->tipo == MSG_HB_STATE && len >= HB_STATE_BASE_LEN) {
     const MsgHbState* m = (const MsgHbState*)data;
+    g_hb_proc = (len >= (int)sizeof(MsgHbState)) ? m->proc : 0;
     strncpy((char*)g_hb_state, m->state, sizeof(g_hb_state) - 1);
     g_hb_state[sizeof(g_hb_state) - 1] = '\0';
     g_hb_restante = m->restanteSeg;
@@ -485,7 +520,8 @@ static void processarEvento() {
 
   MsgEvt ev; memcpy(&ev, (const void*)&g_evt, sizeof(ev));
 
-  const char* path = (ev.evt_tipo == 1) ? "/api/machine/car-entered"
+  const char* path = (ev.evt_tipo == 5) ? "/api/machine/sequencia"   // 5 = sequencia de processos de um modelo (alterada no display): ver body abaixo
+                   : (ev.evt_tipo == 1) ? "/api/machine/car-entered"
                    : (ev.evt_tipo == 2) ? "/api/machine/wash-complete"
                    : (ev.evt_tipo == 3) ? "/api/machine/fault"
                    : (ev.evt_tipo == 4) ? "/api/machine/reset-log" : nullptr;   // 4 = reinicio de placa (W1/W2): historico para o admin
@@ -493,7 +529,7 @@ static void processarEvento() {
 
   String body = "{";
   bool sep = false;
-  if (ev.evt_tipo != 4 && strlen(ev.res)) { body += String("\"reservationId\":\"") + ev.res + "\""; sep = true; }
+  if (ev.evt_tipo != 4 && ev.evt_tipo != 5 && strlen(ev.res)) { body += String("\"reservationId\":\"") + ev.res + "\""; sep = true; }
   if (ev.evt_tipo == 2 && ev.prog >= 1 && ev.prog <= 4) {
     if (sep) body += ",";
     body += String("\"programId\":") + ev.prog; sep = true;
@@ -506,6 +542,7 @@ static void processarEvento() {
   if (ev.evt_tipo == 4) {   // reinicio: key = chave unica ("W1-12", volta no ACK e evita duplicar no backend); info = "W1;m=6;e=5;u=1234;n=12;c=1;s=0"
     body += String("\"key\":\"") + ev.res + "\",\"info\":\"" + ev.errcode + "\"";
   }
+  if (ev.evt_tipo == 5) body += String("\"modelo\":") + ev.prog + ",\"seq\":\"" + ev.errcode + "\"";   // errcode = ids dos processos separados por ponto ("5.7")
   body += "}";
 
   HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
@@ -728,6 +765,7 @@ static void pedirResync(uint8_t canal) {
 /* Retorna o canal encontrado (1-13) ou -1 se a rede não apareceu no scan. */
 static int8_t anunciarCanalAntesDeConectar() {
   Serial.printf("[wifi] escaneando %s...\n", g_ssid.c_str());
+  g_dg.scans++;
   int n = WiFi.scanNetworks();
   int8_t canalAlvo = -1;
   for (int i = 0; i < n; i++) {
@@ -763,6 +801,7 @@ static int8_t anunciarCanalAntesDeConectar() {
 static int8_t canalParaConectar() {
 #if PILI_RESYNC_COM_DISPLAY
   Serial.printf("[wifi] escaneando %s...\n", g_ssid.c_str());
+  g_dg.scans++;
   int n = WiFi.scanNetworks();
   int8_t c = -1;
   for (int i = 0; i < n; i++) if (WiFi.SSID(i) == g_ssid) { c = WiFi.channel(i); break; }
@@ -993,6 +1032,67 @@ static void aplicarCfgNovo() {
   g_pausa_internet_ate = 0;   // chegou a rede nova (todos ja no canal certo): pode conectar ja
 }
 
+/* Amostra RSSI/memoria (a cada ~2 s, so conectada) e acompanha as quedas de Wi-Fi. Chamada do loop(). */
+static void diagAmostra(bool conectada) {
+  static uint32_t tAm = 0;
+  if (conectada != g_dg_estava_conectada) {
+    if (!conectada) { g_dg.quedasWifi++; g_dg_desc_ini = millis(); }
+    else if (g_dg_desc_ini) { uint32_t s = (millis() - g_dg_desc_ini) / 1000UL; if (s > g_dg.descMaxS) g_dg.descMaxS = s; g_dg_desc_ini = 0; }
+    g_dg_estava_conectada = conectada;
+  }
+  if (millis() - tAm < 2000) return;
+  tAm = millis();
+  uint32_t heap = ESP.getFreeHeap(), bloco = ESP.getMaxAllocHeap();
+  if (heap < g_dg.heapMin) g_dg.heapMin = heap;
+  if (bloco < g_dg.blocoMin) g_dg.blocoMin = bloco;
+  if (conectada) {
+    int32_t r = WiFi.RSSI();
+    if (r < g_dg.rssiMin) g_dg.rssiMin = r;
+    if (r > g_dg.rssiMax) g_dg.rssiMax = r;
+    g_dg.rssiSoma += r; g_dg.rssiN++;
+  }
+}
+
+/* Relatorio de diagnostico -> nuvem. Zera a janela so se a nuvem aceitou (senao continua acumulando). */
+static void enviarDiagnostico() {
+  if (WiFi.status() != WL_CONNECTED || g_api_url.length() < 8) return;
+  uint32_t janelaS = (millis() - g_dg_t_rel) / 1000UL;
+  String b = "{";
+  b += "\"fw\":" + String((int)PILI_FW_VERSION);
+  b += ",\"up\":" + String((uint32_t)(millis() / 1000UL));
+  b += ",\"rst\":" + String((int)g_dg_rst);
+  b += ",\"janelaS\":" + String(janelaS);
+  b += ",\"ch\":" + String((int)WiFi.channel());
+  b += ",\"rssi\":" + String((int)WiFi.RSSI());
+  b += ",\"rssiMin\":" + String(g_dg.rssiN ? (int)g_dg.rssiMin : 0);
+  b += ",\"rssiMax\":" + String(g_dg.rssiN ? (int)g_dg.rssiMax : 0);
+  b += ",\"rssiMed\":" + String(g_dg.rssiN ? (int)(g_dg.rssiSoma / (int32_t)g_dg.rssiN) : 0);
+  b += ",\"heap\":" + String((uint32_t)ESP.getFreeHeap());
+  b += ",\"heapMin\":" + String(g_dg.heapMin == 0xFFFFFFFFUL ? 0 : g_dg.heapMin);
+  b += ",\"bloco\":" + String((uint32_t)ESP.getMaxAllocHeap());
+  b += ",\"blocoMin\":" + String(g_dg.blocoMin == 0xFFFFFFFFUL ? 0 : g_dg.blocoMin);
+  b += ",\"fOk\":" + String(g_dg.fotoOk) + ",\"fFalha\":" + String(g_dg.fotoFalha);
+  b += ",\"fSeg\":" + String(g_dg.fotoSeguidasMax) + ",\"fCode\":" + String((int)g_dg.fotoUltCode);
+  b += ",\"hbOk\":" + String(g_dg.hbOk) + ",\"hbFalha\":" + String(g_dg.hbFalha) + ",\"hbCode\":" + String((int)g_dg.hbUltCode);
+  b += ",\"quedas\":" + String(g_dg.quedasWifi) + ",\"scans\":" + String(g_dg.scans);
+  b += ",\"descMaxS\":" + String(g_dg.descMaxS) + ",\"fbFalhas\":" + String(g_dg.fbFalhas);
+  b += "}";
+  HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
+  WiFiClientSecure tls; tls.setInsecure(); tls.setHandshakeTimeout(PILI_HTTP_TIMEOUT / 1000);
+  int code = -1;
+  if (http.begin(tls, g_api_url + PILI_DIAG_PATH)) {
+    http.addHeader("Content-Type", "application/json");
+    if (g_dev_key.length()) http.addHeader("x-device-key", g_dev_key);
+    code = http.POST(b);
+    http.end();
+  }
+  Serial.printf("[diag] relatorio -> %d (janela %lus, fotos ok=%lu falha=%lu, quedas=%lu)\n", code, (unsigned long)janelaS,
+                (unsigned long)g_dg.fotoOk, (unsigned long)g_dg.fotoFalha, (unsigned long)g_dg.quedasWifi);
+  g_dg_t_rel = millis();                      // sempre: a proxima tentativa so daqui a PILI_DIAG_MS (nao martela a nuvem)
+  g_dg_pedido = false; g_dg_primeiro = false;
+  if (code >= 200 && code < 300) dgZera();    // entregue: comeca janela nova (senao continua acumulando)
+}
+
 /* Heartbeat: POST <url>/api/machine/heartbeat com o estado vindo do display. */
 static void fazerHeartbeat() {
   if (WiFi.status() != WL_CONNECTED) return;
@@ -1004,10 +1104,12 @@ static void fazerHeartbeat() {
   http.addHeader("Content-Type", "application/json");
   if (g_dev_key.length()) http.addHeader("x-device-key", g_dev_key);
   String body = String("{\"state\":\"") + (const char*)g_hb_state +
-                "\",\"restanteSeg\":" + String((uint32_t)g_hb_restante) + "}";
+                "\",\"restanteSeg\":" + String((uint32_t)g_hb_restante) +
+                (g_hb_proc ? String(",\"proc\":") + String((uint32_t)g_hb_proc) : String()) + "}";
   int code = http.POST(body);
   String resp = (code == 200) ? http.getString() : String();
   http.end();
+  if (code == 200) g_dg.hbOk++; else { g_dg.hbFalha++; g_dg.hbUltCode = code; }
 
   MsgHbResp r = {};
   r.cab.tipo = MSG_HB_RESP; r.cab.id_maquina = ID_MAQUINA; r.cab.origem = ORIGEM_CAMERA; r.cab.seq = 0;
@@ -1124,6 +1226,12 @@ static bool enviarFrame(camera_fb_t *fb) {
   g_lpr_enviando = false;
   esp_task_wdt_add(NULL);
   bool ok = (code >= 200 && code < 300); // 202 = aceito p/ análise em segundo plano
+  if (ok) { g_dg.fotoOk++; g_dg.fotoSeguidas = 0; }
+  else {
+    g_dg.fotoFalha++; g_dg.fotoUltCode = code; g_dg.fotoSeguidas++;
+    if (g_dg.fotoSeguidas > g_dg.fotoSeguidasMax) g_dg.fotoSeguidasMax = g_dg.fotoSeguidas;
+    if (g_dg.fotoSeguidas >= 3) g_dg_pedido = true;   // 3 fotos seguidas sem subir: relata sem esperar os 5 min
+  }
   if (ok) Serial.printf("[lpr] %uKB -> %s\n", (unsigned)(fb->len / 1024), http.getString().substring(0, 140).c_str());
   else    Serial.printf("[lpr] envio falhou (%d: %s) | rssi=%d heap=%u max_bloco=%u\n",
                          code, http.errorToString(code).c_str(), (int)WiFi.RSSI(),
@@ -1162,7 +1270,7 @@ static void enviarFotoPeriodica() {
     tUltimoEnvio = millis();
     g_lprFb = esp_camera_fb_get();
     if (!g_lprFb) {
-      g_fbFailCount++;
+      g_fbFailCount++; g_dg.fbFalhas++;
       Serial.printf("[cam] fb_get falhou (%d/%d)\n", g_fbFailCount, FB_FAIL_RECOVERY);
       if (g_fbFailCount >= FB_FAIL_RECOVERY) {
         g_fbFailCount = 0;
@@ -1232,7 +1340,10 @@ void setup() {
   esp_task_wdt_add(NULL);
 
   // HARD RESET via firmware: reinicia 1x ao energizar; rádio zerado; sensor com ciclo de energia
+  dgZera();
   hardResetFase1("CAM");
+  g_dg_rst = esp_reset_reason();
+  if (g_dg_rst == ESP_RST_SW && g_dg_rst_marca == DG_MARCA) { g_dg_rst = (esp_reset_reason_t)g_dg_rst_orig; g_dg_rst_marca = 0; }   // 2o boot do hard reset: vale o motivo do 1o
   hardResetRadio();
   hardResetSensor();
 
@@ -1269,6 +1380,7 @@ void loop() {
   responderIdentidade();
 
   bool conectada = (WiFi.status() == WL_CONNECTED);
+  diagAmostra(conectada);
 
   // (1) Anuncia o canal SEMPRE (conectada = canal do roteador; config = canal 1),
   //     pra display+waveshares acharem a câmera pelo hunt. EXCETO durante o
@@ -1310,6 +1422,11 @@ void loop() {
 
   // CONECTADA: heartbeat + LPR + relay de eventos + OTA.
   if (millis() - tHb >= PILI_HB_INTERVALO_MS) { tHb = millis(); fazerHeartbeat(); }
+  {   // diagnostico (v8): 1o relatorio 40 s depois de ligar; depois a cada PILI_DIAG_MS; antes disso, no maximo 1 por minuto se 3+ fotos seguidas falharam
+    uint32_t desde = millis() - g_dg_t_rel;
+    bool hora = (g_dg_primeiro && millis() > 40000UL) || (!g_dg_primeiro && desde >= PILI_DIAG_MS) || (g_dg_pedido && !g_dg_primeiro && desde >= 60000UL);
+    if (hora && !g_lpr_enviando) enviarDiagnostico();
+  }
   processarEvento();
   processarProvisionamento();
   {   // RELÓGIO DA MÁQUINA: hora da internet (NTP) para a W1 (a W1 não tem relógio). Só manda com a hora válida (depois de 2023).
