@@ -140,7 +140,7 @@ O item 1 depende de o computador da loja ter Windows Pro e TPM, o que deve entra
 |---|---|---|
 | 1 | **Nuvem e app**: termo de uso, data de nascimento, código do cliente, foto do rosto, tela de escolha, cadastro de lojas no admin, dono de loja, bloqueio e suporte | Construída no ambiente local; falta testar no celular |
 | 2 | **Gestão local**: produtos, estoque, entrada de mercadoria, alerta de compra | Construída, exceto a leitura de nota em PDF: primeiro uso, usuários com permissões, registro de atividades, painel, produtos e estoque, percentual de venda com reajuste automático, entrada por nota fiscal em XML e relatórios por período com planilha. O PDF fica para quando houver uma nota real para calibrar; o aviso de estoque mínimo no celular depende da sincronização |
-| 3 | **Totem**: carrinho por código de barras, carteira e maquininha, fila offline e sincronização | Em andamento: carrinho, carteira do app (QR + débito real) e cartão (confirmação manual, sem gateway) prontos; faltam fila offline e sincronização |
+| 3 | **Totem**: carrinho por código de barras, carteira e maquininha, fila offline e sincronização | Quase pronta: carrinho, carteira do app, cartão (confirmação manual, sem gateway ainda), cancelamento de venda, sincronização e backup diário prontos; falta só o driver de verdade da maquininha (depende de escolher Stone/Cielo) |
 | 4 | **Entrada**: porta por BLE, credencial offline, capacidade, mensagem de lotação (firmware da trava: Giovani) | A fazer |
 | 5 | **Câmeras**: zonas de prateleira, rastreamento, divergência com imagens para o dono | A fazer |
 | 6 | **Reconhecimento facial no totem** e cópia local do banco de imagens | A fazer |
@@ -185,14 +185,14 @@ Caixa (etapa 3):
 - **Pagamento pela carteira do app**: o cliente abre "Pagar na loja" no app (PWA e nativo) e mostra o QR; o caixa lê no mesmo leitor dos produtos (ele também lê QR), mostra "Pagando: Fulano — saldo R$ X" e, confirmado, debita de verdade na nuvem antes de fechar a venda local. Se não houver internet, essa opção some sozinha e só sobra o cartão. Se o débito foi feito mas a venda não fechou localmente (ex.: produto saiu de linha no meio do caminho), o valor é devolvido automaticamente.
 - **Pagamento no cartão**: o caixa "chama" a maquininha (`iniciar`), fica consultando como está indo (`consultar`) e só fecha a venda quando ela aprovar (`concluir`) — **desenhado já no formato de uma integração de verdade**, pra quando a maquininha chegar bastar trocar o driver. Hoje o único driver que existe é a **confirmação manual** (`loja/lib/maquininha/manual.ts`): é o operador quem diz se aprovou ou recusou, olhando o visor da maquininha física — não há integração com nenhuma (sem Stone/Cielo escolhida, sem gateway).
 - **Identificação do cliente**: só existe quando ele paga pela carteira (é a própria identificação que permite debitar a conta certa). Pagamento no cartão continua anônimo pro sistema, como hoje nas lavagens presenciais.
-- **Vendas**: lista e total do dia, para o lojista.
+- **Vendas**: lista e total do dia, para o lojista; o lojista pode **cancelar** uma venda (motivo obrigatório) — devolve a quantidade ao estoque e, se foi pela carteira, devolve o dinheiro ao cliente na nuvem antes de qualquer coisa mudar localmente (sem internet, cancelar venda da carteira espera a conexão voltar).
+- **Sincronização com a nuvem**: todo computador da loja manda sozinho, de minuto em minuto, as vendas que ainda não mandou (`Venda.sincronizadaEm`) — fica guardado localmente até a internet voltar, não se perde nada. É só uma cópia pra alimentar indicadores (etapa 7); a gestão da venda continua inteira no computador local. Venda cancelada antes de sincronizar nunca é mandada.
+- **Backup diário**: o próprio programa copia o banco local pra `dados/backups/` uma vez por dia (e já na primeira vez que abre), guardando os últimos 30 dias — não depende de internet nem de alguém lembrar.
 
 Falta nessas duas etapas:
 - Leitura de nota em PDF (depende de uma nota real para calibrar).
 - O driver de verdade da maquininha (depende de escolher Stone ou Cielo) — o lugar pra ele já existe.
-- Fila de vendas sem internet, sincronização com a nuvem e backup diário.
 - Aviso de estoque mínimo no celular do dono.
-- Estorno ou cancelamento de venda pela gestão (hoje só existe o estorno automático quando o débito pela carteira funciona mas a venda não fecha).
 - Teste com leitor de código de barras e com uma nota fiscal reais.
 
 ### Etapa 2 — especificação do programa do computador da loja

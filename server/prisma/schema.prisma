@@ -219,9 +219,43 @@ model Loja {
   station   WashStation?   @relation(fields: [stationId], references: [id])
   bloqueios LojaBloqueio[]
   mensagens LojaMensagem[]
+  vendas    VendaLoja[]
 
   @@index([donoId])
   @@index([stationId])
+}
+
+/// Cópia na nuvem de uma venda fechada no caixa da loja — a loja manda só
+/// pra alimentar indicadores (etapa 7); o estoque e a gestão da venda
+/// continuam só no computador local. `codigo` é o mesmo da Venda local, por
+/// isso é único: reenviar não duplica.
+model VendaLoja {
+  id         String   @id @default(cuid())
+  lojaId     String
+  codigo     String   @unique
+  totalCents Int
+  /// SIMULADO | CARTEIRA | MAQUININHA — como veio do caixa local.
+  forma      String
+  criadaEm   DateTime
+  recebidaEm DateTime @default(now())
+
+  loja  Loja            @relation(fields: [lojaId], references: [id])
+  itens VendaLojaItem[]
+
+  @@index([lojaId, criadaEm])
+}
+
+model VendaLojaItem {
+  id             String @id @default(cuid())
+  vendaLojaId    String
+  nome           String
+  ean            String?
+  quantidade     Int
+  precoUnitCents Int
+
+  venda VendaLoja @relation(fields: [vendaLojaId], references: [id], onDelete: Cascade)
+
+  @@index([vendaLojaId])
 }
 
 /// Cliente impedido de entrar NESTA loja (problema de conduta), decidido

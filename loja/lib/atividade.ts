@@ -16,6 +16,7 @@ export const ROTULO_ACAO: Record<string, string> = {
   INVENTARIO: "Contagem de inventário",
   USUARIO_CRIADO: "Cadastrou usuário",
   USUARIO_ALTERADO: "Alterou usuário",
+  VENDA_CANCELADA: "Cancelou venda",
 };
 
 /**

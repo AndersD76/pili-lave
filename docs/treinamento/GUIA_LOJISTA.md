@@ -285,6 +285,22 @@ Essa opção só aparece com **internet**: sem ela, o caixa mostra só a opção
 
 No menu da gestão, **"Vendas"** (só o lojista vê) mostra o total vendido no dia e as últimas vendas com os itens, indicando se foi pela carteira ou no cartão. No extrato de cada produto, a venda aparece com "Caixa" na coluna Quem.
 
+### Cancelando uma venda
+
+Vendeu errado, ou o cliente desistiu depois de já ter pago? Em **"Vendas"**, abra **"Cancelar"** na linha da venda, escreva o motivo e toque em **Confirmar**.
+
+- A quantidade volta pro estoque sozinha.
+- Se foi pago pela carteira do app, o valor é devolvido ao cliente antes de qualquer outra coisa mudar — sem internet, o cancelamento não acontece ainda (tente de novo quando a conexão voltar).
+- A venda não desaparece da lista: fica marcada como cancelada, com o motivo, pra ficar registrado o que houve.
+
+### A venda vai sozinha pra nuvem
+
+Toda venda fechada no caixa é mandada, sozinha e em segundo plano, pro sistema na nuvem — é só uma cópia, pra no futuro alimentar os indicadores do seu celular (faturamento, mais vendidos). A gestão da venda continua inteira aqui no computador da loja. Sem internet, ela fica esperando e vai quando a conexão voltar — você não precisa fazer nada.
+
+### Backup do banco de dados
+
+O programa guarda, sozinho, uma cópia do banco de dados da loja todos os dias (os últimos 30 dias ficam guardados em `dados/backups/`, na pasta do programa). Não precisa de internet nem de você lembrar de fazer nada.
+
 ## 12. Funcionários e permissões
 
 No menu do topo, **"Usuários"** (só o lojista vê).
@@ -370,7 +386,6 @@ Para liberar de novo, toque em **Desbloquear** ao lado do nome. O histórico do 
 |---|---|
 | Entrada por nota fiscal a partir do PDF (hoje só o XML) | Depois, com uma nota real para calibrar |
 | Integração de verdade com a maquininha (hoje é confirmação manual do operador) | Depende de escolher Stone ou Cielo |
-| Fila de vendas sem internet e sincronização automática com a nuvem | A fazer |
 | Abertura da porta pelo celular e controle de capacidade | A fazer |
 | Modo reposição (loja bloqueada para clientes enquanto um funcionário repõe) | A fazer, junto com a porta |
 | Abrir a porta à distância pelo app (só o lojista) | A fazer, junto com a porta |
@@ -394,5 +409,6 @@ Vai comprar -> Compras -> "Abaixo do mínimo" ou "Todos" -> marcar e ajustar a q
 Fechamento -> Relatórios (estoque, entradas, saídas, perdas) -> Baixar planilha
 Equipe -> Usuários (cadastrar funcionário e marcar permissões) -> Atividades (quem fez o quê)
 Caixa -> é a tela do cliente; cliente escolhe Carteira do app (escaneia o QR) ou Cartão (confirmação manual); vendas em Vendas
+Venda errada -> Vendas -> "Cancelar" na linha -> motivo -> Confirmar (devolve estoque e, se foi na carteira, o dinheiro)
 Dia a dia no app -> Loja conveniência -> Minha loja -> responder mensagens / bloquear cliente
 ```

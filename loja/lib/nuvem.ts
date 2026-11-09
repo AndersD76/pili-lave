@@ -145,6 +145,19 @@ export async function estornarCarteira(nuvemUrl: string, deviceKey: string, vend
   return r.ok;
 }
 
+export type ItemVendaSincronizacao = { nome: string; ean: string | null; quantidade: number; precoUnitCents: number };
+export type VendaSincronizacao = {
+  codigo: string; totalCents: number; forma: string; criadaEm: string; itens: ItemVendaSincronizacao[];
+};
+
+/** Manda um lote de vendas pra nuvem (ver lib/sincronizacao.ts). Devolve os
+ *  códigos que a nuvem confirmou ter recebido — só esses são marcados como
+ *  sincronizados aqui; o resto fica pra tentar de novo na próxima vez. */
+export async function sincronizarVendasNuvem(nuvemUrl: string, deviceKey: string, vendas: VendaSincronizacao[]): Promise<string[]> {
+  const r = await chamarComDeviceKey(nuvemUrl, deviceKey, "/api/loja/vendas/sincronizar", { vendas }, 20000);
+  return r.ok && Array.isArray(r.json?.sincronizados) ? r.json.sincronizados : [];
+}
+
 /** Testa se a nuvem está alcançável agora — decide se o caixa oferece
  *  "Carteira do app" (precisa de internet) ou só cartão. */
 export async function nuvemAlcancavel(nuvemUrl: string): Promise<boolean> {

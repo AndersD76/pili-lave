@@ -157,6 +157,10 @@ model Venda {
   forma      String
   criadaEm   DateTime @default(now())
   sincronizadaEm DateTime?
+  /// Venda desfeita pela gestão (erro, desistência depois de pagar). O
+  /// registro fica — não se apaga venda — só marcado.
+  canceladaEm        DateTime?
+  motivoCancelamento String?
 
   itens VendaItem[]
 

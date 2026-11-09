@@ -2,7 +2,8 @@ node_modules/
 .next/
 next-env.d.ts
 tsconfig.tsbuildinfo
-# banco local da loja (estoque, vendas) — nunca vai pro repositório
+# banco local da loja (estoque, vendas) e os backups diários dele — nunca vão pro repositório
 dados/*.db
 dados/*.db-journal
+dados/backups/
 .env
