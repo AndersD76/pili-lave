@@ -62,7 +62,7 @@ como produto paralelo. Ao abrir o app, o cliente escolhe entre
 - **Com internet**: desconta dos créditos da carteira do app, ou paga na maquininha, à escolha do cliente.
 - **Sem internet**: só maquininha. A venda fica na fila local e sincroniza quando a conexão voltar.
 - A maquininha fica ligada ao computador central (integração local, com chip próprio), para o sistema saber se foi pago pelo app ou pelo cartão.
-- **Construído (13/11)**: a carteira do app já debita de verdade, pelo QR que o cliente mostra no app (identifica quem é e pergunta o saldo antes de cobrar). O cartão ainda é **confirmação manual do operador** — a integração de verdade com a maquininha (saber sozinho se ela aprovou) fica para quando Stone ou Cielo for escolhida.
+- **Construído (09/11)**: a carteira do app já debita de verdade, pelo QR que o cliente mostra no app (identifica quem é e pergunta o saldo antes de cobrar) — testado com um usuário real, não só por script. O cartão ainda é **confirmação manual do operador**: o programa já está desenhado para a maquininha avisar sozinha quando aprovar (é só trocar o driver em `loja/lib/maquininha/`, sem mexer na tela nem nas rotas), mas enquanto isso não existe, quem confirma é a pessoa olhando o visor dela.
 
 ### Saída
 - Porta com barra antipânico ou botão de emergência: **abre sempre por dentro**, com ou sem pagamento.
@@ -183,17 +183,17 @@ Gestão (etapa 2):
 Caixa (etapa 3):
 - **Tela do cliente**: leitura do código de barras, carrinho, escolha da forma de pagamento.
 - **Pagamento pela carteira do app**: o cliente abre "Pagar na loja" no app (PWA e nativo) e mostra o QR; o caixa lê no mesmo leitor dos produtos (ele também lê QR), mostra "Pagando: Fulano — saldo R$ X" e, confirmado, debita de verdade na nuvem antes de fechar a venda local. Se não houver internet, essa opção some sozinha e só sobra o cartão. Se o débito foi feito mas a venda não fechou localmente (ex.: produto saiu de linha no meio do caminho), o valor é devolvido automaticamente.
-- **Pagamento no cartão**: o operador confirma manualmente que a maquininha aprovou — **ainda não há integração com nenhuma maquininha** (sem Stone/Cielo escolhida, sem gateway).
+- **Pagamento no cartão**: o caixa "chama" a maquininha (`iniciar`), fica consultando como está indo (`consultar`) e só fecha a venda quando ela aprovar (`concluir`) — **desenhado já no formato de uma integração de verdade**, pra quando a maquininha chegar bastar trocar o driver. Hoje o único driver que existe é a **confirmação manual** (`loja/lib/maquininha/manual.ts`): é o operador quem diz se aprovou ou recusou, olhando o visor da maquininha física — não há integração com nenhuma (sem Stone/Cielo escolhida, sem gateway).
 - **Identificação do cliente**: só existe quando ele paga pela carteira (é a própria identificação que permite debitar a conta certa). Pagamento no cartão continua anônimo pro sistema, como hoje nas lavagens presenciais.
 - **Vendas**: lista e total do dia, para o lojista.
 
 Falta nessas duas etapas:
 - Leitura de nota em PDF (depende de uma nota real para calibrar).
-- Integração de verdade com a maquininha (depende de escolher Stone ou Cielo).
+- O driver de verdade da maquininha (depende de escolher Stone ou Cielo) — o lugar pra ele já existe.
 - Fila de vendas sem internet, sincronização com a nuvem e backup diário.
 - Aviso de estoque mínimo no celular do dono.
 - Estorno ou cancelamento de venda pela gestão (hoje só existe o estorno automático quando o débito pela carteira funciona mas a venda não fecha).
-- Teste com leitor de código de barras, com uma nota fiscal reais e com o fluxo de pagamento pela carteira num celular de verdade.
+- Teste com leitor de código de barras e com uma nota fiscal reais.
 
 ### Etapa 2 — especificação do programa do computador da loja
 

@@ -163,6 +163,24 @@ model Venda {
   @@index([criadaEm])
 }
 
+/// Uma cobrança pedida à maquininha. Existe pra separar "a máquina
+/// aprovou" de "a venda foi gravada" — o mesmo desenho da carteira
+/// (identificar/confirmar). Hoje só tem o driver manual (ver
+/// lib/maquininha/): o operador confirma pelo visor dela mesmo. Quando uma
+/// maquininha de verdade for integrada, essa tabela e as rotas continuam
+/// as mesmas — só o driver em lib/maquininha/index.ts muda.
+model OperacaoCartao {
+  id          String    @id @default(cuid())
+  totalCents  Int
+  /// AGUARDANDO | APROVADO | RECUSADO
+  situacao    String    @default("AGUARDANDO")
+  /// Comprovante/id que a maquininha devolver, quando houver.
+  referencia  String?
+  motivo      String?
+  criadaEm    DateTime  @default(now())
+  concluidaEm DateTime?
+}
+
 model VendaItem {
   id             String @id @default(cuid())
   vendaId        Int

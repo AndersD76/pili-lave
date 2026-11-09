@@ -75,6 +75,13 @@ export async function finalizarVenda(
   for (const i of itens) porProduto.set(i.produtoId, (porProduto.get(i.produtoId) ?? 0) + i.quantidade);
   if (porProduto.size === 0) return { ok: false, erro: "Nenhum produto na compra." };
 
+  // reenvio com o mesmo código (ex.: resposta perdida antes de chegar na
+  // tela): devolve a venda que já existe, sem gravar nem baixar de novo
+  if (codigo) {
+    const existente = await prisma.venda.findUnique({ where: { codigo } });
+    if (existente) return { ok: true, numero: existente.id, totalCents: existente.totalCents };
+  }
+
   return prisma.$transaction(async (tx) => {
     const produtos = await tx.produto.findMany({ where: { id: { in: [...porProduto.keys()] } } });
     const linhas = [];

@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BuscaCaixa, ResultadoVenda, ProdutoCaixa } from "@/lib/caixa";
+import type { ResultadoCobranca } from "@/lib/maquininha";
 import type { IdentificarCarteira } from "@/lib/nuvem";
+
+/** A cada quanto tempo o caixa pergunta pra maquininha como está indo a
+ *  cobrança (driver manual: só muda quando o operador clica). */
+const POLL_CARTAO_MS = 1500;
 
 const MAX_POR_ITEM = 99;
 /** Sem ninguém mexer por este tempo, a compra é cancelada (cliente foi embora). */
@@ -46,6 +51,10 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
   const [cliente, setCliente] = useState<{ token: string; nome: string; walletCents: number } | null>(null);
   const campoCarteira = useRef<HTMLInputElement>(null);
 
+  const [cobranca, setCobranca] = useState<{
+    operacaoId: string; nome: string; confirmacaoManual: boolean; situacao: ResultadoCobranca["situacao"];
+  } | null>(null);
+
   const total = itens.reduce((s, i) => s + i.quantidade * i.precoCents, 0);
   const unidades = itens.reduce((s, i) => s + i.quantidade, 0);
 
@@ -54,7 +63,7 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
 
   const recomecar = useCallback(() => {
     setItens([]); setCodigo(""); setAviso(""); setVenda(null); setEtapa("COMPRANDO");
-    setPasso("ESCOLHER"); setCodigoCarteira(""); setCliente(null);
+    setPasso("ESCOLHER"); setCodigoCarteira(""); setCliente(null); setCobranca(null);
   }, []);
 
   // foco de volta no campo sempre que a tela de compra aparece
@@ -139,28 +148,76 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
 
   const corpoItens = () => ({ itens: itens.map((i) => ({ produtoId: i.id, quantidade: i.quantidade })) });
 
-  async function pagarNoCartao() {
-    mexeu();
-    setOcupado(true);
-    setAviso("");
-    try {
-      const res = await fetch("/api/caixa/finalizar", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpoItens()),
-      });
-      const r = (await res.json()) as ResultadoVenda;
-      if (r.ok) {
-        setVenda({ numero: r.numero, totalCents: r.totalCents });
-        setEtapa("CONCLUIDA");
-      } else {
-        setAviso(r.erro);
-        setPasso("ESCOLHER");
+  // entrando no passo CARTAO: pede a cobrança pra maquininha (driver atual
+  // ou futuro — a tela não sabe qual é, só segue o contrato)
+  useEffect(() => {
+    if (!(etapa === "PAGAMENTO" && passo === "CARTAO")) return;
+    let ativo = true;
+    fetch("/api/caixa/cartao/iniciar", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpoItens()),
+    })
+      .then((r) => r.json())
+      .then((r) => {
+        if (!ativo) return;
+        if (r.operacaoId) setCobranca({ operacaoId: r.operacaoId, nome: r.nome, confirmacaoManual: r.confirmacaoManual, situacao: "AGUARDANDO" });
+        else { setAviso(r.erro ?? "Não foi possível iniciar a cobrança."); setPasso("ESCOLHER"); }
+      })
+      .catch(() => { if (ativo) { setAviso("Não foi possível falar com a maquininha. Tente de novo."); setPasso("ESCOLHER"); } });
+    return () => { ativo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etapa, passo]);
+
+  // enquanto aguarda, pergunta pra maquininha de tempos em tempos — no
+  // driver manual só muda quando o operador clica; num driver de verdade
+  // é assim que o caixa percebe que o cartão foi aprovado sozinho
+  useEffect(() => {
+    if (!cobranca || cobranca.situacao !== "AGUARDANDO") return;
+    let ativo = true;
+    const t = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/caixa/cartao/status?operacaoId=${cobranca.operacaoId}`, { cache: "no-store" });
+        const r = (await res.json()) as ResultadoCobranca;
+        if (ativo && r.situacao !== "AGUARDANDO") setCobranca((c) => (c ? { ...c, situacao: r.situacao } : c));
+      } catch {
+        // tenta de novo no próximo tick — rede pode ter oscilado
       }
+    }, POLL_CARTAO_MS);
+    return () => { ativo = false; clearInterval(t); };
+  }, [cobranca]);
+
+  // cobrança aprovada (pelo operador ou, no futuro, pela própria
+  // maquininha): fecha a venda local. O ref evita mandar duas vezes.
+  const concluindoCartao = useRef(false);
+  useEffect(() => {
+    if (!cobranca || cobranca.situacao !== "APROVADO" || concluindoCartao.current) return;
+    concluindoCartao.current = true;
+    fetch("/api/caixa/cartao/concluir", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operacaoId: cobranca.operacaoId, ...corpoItens() }),
+    })
+      .then((r) => r.json())
+      .then((r: ResultadoVenda) => {
+        if (r.ok) { setVenda({ numero: r.numero, totalCents: r.totalCents }); setEtapa("CONCLUIDA"); }
+        else { setAviso(r.erro); setPasso("ESCOLHER"); setCobranca(null); }
+      })
+      .catch(() => { setAviso("A maquininha aprovou, mas não foi possível fechar a venda. Chame o dono."); setPasso("ESCOLHER"); setCobranca(null); })
+      .finally(() => { concluindoCartao.current = false; });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cobranca]);
+
+  async function confirmarCartaoManual(aprovado: boolean) {
+    if (!cobranca) return;
+    mexeu();
+    try {
+      await fetch("/api/caixa/cartao/confirmar-manual", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operacaoId: cobranca.operacaoId, aprovado }),
+      });
     } catch {
-      setAviso("Não foi possível concluir a compra. Tente de novo.");
-      setPasso("ESCOLHER");
-    } finally {
-      setOcupado(false);
+      setAviso("Não foi possível registrar a confirmação. Tente de novo.");
     }
+    if (!aprovado) { setPasso("ESCOLHER"); setCobranca(null); setAviso("Pagamento recusado no cartão."); }
+    // aprovado: a consulta periódica (useEffect acima) pega a mudança sozinha
   }
 
   async function lerCodigoCarteira(e: React.FormEvent) {
@@ -311,11 +368,36 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
 
         {passo === "CARTAO" && (
           <>
-            <p className="sub" style={{ margin: "16px 0 8px" }}>Aprove o pagamento na maquininha ao lado.</p>
-            <button className="btn caixa-btn" onClick={pagarNoCartao} disabled={ocupado}>
-              {ocupado ? "Concluindo…" : "Pagamento aprovado"}
-            </button>
-            <button className="btn ghost caixa-btn" onClick={() => { mexeu(); setAviso(""); setPasso("ESCOLHER"); }} disabled={ocupado} style={{ marginTop: 12 }}>
+            {!cobranca ? (
+              <p className="sub" style={{ margin: "16px 0 8px" }}>Chamando a maquininha…</p>
+            ) : cobranca.situacao === "AGUARDANDO" ? (
+              <>
+                <p className="sub" style={{ margin: "16px 0 8px" }}>
+                  {cobranca.confirmacaoManual
+                    ? "Aprove o pagamento na maquininha ao lado."
+                    : `Aguardando o cliente no ${cobranca.nome}…`}
+                </p>
+                {cobranca.confirmacaoManual && (
+                  <>
+                    <button className="btn caixa-btn" onClick={() => confirmarCartaoManual(true)} disabled={ocupado}>
+                      Pagamento aprovado
+                    </button>
+                    <button
+                      className="btn ghost caixa-btn" style={{ marginTop: 12 }} disabled={ocupado}
+                      onClick={() => confirmarCartaoManual(false)}
+                    >
+                      Pagamento recusado
+                    </button>
+                  </>
+                )}
+              </>
+            ) : (
+              <p className="sub" style={{ margin: "16px 0 8px" }}>Concluindo…</p>
+            )}
+            <button
+              className="btn ghost caixa-btn" style={{ marginTop: 12 }} disabled={ocupado}
+              onClick={() => { mexeu(); setAviso(""); setPasso("ESCOLHER"); setCobranca(null); }}
+            >
               Voltar
             </button>
           </>

@@ -279,9 +279,9 @@ Essa opção só aparece com **internet**: sem ela, o caixa mostra só a opção
 
 1. No caixa, escolha **"Cartão (maquininha)"**.
 2. O cliente passa o cartão na maquininha ao lado do totem.
-3. Depois que ela aprovar, toque em **"Pagamento aprovado"** para fechar a venda.
+3. Se ela aprovar, toque em **"Pagamento aprovado"** para fechar a venda. Se recusar, toque em **"Pagamento recusado"** — a compra volta pro início, sem mexer no estoque.
 
-> ⚠️ **A maquininha ainda não está integrada ao sistema.** É o operador quem confirma que ela aprovou — o caixa não sabe sozinho se o pagamento de fato aconteceu. Enquanto isso não muda, confira sempre o visor da maquininha antes de tocar em "Pagamento aprovado".
+> ⚠️ **A maquininha ainda não está integrada ao sistema.** É o operador quem confirma que ela aprovou — o caixa não sabe sozinho se o pagamento de fato aconteceu. Enquanto isso não muda, confira sempre o visor da maquininha antes de tocar em "Pagamento aprovado". O programa já está pronto para o dia em que a maquininha avisar sozinha (aí esses dois botões somem e o caixa só espera).
 
 No menu da gestão, **"Vendas"** (só o lojista vê) mostra o total vendido no dia e as últimas vendas com os itens, indicando se foi pela carteira ou no cartão. No extrato de cada produto, a venda aparece com "Caixa" na coluna Quem.
 
