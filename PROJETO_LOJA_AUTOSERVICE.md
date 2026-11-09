@@ -27,6 +27,28 @@ como produto paralelo. Ao abrir o app, o cliente escolhe entre
 - O app nativo (com BLE) está em processo de publicação nas lojas. A PWA continua atendendo a lavagem.
 
 ### Entrada
+- **Mudança de direção em 09/11/2026 (avaliando): catraca com reconhecimento facial em vez de fechadura por BLE.** Giovani está avaliando a **Catraca iDBlock Next Facial** (Control iD) como equipamento de entrada. Decisão **ainda não fechada** — depende da resposta do fabricante ao questionário abaixo. Até confirmar, as linhas antigas (BLE, credencial offline) ficam registradas logo abaixo como estavam, pois podem voltar a valer se a catraca não se encaixar.
+  - **Por que trocar**: a ideia original de BLE decidia a liberação por um identificador que o celular carrega (código do cliente + credencial assinada). A catraca facial reconhece a própria pessoa, sem precisar do celular na mão na hora de entrar, e já resolve a contagem física de quem está dentro (ver "Capacidade" abaixo) sem precisar de lógica própria de entrada/saída.
+  - **Limite do equipamento e como contornar**: o modo padrão da catraca (Standalone) compara o rosto com um banco **local de até ~3 mil faces** — baixo demais para o plano de longo prazo (dezenas de milhares de clientes). A Control iD documenta um segundo modo, **"Enterprise Mode"**, em que a catraca só captura a imagem/template do rosto e manda pro servidor (no nosso caso, o computador local da loja) via evento (`new_biometric_image.fcgi` ou `new_biometric_template.fcgi`); a comparação com o banco de clientes e a decisão de liberar ou não passam a ser feitas **no nosso sistema**, sem limite do equipamento. A doc confirma: "it is up to the external server to handle these events". A liberação é então mandada de volta pra catraca por outro endpoint ("Remote Access Authorization").
+  - **O que isso exige de novo no projeto**: um motor de reconhecimento facial 1:N (comparar 1 rosto contra toda a base de clientes) rodando no computador local — hoje o projeto só tem conferência de foto por IA (confirma que é um rosto humano válido), não identificação de quem é a pessoa. Isso é peça nova, a desenhar.
+  - **Pendências antes de fechar a decisão**: ver o questionário enviado ao fabricante, logo abaixo.
+
+#### Questionário enviado ao fabricante (Control iD) sobre a iDBlock Next Facial — 09/11/2026
+
+> Preparado para o Giovani copiar e enviar ao fabricante/revenda, para confirmar se o equipamento atende antes de fechar a compra.
+
+1. **Modo Enterprise de verdade**: confirmam que, no modo Enterprise (identificação e autorização no servidor), o equipamento envia a imagem/template capturado via `new_biometric_image.fcgi` ou `new_biometric_template.fcgi` e **não faz nenhuma comparação própria** com o banco local? Ou seja, o limite de ~3 mil faces do modo Standalone deixa de se aplicar quando a comparação é feita no nosso servidor?
+2. **Licenciamento**: o modo Enterprise exige licença paga do software iDSecure Enterprise, ou é um modo de operação que o próprio equipamento já expõe pela Access API, sem precisar do software da Control iD rodando no meio?
+3. **Formato do template**: qual o formato exato do template enviado quando `extract_template` está habilitado (proprietário da Control iD, ou um padrão aberto tipo ISO/IEC 19794-5)? É possível usá-lo com um motor de reconhecimento facial de terceiros rodando no nosso servidor, ou o template só serve pra comparação feita pelo software deles?
+4. **Latência**: qual o tempo entre a captura do rosto na catraca e o momento em que o evento chega no servidor (rede local)? A ficha técnica fala em liberar a passagem em ~1 segundo no modo Standalone — no modo Enterprise, como fica esse tempo, já que a decisão passa a depender do nosso servidor responder?
+5. **Confirmação de identidade (resposta do servidor)**: no endpoint de "Remote Access Authorization", dá pra mandar não só liberar/negar, mas também algum identificador de qual cliente foi reconhecido (pra registrarmos a visita no nosso sistema)?
+6. **Modo misto / fallback**: se o servidor não responder a tempo (sem rede, sistema fora do ar), o equipamento tem algum modo de contingência (ex.: aceitar código numérico digitado, ou ficar bloqueado até a rede voltar)? Qual o comportamento padrão?
+7. **Rede local vs. nuvem**: o modo Enterprise exige que o "servidor" seja necessariamente a nuvem da Control iD (iDSecure Cloud), ou pode ser qualquer servidor nosso, na rede local da loja, sem expor nada à internet?
+8. **Cadastro em lote**: dá pra cadastrar/atualizar fotos de milhares de clientes de uma vez via API (lote), ou só um usuário por chamada?
+9. **Escala real**: na prática, qual o maior volume de usuários (faces) que vocês já viram funcionando bem em modo Enterprise com um servidor de terceiros fazendo a comparação? Existe algum caso de uso parecido com o nosso (dezenas de milhares de clientes, loja de autoatendimento) que vocês possam compartilhar?
+10. **Sentido de giro**: a catraca permite configurar a saída sempre livre (sem travar, sem precisar de identificação) e só a entrada travada por reconhecimento? É assim que funciona por padrão?
+
+**Linhas anteriores (entrada por BLE), registradas para o caso de a catraca não se confirmar:**
 - Só pelo app, por **BLE**. Sem reconhecimento facial na porta, sem catraca, sem tag.
 - **Funciona sem internet**: o app apresenta o código do cliente mais uma credencial assinada pela nuvem (renovada sozinha quando há internet); o computador local confere sem precisar de rede.
 - Cada abertura libera **uma pessoa** (mais as crianças declaradas) e cria uma **visita**.
