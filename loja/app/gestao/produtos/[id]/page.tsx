@@ -4,8 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { ROTULO_MOVIMENTO, type TipoMovimento } from "@/lib/estoque";
 import { pode } from "@/lib/permissoes";
 import { exigirGestao } from "@/lib/sessao";
+import { fornecedoresDoProduto } from "@/lib/fornecedores";
 import { Nav } from "../../nav";
-import { movimentarEstoque, salvarProduto } from "../actions";
+import { desvincularFornecedor, movimentarEstoque, salvarProduto, vincularFornecedor } from "../actions";
 import { CamposProduto } from "../CamposProduto";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,8 @@ export default async function ProdutoDetalhe({
     include: { movimentos: { orderBy: { criadoEm: "desc" }, take: 50 } },
   });
   if (!produto) notFound();
+
+  const { vinculados: fornecedoresVinculados, disponiveis: fornecedoresDisponiveis } = await fornecedoresDoProduto(id);
 
   // nome de quem lançou cada movimento do extrato
   const idsUsuarios = [...new Set(produto.movimentos.map((m) => m.usuarioId).filter((u): u is string => !!u))];
@@ -75,6 +78,48 @@ export default async function ProdutoDetalhe({
           <p className="sub">Você não tem permissão para alterar este cadastro.</p>
         )}
       </form>
+
+      {podeCadastro && (
+        <>
+          <h2 className="section-title">Fornecedores</h2>
+          <p className="sub" style={{ marginTop: -6, marginBottom: 10 }}>
+            Quem pode vender este produto — aparece na tela de Compras de cada um, mesmo sem nunca ter sido comprado dele ainda.
+          </p>
+          {fornecedoresVinculados.length === 0 ? (
+            <p className="sub">Nenhum fornecedor vinculado.</p>
+          ) : (
+            <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 6, marginBottom: 12 }}>
+              {fornecedoresVinculados.map((f) => (
+                <li key={f.id} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <span>{f.nome}</span>
+                  <form action={desvincularFornecedor}>
+                    <input type="hidden" name="produtoId" value={produto.id} />
+                    <input type="hidden" name="fornecedorId" value={f.id} />
+                    <button className="btn ghost" type="submit" style={{ height: 28, padding: "0 10px", fontSize: 12 }}>
+                      Desvincular
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+          {fornecedoresDisponiveis.length > 0 && (
+            <form action={vincularFornecedor} className="linha-form">
+              <input type="hidden" name="produtoId" value={produto.id} />
+              <label className="rotulo" style={{ flex: 1 }}>
+                Vincular fornecedor
+                <select className="field" name="fornecedorId" required defaultValue="">
+                  <option value="" disabled>Escolha um fornecedor já cadastrado…</option>
+                  {fornecedoresDisponiveis.map((f) => (
+                    <option key={f.id} value={f.id}>{f.nome}</option>
+                  ))}
+                </select>
+              </label>
+              <button className="btn ghost" type="submit" style={{ height: 40 }}>Vincular</button>
+            </form>
+          )}
+        </>
+      )}
 
       {(podeEntrada || podePerda || podeInventario) && (
         <>

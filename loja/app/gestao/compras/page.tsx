@@ -1,48 +1,22 @@
 import Link from "next/link";
-import { listaDeCompras, sugestaoDeCompra } from "@/lib/compras";
+import { contagemSemFornecedor, fornecedoresParaCompra, listaDeCompras } from "@/lib/compras";
 import { reais } from "@/lib/dinheiro";
-import { prisma } from "@/lib/prisma";
 import { exigirPermissao } from "@/lib/sessao";
 import { Nav } from "../nav";
-import { limparLista, salvarMarcacoes } from "./actions";
+import { limparLista } from "./actions";
 import { Imprimir } from "./Imprimir";
 
 export const dynamic = "force-dynamic";
 
-type Visao = "minimo" | "todos";
-
 /**
- * Lista de compras. Em cima, a lista como está (o que levar pro fornecedor:
- * imprime ou baixa em planilha). Embaixo, a tabela de escolha: o lojista
- * decide se quer ver só os produtos abaixo do mínimo ou todos, marca os que
- * vai comprar e ajusta a quantidade. O que recebe entrada sai da lista sozinho.
+ * Lista de compras. Em cima, a lista como está (o que já foi marcado pra
+ * comprar, de todos os fornecedores juntos: imprime ou baixa em
+ * planilha). Embaixo, a escolha é por fornecedor — cada um tem sua própria
+ * tela com os itens dele abaixo do mínimo e os demais.
  */
-export default async function Compras({
-  searchParams,
-}: {
-  searchParams: Promise<{ v?: string; q?: string; erro?: string; ok?: string }>;
-}) {
+export default async function Compras() {
   const { loja, usuario } = await exigirPermissao("COMPRAS");
-  const { v, q: qParam, erro, ok } = await searchParams;
-  const visao: Visao = v === "todos" ? "todos" : "minimo";
-  const q = qParam?.trim() ?? "";
-  const soNumeros = q.replace(/\D/g, "");
-
-  const [lista, ativos] = await Promise.all([
-    listaDeCompras(),
-    prisma.produto.findMany({
-      where: {
-        ativo: true,
-        ...(q ? { OR: [{ nome: { contains: q } }, ...(soNumeros ? [{ ean: { contains: soNumeros } }] : [])] } : {}),
-      },
-      orderBy: { nome: "asc" },
-    }),
-  ]);
-  const naLista = new Map(lista.linhas.map((l) => [l.produtoId, l.quantidade]));
-  const abaixo = (p: { estoqueAtual: number; estoqueMinimo: number }) => p.estoqueAtual <= p.estoqueMinimo;
-  const produtos = visao === "todos" ? ativos : ativos.filter(abaixo);
-  const nAbaixo = ativos.filter(abaixo).length;
-  const voltar = `/gestao/compras?v=${visao}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
+  const [lista, fornecedores, nSemFornecedor] = await Promise.all([listaDeCompras(), fornecedoresParaCompra(), contagemSemFornecedor()]);
 
   return (
     <main className="admin-wrap">
@@ -99,77 +73,45 @@ export default async function Compras({
       )}
 
       <div className="nao-imprimir">
-        <h2 className="section-title">Escolher o que comprar</h2>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          {([["minimo", `Abaixo do mínimo (${nAbaixo})`], ["todos", `Todos os produtos (${ativos.length})`]] as const).map(([k, rotulo]) => (
-            <Link
-              key={k} href={`/gestao/compras?v=${k}${q ? `&q=${encodeURIComponent(q)}` : ""}`}
-              className={`btn ${k === visao ? "" : "ghost"}`}
-              style={{ height: 36, padding: "0 16px", fontSize: 13, display: "inline-flex", alignItems: "center" }}
-            >
-              {rotulo}
-            </Link>
-          ))}
+        <h2 className="section-title">Escolher por fornecedor</h2>
+        <p className="sub" style={{ marginTop: -6, marginBottom: 12 }}>
+          Cada fornecedor mostra os itens dele abaixo do mínimo; marcar um item ali tira ele da tela dos outros fornecedores até a entrada chegar.
+        </p>
+        <div className="tbl-wrap">
+          <table className="tbl">
+            <thead><tr><th>Fornecedor</th><th>Itens abaixo do mínimo</th><th>Pedido sugerido</th><th>Pedido mínimo</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td>Sem fornecedor</td>
+                <td>{nSemFornecedor}</td>
+                <td>—</td>
+                <td>—</td>
+                <td><Link className="btn ghost" href="/gestao/compras/sem-fornecedor" style={{ height: 32, padding: "0 12px", fontSize: 13 }}>Abrir</Link></td>
+              </tr>
+              {fornecedores.map((f) => (
+                <tr key={f.id}>
+                  <td>{f.nome}</td>
+                  <td>{f.nAbaixo}</td>
+                  <td>{reais(f.valorSugeridoCents)}</td>
+                  <td>
+                    {f.pedidoMinimoCents === null ? (
+                      <span className="sub">não cadastrado</span>
+                    ) : f.atingiuMinimo ? (
+                      <span className="chip at">atingido ({reais(f.pedidoMinimoCents)})</span>
+                    ) : (
+                      reais(f.pedidoMinimoCents)
+                    )}
+                  </td>
+                  <td><Link className="btn ghost" href={`/gestao/compras/fornecedor/${f.id}`} style={{ height: 32, padding: "0 12px", fontSize: 13 }}>Abrir</Link></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <form method="get" className="linha-form" style={{ marginBottom: 12 }}>
-          <input type="hidden" name="v" value={visao} />
-          <label className="rotulo" style={{ flex: 1 }}>
-            Buscar por nome ou código de barras
-            <input className="field" name="q" defaultValue={q} />
-          </label>
-          <button className="btn ghost" type="submit" style={{ height: 40 }}>Buscar</button>
-        </form>
-        {erro && <p className="err-msg" style={{ marginBottom: 10 }}>{erro}</p>}
-        {ok && <p className="ok-msg" style={{ marginBottom: 10 }}>{ok === "lista" ? "Lista de compras atualizada." : "Quantidades salvas."}</p>}
-
-        {produtos.length === 0 ? (
-          <p className="sub">
-            {visao === "minimo" ? "Nenhum produto no estoque mínimo ou abaixo. Para comprar mesmo assim, veja Todos os produtos." : "Nenhum produto encontrado."}
+        {fornecedores.length === 0 && (
+          <p className="sub" style={{ marginTop: 10 }}>
+            Nenhum fornecedor com produto vinculado ainda. Vincule fornecedores na ficha de cada produto, em Produtos e estoque.
           </p>
-        ) : (
-          <form action={salvarMarcacoes}>
-            <input type="hidden" name="ids" value={produtos.map((p) => p.id).join(",")} />
-            <input type="hidden" name="voltar" value={voltar} />
-            <div className="tbl-wrap">
-              <table className="tbl">
-                <thead>
-                  <tr><th>Comprar?</th><th>Produto</th><th>Estoque</th><th>Mínimo</th><th>Quantidade a comprar</th><th>Último custo</th></tr>
-                </thead>
-                <tbody>
-                  {produtos.map((p) => (
-                    <tr key={p.id}>
-                      <td>
-                        <input
-                          type="checkbox" name={`sel_${p.id}`} defaultChecked={naLista.has(p.id)}
-                          aria-label={`Comprar ${p.nome}`} style={{ width: 20, height: 20 }}
-                        />
-                      </td>
-                      <td>{p.nome}</td>
-                      <td>
-                        <span className={`chip ${p.estoqueAtual <= 0 ? "err" : abaixo(p) ? "at" : "ok"}`}>{p.estoqueAtual} {p.unidade}</span>
-                      </td>
-                      <td>{p.estoqueMinimo}</td>
-                      <td>
-                        <input
-                          className="field" name={`qtd_${p.id}`} inputMode="numeric"
-                          defaultValue={naLista.get(p.id) ?? sugestaoDeCompra(p.estoqueAtual, p.estoqueMinimo)}
-                          aria-label={`Quantidade de ${p.nome}`}
-                          style={{ width: 100, height: 36, fontSize: 14, padding: "0 10px" }}
-                        />
-                      </td>
-                      <td>{reais(p.custoCents)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
-              <button className="btn" type="submit">Salvar marcações</button>
-              <span className="sub">
-                Marque o que vai comprar e ajuste a quantidade. Desmarcar um produto que aparece aqui tira ele da lista.
-              </span>
-            </div>
-          </form>
         )}
       </div>
     </main>

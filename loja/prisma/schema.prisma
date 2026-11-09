@@ -100,6 +100,7 @@ model Produto {
   codigos      CodigoFornecedor[]
   vendaItens   VendaItem[]
   itemCompra   ItemCompra?
+  fornecedores ProdutoFornecedor[]
 
   @@index([nome])
 }
@@ -110,11 +111,31 @@ model Produto {
 model ItemCompra {
   produtoId  String   @id
   quantidade Int
+  /// De qual fornecedor (da tela de Compras por fornecedor) — null quando
+  /// marcado na aba "Sem fornecedor". É o que faz o item sumir das OUTRAS
+  /// telas de fornecedor enquanto esta marcação existir (ver lib/compras.ts).
+  fornecedorId String?
   /// Quem marcou (Usuario.id).
   usuarioId  String
   criadoEm   DateTime @default(now())
 
-  produto Produto @relation(fields: [produtoId], references: [id])
+  produto    Produto     @relation(fields: [produtoId], references: [id])
+  fornecedor Fornecedor? @relation(fields: [fornecedorId], references: [id])
+}
+
+/// Vínculo manual "este produto pode ser comprado deste fornecedor" — pra
+/// decidir quem vende o quê, sem depender de já ter aparecido numa nota
+/// (ver CodigoFornecedor, que é o aprendizado automático do código usado
+/// pelo fornecedor, coisa diferente). Cadastrado na ficha do produto.
+model ProdutoFornecedor {
+  produtoId    String
+  fornecedorId String
+  criadoEm     DateTime @default(now())
+
+  produto    Produto    @relation(fields: [produtoId], references: [id])
+  fornecedor Fornecedor @relation(fields: [fornecedorId], references: [id])
+
+  @@id([produtoId, fornecedorId])
 }
 
 /// Extrato do estoque: TODA mudança de saldo passa por aqui (nunca se mexe
@@ -206,9 +227,14 @@ model Fornecedor {
   id   String @id @default(cuid())
   cnpj String @unique // só dígitos
   nome String
+  /// Valor mínimo de pedido (R$, em centavos) — abaixo disso não vale a
+  /// pena pedir. null = sem mínimo cadastrado (nenhum aviso é mostrado).
+  pedidoMinimoCents Int?
 
-  entradas Entrada[]
-  codigos  CodigoFornecedor[]
+  entradas    Entrada[]
+  codigos     CodigoFornecedor[]
+  produtos    ProdutoFornecedor[]
+  itensCompra ItemCompra[]
 }
 
 /// Uma entrada de mercadoria (uma nota fiscal, ou um lançamento manual).

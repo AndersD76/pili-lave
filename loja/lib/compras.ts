@@ -21,6 +21,83 @@ export async function ultimoFornecedorDe(produtoIds: string[]): Promise<Map<stri
   return mapa;
 }
 
+type ItemFornecedor = {
+  produtoId: string; nome: string; ean: string | null; unidade: string;
+  estoqueAtual: number; estoqueMinimo: number; custoCents: number;
+  /** Quantidade já marcada nesta tela (null = ainda não marcado). */
+  quantidadeMarcada: number | null;
+};
+
+/**
+ * Os produtos de um fornecedor pra tela de Compras, já separados em
+ * "abaixo do mínimo" (sugestão de pedido) e "demais itens" (pode marcar
+ * mesmo sem estar baixo). Fica de fora quem já foi marcado por OUTRO
+ * fornecedor (ItemCompra.fornecedorId diferente) — é assim que gerar um
+ * pedido tira o item das telas dos outros fornecedores até a entrada
+ * chegar. `fornecedorId: null` é a aba "Sem fornecedor" (produtos sem
+ * nenhum vínculo).
+ */
+export async function itensDoFornecedor(fornecedorId: string | null): Promise<{ abaixo: ItemFornecedor[]; demais: ItemFornecedor[] }> {
+  const produtos = await prisma.produto.findMany({
+    where: {
+      ativo: true,
+      fornecedores: fornecedorId ? { some: { fornecedorId } } : { none: {} },
+    },
+    include: { itemCompra: true },
+    orderBy: { nome: "asc" },
+  });
+
+  const abaixo: ItemFornecedor[] = [];
+  const demais: ItemFornecedor[] = [];
+  for (const p of produtos) {
+    // já marcado por outro fornecedor: resolvido em outro lugar, não aparece aqui
+    if (p.itemCompra && p.itemCompra.fornecedorId !== fornecedorId) continue;
+    const linha: ItemFornecedor = {
+      produtoId: p.id, nome: p.nome, ean: p.ean, unidade: p.unidade,
+      estoqueAtual: p.estoqueAtual, estoqueMinimo: p.estoqueMinimo, custoCents: p.custoCents,
+      quantidadeMarcada: p.itemCompra?.quantidade ?? null,
+    };
+    (p.estoqueAtual <= p.estoqueMinimo ? abaixo : demais).push(linha);
+  }
+  return { abaixo, demais };
+}
+
+export type FornecedorParaCompra = {
+  id: string; nome: string; pedidoMinimoCents: number | null;
+  nAbaixo: number; valorSugeridoCents: number; atingiuMinimo: boolean;
+};
+
+/**
+ * Lista de fornecedores pra tela de Compras, com o selo de "pedido mínimo
+ * atingido": soma o custo × quantidade sugerida de cada item AINDA NÃO
+ * marcado (ver itensDoFornecedor) — uma vez marcado, já está resolvido,
+ * não conta mais pra decidir se vale fazer outro pedido.
+ */
+export async function fornecedoresParaCompra(): Promise<FornecedorParaCompra[]> {
+  const fornecedores = await prisma.fornecedor.findMany({
+    where: { produtos: { some: {} } }, orderBy: { nome: "asc" },
+    select: { id: true, nome: true, pedidoMinimoCents: true },
+  });
+  const resultado: FornecedorParaCompra[] = [];
+  for (const f of fornecedores) {
+    const { abaixo } = await itensDoFornecedor(f.id);
+    const pendentes = abaixo.filter((i) => i.quantidadeMarcada === null);
+    const valorSugeridoCents = pendentes.reduce((s, i) => s + sugestaoDeCompra(i.estoqueAtual, i.estoqueMinimo) * i.custoCents, 0);
+    resultado.push({
+      id: f.id, nome: f.nome, pedidoMinimoCents: f.pedidoMinimoCents, nAbaixo: pendentes.length,
+      valorSugeridoCents, atingiuMinimo: f.pedidoMinimoCents !== null && valorSugeridoCents >= f.pedidoMinimoCents,
+    });
+  }
+  return resultado;
+}
+
+/** Quantos produtos ativos ainda não têm nenhum fornecedor vinculado e
+ *  estão abaixo do mínimo — pro selo da aba "Sem fornecedor". */
+export async function contagemSemFornecedor(): Promise<number> {
+  const { abaixo } = await itensDoFornecedor(null);
+  return abaixo.filter((i) => i.quantidadeMarcada === null).length;
+}
+
 /** A lista de compras atual, com o valor estimado pelo último custo. */
 export async function listaDeCompras() {
   const itens = await prisma.itemCompra.findMany({ include: { produto: true }, orderBy: { produto: { nome: "asc" } } });

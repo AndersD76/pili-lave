@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { registrarAtividade } from "@/lib/atividade";
-import { inteiroDoCampo } from "@/lib/dinheiro";
+import { centavosDoCampo, inteiroDoCampo } from "@/lib/dinheiro";
 import { prisma } from "@/lib/prisma";
 import { exigirPermissao } from "@/lib/sessao";
 
@@ -53,6 +53,64 @@ export async function salvarMarcacoes(formData: FormData) {
   });
   revalidatePath(BASE);
   redirect(com(`ok=${entraram + sairam > 0 ? "lista" : "qtd"}`));
+}
+
+/**
+ * Igual à salvarMarcacoes de cima, mas pra tela de um fornecedor (ou da aba
+ * "Sem fornecedor", fornecedorId null): grava `fornecedorId` em cada
+ * marcação, pra ela sumir das telas dos outros fornecedores (ver
+ * lib/compras.ts) até a entrada chegar.
+ */
+export async function salvarMarcacoesFornecedor(formData: FormData) {
+  const { usuario } = await exigirPermissao("COMPRAS");
+  const fornecedorId = String(formData.get("fornecedorId") ?? "") || null;
+  const destino = fornecedorId ? `${BASE}/fornecedor/${fornecedorId}` : `${BASE}/sem-fornecedor`;
+  const com = (qs: string) => `${destino}?${qs}`;
+
+  const ids = String(formData.get("ids") ?? "").split(",").filter(Boolean);
+  const marcados: { produtoId: string; quantidade: number }[] = [];
+  for (const id of ids) {
+    if (formData.get(`sel_${id}`) !== "on") continue;
+    const quantidade = inteiroDoCampo(formData.get(`qtd_${id}`));
+    if (quantidade === null || quantidade < 1)
+      redirect(com(`erro=${encodeURIComponent("Informe a quantidade (pelo menos 1) de cada item marcado.")}`));
+    marcados.push({ produtoId: id, quantidade: quantidade! });
+  }
+
+  const [entraram, sairam] = await prisma.$transaction(async (tx) => {
+    const antes = new Set((await tx.itemCompra.findMany({ where: { produtoId: { in: ids } }, select: { produtoId: true } })).map((i) => i.produtoId));
+    const fora = ids.filter((id) => !marcados.some((m) => m.produtoId === id));
+    await tx.itemCompra.deleteMany({ where: { produtoId: { in: fora } } });
+    for (const m of marcados)
+      await tx.itemCompra.upsert({
+        where: { produtoId: m.produtoId },
+        update: { quantidade: m.quantidade, fornecedorId },
+        create: { produtoId: m.produtoId, quantidade: m.quantidade, fornecedorId, usuarioId: usuario.id },
+      });
+    const novos = marcados.filter((m) => !antes.has(m.produtoId)).length;
+    const removidos = fora.filter((id) => antes.has(id)).length;
+    if (novos > 0 || removidos > 0)
+      await registrarAtividade(
+        tx, usuario, "LISTA_COMPRAS",
+        [novos ? `${novos} item(ns) incluído(s)` : "", removidos ? `${removidos} retirado(s)` : ""].filter(Boolean).join(", ") +
+          ` (pedido${fornecedorId ? "" : " sem fornecedor"})`
+      );
+    return [novos, removidos];
+  });
+  revalidatePath(BASE);
+  redirect(com(`ok=${entraram + sairam > 0 ? "lista" : "qtd"}`));
+}
+
+/** Define (ou apaga, com valor vazio) o pedido mínimo em R$ de um
+ *  fornecedor — o selo na lista de fornecedores compara com isso. */
+export async function definirPedidoMinimo(formData: FormData) {
+  await exigirPermissao("COMPRAS");
+  const fornecedorId = String(formData.get("fornecedorId") ?? "");
+  if (!fornecedorId) redirect(BASE);
+  const pedidoMinimoCents = centavosDoCampo(formData.get("pedidoMinimo"));
+  await prisma.fornecedor.update({ where: { id: fornecedorId }, data: { pedidoMinimoCents } });
+  revalidatePath(BASE);
+  redirect(BASE);
 }
 
 /** Esvazia a lista inteira (depois de comprar, por exemplo). */

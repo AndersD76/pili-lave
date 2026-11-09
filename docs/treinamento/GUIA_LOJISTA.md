@@ -175,6 +175,18 @@ Abaixo ficam os últimos 50 movimentos do produto: quando, o tipo (entrada, vend
 
 > 💡 O saldo pode ficar **negativo**. Se o caixa vender um item que o sistema achava zerado, a venda aconteceu de verdade; o sistema registra e deixa a diferença aparecer, para você investigar.
 
+### Fornecedores vinculados a um produto
+
+Na mesma tela do produto, em **"Fornecedores"** (para quem pode cadastrar e editar produtos), aparece quem já pode vender aquele item para você. Para vincular um novo:
+
+1. Escolha o fornecedor na lista **"Vincular fornecedor"** — só aparecem fornecedores já cadastrados, para você não digitar um nome parecido e acabar vinculando ao fornecedor errado. Se o fornecedor que você quer ainda não está na lista, ele entra no cadastro assim que você lançar uma nota fiscal dele (seção 8).
+2. Clique em **"Vincular"**. Não precisa ter comprado esse item desse fornecedor antes — a partir daí ele já aparece na tela de Compras daquele fornecedor (seção 10).
+3. Para tirar o vínculo, clique em **"Desvincular"** ao lado do nome.
+
+Isso é separado do que o sistema aprende sozinho pela nota fiscal (qual código aquele fornecedor usa para o produto) — aqui é você quem decide quem pode vender o quê.
+
+> ⚠️ **Cuidado ao mudar o código de barras de um produto já cadastrado.** É por ele que a próxima nota fiscal reconhece o item automaticamente; mudando (ou apagando), a próxima entrada daquele produto pode não ser reconhecida e vir como "Criar produto novo". O sistema avisa antes de aceitar a mudança.
+
 ---
 
 ## 8. Entrada de mercadoria por nota fiscal
@@ -232,22 +244,25 @@ No menu do topo, **"Compras"** (para o lojista e para quem tem a permissão de m
 
 A tela tem duas partes.
 
-**Em cima, a lista como está**: cada produto com a quantidade a comprar, o estoque, o último custo, o valor estimado e o último fornecedor de quem ele veio. Embaixo, o total de itens, de unidades e o valor estimado. Dali você pode:
+**Em cima, a lista como está**: cada produto marcado, com a quantidade a comprar, o estoque, o último custo, o valor estimado e o último fornecedor de quem ele veio. Embaixo, o total de itens, de unidades e o valor estimado. Dali você pode:
 - **Imprimir** a lista para levar ao fornecedor;
 - **Baixar planilha (CSV)**;
 - **Esvaziar a lista**.
 
-**Embaixo, "Escolher o que comprar"**: é aqui que você marca os produtos.
-1. Escolha o que quer ver: **"Abaixo do mínimo"** (só o que está no estoque mínimo ou abaixo) ou **"Todos os produtos"**. Dá para buscar por nome ou código de barras.
-2. Marque a caixa **"Comprar?"** nos produtos que vai comprar.
-3. Confira a **quantidade**. Ela já vem sugerida: é o que falta para o produto passar do estoque mínimo. Mude se quiser.
-4. Clique em **"Salvar marcações"**.
+**Embaixo, "Escolher por fornecedor"**: uma linha para cada fornecedor que já tem algum produto vinculado a ele, mais uma linha **"Sem fornecedor"** para os produtos que ainda não têm fornecedor nenhum. Cada linha mostra quantos itens daquele fornecedor estão abaixo do mínimo e o valor sugerido do pedido; se você cadastrou um **pedido mínimo** (veja abaixo) e esse valor já bateu, aparece um selo **"atingido"**.
+
+Clique em **"Abrir"** na linha do fornecedor que vai comprar agora:
+1. Em cima, **"Abaixo do mínimo"**: os itens daquele fornecedor que já chegaram no estoque mínimo, com a quantidade já sugerida (o que falta para passar do mínimo) — mude se quiser.
+2. Separado por uma linha, **"Demais itens"**: o resto dos produtos vinculados a esse fornecedor, mesmo sem estar baixo — pode marcar e escolher a quantidade também, se quiser aproveitar o pedido.
+3. Marque a caixa **"Comprar?"** nos itens que vai pedir e clique em **"Salvar pedido"**.
+4. Use **"Copiar pedido"**, **"Enviar por WhatsApp"** ou **"Enviar por e-mail"** para mandar a lista pronta para o fornecedor.
 
 Como funciona:
-- Salvar só mexe nos produtos que estão na tela. Se você marcou algo em "Todos os produtos" e depois salvar em "Abaixo do mínimo", o que não aparece ali continua na lista.
-- **Desmarcar** um produto que está na tela e salvar tira ele da lista.
-- **O produto sai da lista sozinho quando recebe entrada**, por nota fiscal ou manual. Assim a lista mostra sempre o que ainda falta comprar.
+- **Um produto pode ter mais de um fornecedor.** Ele aparece na tela de cada um deles enquanto não for marcado em nenhum pedido.
+- **Marcar um item no pedido de um fornecedor tira ele da tela dos outros fornecedores** até a mercadoria chegar (entrada por nota ou manual) — assim você não corre o risco de pedir o mesmo item duas vezes para fornecedores diferentes. Se o estoque cair de novo no futuro, o item volta a aparecer normalmente.
+- **O item sai do pedido sozinho quando recebe entrada**, por nota fiscal ou manual.
 - O valor estimado usa o último custo de cada produto; o fornecedor pode cobrar diferente.
+- Para vincular um fornecedor a um produto (mesmo sem nunca ter comprado esse item dele ainda), veja a seção 7. O **pedido mínimo em R$** de cada fornecedor se cadastra na própria tela dele, ao abrir "Abrir" na lista de fornecedores acima.
 
 ## 11. O caixa (tela do cliente) e as vendas
 
@@ -405,7 +420,7 @@ Entrar na gestão -> "Acesso administrativo" -> e-mail e senha do app (funcioná
 Dia a dia no computador -> Painel (o que comprar) -> Produtos e estoque -> entrada / perda / contagem
 Preço -> percentual na coluna "% de venda" -> Salvar percentuais (o preço acompanha o custo sozinho)
 Chegou mercadoria com nota -> Entradas -> enviar o XML -> conferir -> Confirmar e dar entrada
-Vai comprar -> Compras -> "Abaixo do mínimo" ou "Todos" -> marcar e ajustar a quantidade -> Salvar -> Imprimir
+Vai comprar -> Compras -> abrir o fornecedor (ou "Sem fornecedor") -> marcar e ajustar a quantidade -> Salvar pedido -> copiar/WhatsApp/e-mail ou Imprimir
 Fechamento -> Relatórios (estoque, entradas, saídas, perdas) -> Baixar planilha
 Equipe -> Usuários (cadastrar funcionário e marcar permissões) -> Atividades (quem fez o quê)
 Caixa -> é a tela do cliente; cliente escolhe Carteira do app (escaneia o QR) ou Cartão (confirmação manual); vendas em Vendas

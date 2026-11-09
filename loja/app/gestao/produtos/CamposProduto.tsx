@@ -1,4 +1,5 @@
 import { reaisCampo } from "@/lib/dinheiro";
+import { CampoEan } from "./CampoEan";
 import { CampoPreco } from "./CampoPreco";
 
 type ProdutoForm = {
@@ -25,7 +26,7 @@ export function CamposProduto({
         </label>
         <label className="rotulo" style={{ flex: 1, minWidth: 170 }}>
           Código de barras
-          <input className="field" name="ean" defaultValue={produto?.ean ?? ""} inputMode="numeric" maxLength={14} {...cad} />
+          <CampoEan valorAtual={produto?.ean ?? ""} travado={!podeCadastro} />
         </label>
       </div>
       <div className="linha-form">

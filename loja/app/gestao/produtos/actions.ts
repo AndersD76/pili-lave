@@ -227,6 +227,57 @@ export async function movimentarEstoque(formData: FormData) {
   redirect(`${BASE}/${id}?ok=1`);
 }
 
+/** Vincula um fornecedor já cadastrado ao produto — pra ele aparecer na
+ *  tela de Compras daquele fornecedor, mesmo sem nunca ter sido comprado
+ *  dele (o aprendizado automático do código, em CodigoFornecedor, só
+ *  existe depois da primeira nota). O select só oferece fornecedores já
+ *  conhecidos, pra nunca cadastrar um nome parecido por engano. */
+export async function vincularFornecedor(formData: FormData) {
+  const { usuario } = await exigirPermissao("PRODUTOS");
+  const produtoId = String(formData.get("produtoId") ?? "");
+  const fornecedorId = String(formData.get("fornecedorId") ?? "");
+  const erro = (msg: string): never => redirect(`${BASE}/${produtoId}?erro=${encodeURIComponent(msg)}`);
+  if (!produtoId || !fornecedorId) erro("Escolha um fornecedor.");
+
+  const [produto, fornecedor] = await Promise.all([
+    prisma.produto.findUnique({ where: { id: produtoId } }),
+    prisma.fornecedor.findUnique({ where: { id: fornecedorId } }),
+  ]);
+  if (!produto || !fornecedor) erro("Produto ou fornecedor não encontrado.");
+
+  await prisma.$transaction(async (tx) => {
+    const ja = await tx.produtoFornecedor.findUnique({ where: { produtoId_fornecedorId: { produtoId, fornecedorId } } });
+    if (ja) return;
+    await tx.produtoFornecedor.create({ data: { produtoId, fornecedorId } });
+    await registrarAtividade(tx, usuario, "PRODUTO_ALTERADO", `${produto!.nome}: vinculado ao fornecedor ${fornecedor!.nome}`, produtoId);
+  });
+  revalidatePath(`${BASE}/${produtoId}`);
+  redirect(`${BASE}/${produtoId}`);
+}
+
+/** Desfaz o vínculo — não apaga nenhuma compra ou nota já registrada,
+ *  só tira o produto da tela de Compras daquele fornecedor. */
+export async function desvincularFornecedor(formData: FormData) {
+  const { usuario } = await exigirPermissao("PRODUTOS");
+  const produtoId = String(formData.get("produtoId") ?? "");
+  const fornecedorId = String(formData.get("fornecedorId") ?? "");
+  if (!produtoId || !fornecedorId) redirect(`${BASE}/${produtoId}`);
+
+  const [produto, fornecedor] = await Promise.all([
+    prisma.produto.findUnique({ where: { id: produtoId } }),
+    prisma.fornecedor.findUnique({ where: { id: fornecedorId } }),
+  ]);
+  if (produto && fornecedor) {
+    await prisma.$transaction(async (tx) => {
+      const r = await tx.produtoFornecedor.deleteMany({ where: { produtoId, fornecedorId } });
+      if (r.count > 0)
+        await registrarAtividade(tx, usuario, "PRODUTO_ALTERADO", `${produto.nome}: desvinculado do fornecedor ${fornecedor.nome}`, produtoId);
+    });
+  }
+  revalidatePath(`${BASE}/${produtoId}`);
+  redirect(`${BASE}/${produtoId}`);
+}
+
 /** Só pra teste: 5 produtos de exemplo. Só funciona com o cadastro vazio,
  *  pra nunca misturar produto falso no estoque de uma loja de verdade. */
 export async function carregarExemplos() {
