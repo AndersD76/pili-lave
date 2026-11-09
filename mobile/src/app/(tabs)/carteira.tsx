@@ -9,6 +9,8 @@ import { C, F, money } from "@/theme";
 const KIND: Record<string, { label: string; color: string }> = {
   TOPUP: { label: "Recarga", color: C.ok },
   WASH: { label: "Lavagem", color: C.erro },
+  VACUUM: { label: "Aspirador", color: C.erro },
+  LOJA: { label: "Loja", color: C.erro },
   REFUND: { label: "Estorno", color: C.ok },
   ADJUST: { label: "Ajuste", color: C.cromo },
 };

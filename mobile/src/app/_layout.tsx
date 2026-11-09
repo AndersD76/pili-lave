@@ -39,6 +39,7 @@ export default function RootLayout() {
         <Stack.Screen name="escolha" options={{ headerShown: false }} />
         <Stack.Screen name="termos" options={{ headerShown: false }} />
         <Stack.Screen name="loja" options={{ headerShown: false }} />
+        <Stack.Screen name="loja-pagar" options={{ headerShown: false }} />
         <Stack.Screen name="loja-foto" options={{ headerShown: false }} />
         <Stack.Screen name="minha-loja" options={{ title: "Minha loja" }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

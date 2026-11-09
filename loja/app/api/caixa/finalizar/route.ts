@@ -10,12 +10,15 @@ const Body = z.object({
     .max(MAX_ITENS),
 });
 
-/** Caixa: fecha a compra. A tela manda só produto e quantidade — preço e
- *  total são calculados aqui, do cadastro. */
+/** Caixa: fecha a compra paga no CARTÃO (maquininha ao lado do totem, sem
+ *  integração — a tela só chama isto depois que o operador confirma que a
+ *  maquininha aprovou). Pagamento pela carteira do app passa por
+ *  /api/caixa/carteira, não por aqui. A tela manda só produto e
+ *  quantidade — preço e total são calculados aqui, do cadastro. */
 export async function POST(req: NextRequest) {
   if (!(await lojaConfigurada())) return NextResponse.json({ error: "Loja não cadastrada" }, { status: 503 });
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, erro: "Compra inválida." }, { status: 400 });
-  const r = await finalizarVenda(parsed.data.itens, "SIMULADO");
+  const r = await finalizarVenda(parsed.data.itens, "MAQUININHA");
   return NextResponse.json(r, { status: r.ok ? 201 : 409 });
 }

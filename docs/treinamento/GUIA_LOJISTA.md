@@ -257,7 +257,7 @@ A tela que fica aberta no computador é o **caixa de autoatendimento**:
 
 1. O cliente passa o produto no leitor de código de barras (ou digita o código e toca em **Adicionar**). O produto entra na lista com nome e preço.
 2. Passar o mesmo produto de novo soma mais um. Os botões **+** e **−** ajustam a quantidade; com 1 unidade, o botão vira **×** e remove o item.
-3. **Pagar** mostra o total; **Confirmar pagamento** fecha a venda e baixa o estoque de cada item.
+3. **Pagar** mostra o total e pergunta a forma de pagamento.
 4. A tela de "Compra concluída" volta sozinha para o início depois de alguns segundos.
 
 Regras do caixa:
@@ -265,9 +265,25 @@ Regras do caixa:
 - Compra parada por 3 minutos é cancelada sozinha.
 - O preço cobrado é sempre o do cadastro no momento de fechar.
 
-> ⚠️ **O pagamento ainda é simulado.** Nesta fase nada é cobrado: a venda é registrada e o estoque baixa, mas a carteira do app e a maquininha ainda não estão ligadas. As vendas aparecem marcadas como "Simulado (teste)".
+### Pagando pela carteira do app
 
-No menu da gestão, **"Vendas"** (só o lojista vê) mostra o total vendido no dia e as últimas vendas com os itens. No extrato de cada produto, a venda aparece com "Caixa" na coluna Quem.
+1. No caixa, escolha **"Carteira do app"**.
+2. Peça pro cliente abrir **"Pagar na loja"** no app dele (fica na home da loja de conveniência) e mostrar o QR da tela.
+3. Aproxime o QR do **mesmo leitor** usado nos produtos — ele lê código de barras e QR.
+4. O caixa mostra **"Pagando: [nome do cliente] — saldo R$ X"**. Confira se é a pessoa certa e toque em **Confirmar pagamento**. Se não for, toque em "Não é esse cliente" e peça pra escanear de novo.
+5. O valor é debitado na hora da carteira do cliente.
+
+Essa opção só aparece com **internet**: sem ela, o caixa mostra só a opção do cartão. O QR do cliente vale por 3 minutos; vencido, ele mesmo pede um novo no app. Se o saldo não for suficiente, o caixa avisa e a venda não é fechada — sem internet nem saldo suficiente, ninguém é cobrado por engano.
+
+### Pagando no cartão (maquininha)
+
+1. No caixa, escolha **"Cartão (maquininha)"**.
+2. O cliente passa o cartão na maquininha ao lado do totem.
+3. Depois que ela aprovar, toque em **"Pagamento aprovado"** para fechar a venda.
+
+> ⚠️ **A maquininha ainda não está integrada ao sistema.** É o operador quem confirma que ela aprovou — o caixa não sabe sozinho se o pagamento de fato aconteceu. Enquanto isso não muda, confira sempre o visor da maquininha antes de tocar em "Pagamento aprovado".
+
+No menu da gestão, **"Vendas"** (só o lojista vê) mostra o total vendido no dia e as últimas vendas com os itens, indicando se foi pela carteira ou no cartão. No extrato de cada produto, a venda aparece com "Caixa" na coluna Quem.
 
 ## 12. Funcionários e permissões
 
@@ -353,7 +369,8 @@ Para liberar de novo, toque em **Desbloquear** ao lado do nome. O histórico do 
 | Recurso | Situação |
 |---|---|
 | Entrada por nota fiscal a partir do PDF (hoje só o XML) | Depois, com uma nota real para calibrar |
-| Pagamento de verdade no caixa (saldo do app e maquininha) e identificação do cliente | A fazer (o caixa já funciona com pagamento simulado) |
+| Integração de verdade com a maquininha (hoje é confirmação manual do operador) | Depende de escolher Stone ou Cielo |
+| Fila de vendas sem internet e sincronização automática com a nuvem | A fazer |
 | Abertura da porta pelo celular e controle de capacidade | A fazer |
 | Modo reposição (loja bloqueada para clientes enquanto um funcionário repõe) | A fazer, junto com a porta |
 | Abrir a porta à distância pelo app (só o lojista) | A fazer, junto com a porta |
@@ -376,6 +393,6 @@ Chegou mercadoria com nota -> Entradas -> enviar o XML -> conferir -> Confirmar 
 Vai comprar -> Compras -> "Abaixo do mínimo" ou "Todos" -> marcar e ajustar a quantidade -> Salvar -> Imprimir
 Fechamento -> Relatórios (estoque, entradas, saídas, perdas) -> Baixar planilha
 Equipe -> Usuários (cadastrar funcionário e marcar permissões) -> Atividades (quem fez o quê)
-Caixa -> é a tela do cliente; as vendas aparecem em Vendas (pagamento ainda simulado)
+Caixa -> é a tela do cliente; cliente escolhe Carteira do app (escaneia o QR) ou Cartão (confirmação manual); vendas em Vendas
 Dia a dia no app -> Loja conveniência -> Minha loja -> responder mensagens / bloquear cliente
 ```

@@ -26,21 +26,49 @@ export async function buscarPorCodigo(codigo: string): Promise<BuscaCaixa> {
   return { situacao: "OK", produto: { id: p.id, nome: p.nome, ean, precoCents: p.precoCents } };
 }
 
+export type FormaPagamento = "CARTEIRA" | "MAQUININHA" | "SIMULADO";
+
 export type ResultadoVenda =
   | { ok: true; numero: number; totalCents: number }
   | { ok: false; erro: string };
 
 /**
- * Fecha a venda: confere cada item de novo no banco (o preço vale o do
- * cadastro AGORA, nunca o que a tela mandou), grava a Venda com os itens e
- * baixa o estoque de cada um — tudo numa transação só.
+ * Confere o carrinho (o preço vale o do cadastro AGORA, nunca o que a tela
+ * mandou) sem gravar nada — é o passo antes de cobrar, pra saber o total
+ * certo e detectar item que saiu de linha antes de mexer no estoque.
+ */
+export async function conferirCarrinho(
+  itens: { produtoId: string; quantidade: number }[]
+): Promise<{ ok: true; totalCents: number } | { ok: false; erro: string }> {
+  const porProduto = new Map<string, number>();
+  for (const i of itens) porProduto.set(i.produtoId, (porProduto.get(i.produtoId) ?? 0) + i.quantidade);
+  if (porProduto.size === 0) return { ok: false, erro: "Nenhum produto na compra." };
+
+  const produtos = await prisma.produto.findMany({ where: { id: { in: [...porProduto.keys()] } } });
+  let totalCents = 0;
+  for (const [produtoId, quantidade] of porProduto) {
+    const p = produtos.find((x) => x.id === produtoId);
+    if (!p || !p.ativo || p.precoCents === null)
+      return { ok: false, erro: `"${p?.nome ?? "Um produto"}" não está mais disponível. Retire-o da compra.` };
+    if (quantidade < 1 || quantidade > MAX_POR_ITEM) return { ok: false, erro: `Quantidade inválida para "${p.nome}".` };
+    totalCents += quantidade * p.precoCents;
+  }
+  return { ok: true, totalCents };
+}
+
+/**
+ * Fecha a venda: confere cada item de novo no banco, grava a Venda com os
+ * itens e baixa o estoque de cada um — tudo numa transação só.
  *
- * `forma` hoje é sempre "SIMULADO": o pagamento de verdade (carteira do app
- * e maquininha) ainda não está ligado.
+ * `codigo`, quando informado, é o mesmo código já usado pra debitar a
+ * carteira na nuvem (gerado ANTES de cobrar) — assim o registro local e o
+ * lançamento da carteira ficam amarrados pelo mesmo id, mesmo que o
+ * programa trave entre as duas chamadas.
  */
 export async function finalizarVenda(
   itens: { produtoId: string; quantidade: number }[],
-  forma: "SIMULADO"
+  forma: FormaPagamento,
+  codigo?: string
 ): Promise<ResultadoVenda> {
   // o mesmo produto pode vir em duas linhas: junta antes de conferir
   const porProduto = new Map<string, number>();
@@ -59,7 +87,9 @@ export async function finalizarVenda(
       linhas.push({ produtoId, nome: p.nome, ean: p.ean, quantidade, precoUnitCents: p.precoCents });
     }
     const totalCents = linhas.reduce((s, l) => s + l.quantidade * l.precoUnitCents, 0);
-    const venda = await tx.venda.create({ data: { totalCents, forma, itens: { create: linhas } } });
+    const venda = await tx.venda.create({
+      data: { totalCents, forma, itens: { create: linhas }, ...(codigo ? { codigo } : {}) },
+    });
     for (const l of linhas)
       await movimentar(tx, {
         produtoId: l.produtoId, tipo: "VENDA", quantidade: -l.quantidade,

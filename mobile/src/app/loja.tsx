@@ -117,6 +117,7 @@ export default function LojaHome() {
             <Btn title="Adicionar saldo" kind="ghost" onPress={() => router.push("/recarga")} />
           </View>
         </Card>
+        <Btn title="Pagar na loja" onPress={() => router.push("/loja-pagar")} />
 
         <Label>Lojas</Label>
         {lojas === null ? (

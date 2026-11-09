@@ -8,7 +8,7 @@ import { Nav } from "../nav";
 const VALORES = [2000, 3000, 5000, 10000];
 type Topup = { id: string; pixPayload: string | null; status: string };
 type Tx = { id: string; amountCents: number; kind: string; createdAt: string };
-const KIND: Record<string, string> = { TOPUP: "Recarga", WASH: "Lavagem", REFUND: "Estorno", ADJUST: "Ajuste" };
+const KIND: Record<string, string> = { TOPUP: "Recarga", WASH: "Lavagem", VACUUM: "Aspirador", LOJA: "Loja", REFUND: "Estorno", ADJUST: "Ajuste" };
 
 export default function Recarga() {
   const router = useRouter();

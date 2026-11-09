@@ -1,16 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { BuscaCaixa, ProdutoCaixa, ResultadoVenda } from "@/lib/caixa";
+import type { BuscaCaixa, ResultadoVenda, ProdutoCaixa } from "@/lib/caixa";
+import type { IdentificarCarteira } from "@/lib/nuvem";
 
 const MAX_POR_ITEM = 99;
 /** Sem ninguém mexer por este tempo, a compra é cancelada (cliente foi embora). */
 const OCIOSO_MS = 3 * 60 * 1000;
 /** Quanto tempo a tela de "compra concluída" fica antes de voltar ao início. */
 const OBRIGADO_MS = 8000;
+/** Prefixo do QR que o app mostra em "Pagar na loja" (ver server/app/(pwa)/app/loja/pagar). */
+const PREFIXO_QR_CARTEIRA = "PILILOJA:";
 
 type Item = ProdutoCaixa & { quantidade: number };
 type Etapa = "COMPRANDO" | "PAGAMENTO" | "CONCLUIDA";
+/** Sub-passos da etapa PAGAMENTO: escolher a forma, escanear o QR da
+ *  carteira, confirmar com o cliente identificado, ou aprovar no cartão. */
+type PassoPagamento = "ESCOLHER" | "ESCANEANDO" | "IDENTIFICADO" | "CARTAO";
 
 function reais(cents: number): string {
   return `R$ ${(cents / 100).toFixed(2).replace(".", ",")}`;
@@ -19,7 +25,9 @@ function reais(cents: number): string {
 /**
  * Caixa de autoatendimento — a tela do cliente. O leitor de código de barras
  * funciona como um teclado: "digita" os números e manda Enter. Por isso o
- * campo do código fica SEMPRE com o foco: o cliente só passa o produto.
+ * campo do código fica SEMPRE com o foco: o cliente só passa o produto. O
+ * mesmo leitor serve pra escanear o QR de pagamento do app (ele também lê
+ * 2D) — é só um texto mais longo chegando pelo mesmo jeito.
  */
 export function Caixa({ lojaNome }: { lojaNome: string }) {
   const [etapa, setEtapa] = useState<Etapa>("COMPRANDO");
@@ -32,6 +40,12 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
   const [ultimaAcao, setUltimaAcao] = useState(0);
   const campo = useRef<HTMLInputElement>(null);
 
+  const [passo, setPasso] = useState<PassoPagamento>("ESCOLHER");
+  const [conectado, setConectado] = useState<boolean | null>(null);
+  const [codigoCarteira, setCodigoCarteira] = useState("");
+  const [cliente, setCliente] = useState<{ token: string; nome: string; walletCents: number } | null>(null);
+  const campoCarteira = useRef<HTMLInputElement>(null);
+
   const total = itens.reduce((s, i) => s + i.quantidade * i.precoCents, 0);
   const unidades = itens.reduce((s, i) => s + i.quantidade, 0);
 
@@ -40,12 +54,30 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
 
   const recomecar = useCallback(() => {
     setItens([]); setCodigo(""); setAviso(""); setVenda(null); setEtapa("COMPRANDO");
+    setPasso("ESCOLHER"); setCodigoCarteira(""); setCliente(null);
   }, []);
 
   // foco de volta no campo sempre que a tela de compra aparece
   useEffect(() => {
     if (etapa === "COMPRANDO") focar();
   }, [etapa, itens.length, focar]);
+
+  // foco no campo de escaneio do QR enquanto esperando o cliente mostrar o código
+  useEffect(() => {
+    if (etapa === "PAGAMENTO" && passo === "ESCANEANDO") campoCarteira.current?.focus();
+  }, [etapa, passo]);
+
+  // entrando na tela de pagamento: confere se tem internet, pra saber se
+  // oferece "Carteira do app" (precisa da nuvem) ou só cartão
+  useEffect(() => {
+    if (etapa !== "PAGAMENTO") return;
+    let ativo = true;
+    fetch("/api/caixa/conectado", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((r) => { if (ativo) setConectado(!!r.conectado); })
+      .catch(() => { if (ativo) setConectado(false); });
+    return () => { ativo = false; };
+  }, [etapa]);
 
   // compra parada: cancela sozinha
   useEffect(() => {
@@ -105,15 +137,15 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
     focar();
   }
 
-  async function pagar() {
+  const corpoItens = () => ({ itens: itens.map((i) => ({ produtoId: i.id, quantidade: i.quantidade })) });
+
+  async function pagarNoCartao() {
     mexeu();
     setOcupado(true);
     setAviso("");
     try {
       const res = await fetch("/api/caixa/finalizar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itens: itens.map((i) => ({ produtoId: i.id, quantidade: i.quantidade })) }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpoItens()),
       });
       const r = (await res.json()) as ResultadoVenda;
       if (r.ok) {
@@ -121,11 +153,77 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
         setEtapa("CONCLUIDA");
       } else {
         setAviso(r.erro);
-        setEtapa("COMPRANDO");
+        setPasso("ESCOLHER");
       }
     } catch {
       setAviso("Não foi possível concluir a compra. Tente de novo.");
-      setEtapa("COMPRANDO");
+      setPasso("ESCOLHER");
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function lerCodigoCarteira(e: React.FormEvent) {
+    e.preventDefault();
+    const lido = codigoCarteira.trim();
+    setCodigoCarteira("");
+    mexeu();
+    if (!lido || ocupado) return;
+    if (!lido.startsWith(PREFIXO_QR_CARTEIRA)) {
+      setAviso("Esse código não é de pagamento. Peça pro cliente abrir \"Pagar na loja\" no app.");
+      campoCarteira.current?.focus();
+      return;
+    }
+    const token = lido.slice(PREFIXO_QR_CARTEIRA.length);
+    setOcupado(true);
+    setAviso("");
+    try {
+      const res = await fetch("/api/caixa/carteira/identificar", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }),
+      });
+      const r = (await res.json()) as IdentificarCarteira;
+      if (r.situacao === "OK") {
+        setCliente({ token, nome: r.nome, walletCents: r.walletCents });
+        setPasso("IDENTIFICADO");
+      } else {
+        setAviso(
+          r.situacao === "EXPIRADO" ? "O código venceu. Peça pro cliente abrir a tela de pagamento de novo."
+          : r.situacao === "SEM_CONEXAO" ? "Sem internet — não dá pra pagar pela carteira agora."
+          : "mensagem" in r ? r.mensagem : "Não foi possível identificar o cliente."
+        );
+        campoCarteira.current?.focus();
+      }
+    } catch {
+      setAviso("Não foi possível consultar a carteira. Tente de novo.");
+      campoCarteira.current?.focus();
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function confirmarCarteira() {
+    if (!cliente) return;
+    mexeu();
+    setOcupado(true);
+    setAviso("");
+    try {
+      const res = await fetch("/api/caixa/carteira/confirmar", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: cliente.token, ...corpoItens() }),
+      });
+      const r = (await res.json()) as ResultadoVenda;
+      if (r.ok) {
+        setVenda({ numero: r.numero, totalCents: r.totalCents });
+        setEtapa("CONCLUIDA");
+      } else {
+        setAviso(r.erro);
+        setPasso("ESCOLHER");
+        setCliente(null);
+      }
+    } catch {
+      setAviso("Não foi possível concluir a compra. Confira se a venda não foi cobrada antes de tentar de novo.");
+      setPasso("ESCOLHER");
+      setCliente(null);
     } finally {
       setOcupado(false);
     }
@@ -149,15 +247,79 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
         <p className="sub" style={{ fontSize: 18 }}>{unidades} {unidades === 1 ? "item" : "itens"}</p>
         <h1 className="caixa-titulo">Total a pagar</h1>
         <p className="caixa-total">{reais(total)}</p>
-        <p className="chip at" style={{ fontSize: 14, margin: "8px 0 20px" }}>
-          Pagamento simulado — fase de teste, nada é cobrado
-        </p>
-        <button className="btn caixa-btn" onClick={pagar} disabled={ocupado}>
-          {ocupado ? "Concluindo…" : "Confirmar pagamento"}
-        </button>
-        <button className="btn ghost caixa-btn" onClick={() => { mexeu(); setEtapa("COMPRANDO"); }} disabled={ocupado} style={{ marginTop: 12 }}>
-          Voltar para a compra
-        </button>
+        {aviso && <p className="caixa-aviso" style={{ marginTop: 12 }}>{aviso}</p>}
+
+        {passo === "ESCOLHER" && (
+          <>
+            <p className="sub" style={{ margin: "16px 0 8px" }}>Como o cliente vai pagar?</p>
+            <button
+              className="btn caixa-btn" disabled={ocupado || conectado === null || !conectado}
+              onClick={() => { mexeu(); setAviso(""); setPasso("ESCANEANDO"); }}
+            >
+              Carteira do app
+            </button>
+            {conectado === false && (
+              <p className="sub" style={{ marginTop: 6 }}>Sem internet no momento — só dá pra pagar no cartão.</p>
+            )}
+            <button
+              className="btn caixa-btn" style={{ marginTop: 12 }} disabled={ocupado}
+              onClick={() => { mexeu(); setAviso(""); setPasso("CARTAO"); }}
+            >
+              Cartão (maquininha)
+            </button>
+            <button className="btn ghost caixa-btn" onClick={() => { mexeu(); setEtapa("COMPRANDO"); }} disabled={ocupado} style={{ marginTop: 12 }}>
+              Voltar para a compra
+            </button>
+          </>
+        )}
+
+        {passo === "ESCANEANDO" && (
+          <>
+            <p className="sub" style={{ margin: "16px 0 8px" }}>
+              Peça pro cliente abrir &quot;Pagar na loja&quot; no app e aproxime o QR do leitor.
+            </p>
+            <form onSubmit={lerCodigoCarteira}>
+              <input
+                ref={campoCarteira} className="field" value={codigoCarteira} autoFocus autoComplete="off"
+                placeholder="Aguardando leitura do código…" disabled={ocupado}
+                onChange={(e) => setCodigoCarteira(e.target.value)}
+                style={{ width: 420, textAlign: "center" }}
+              />
+            </form>
+            <button className="btn ghost caixa-btn" onClick={() => { mexeu(); setAviso(""); setPasso("ESCOLHER"); }} disabled={ocupado} style={{ marginTop: 16 }}>
+              Voltar
+            </button>
+          </>
+        )}
+
+        {passo === "IDENTIFICADO" && cliente && (
+          <>
+            <p className="sub" style={{ margin: "16px 0 4px" }}>Pagando:</p>
+            <p style={{ fontSize: 22, fontWeight: 700 }}>{cliente.nome}</p>
+            <p className="sub">Saldo na carteira: {reais(cliente.walletCents)}</p>
+            <button className="btn caixa-btn" style={{ marginTop: 16 }} onClick={confirmarCarteira} disabled={ocupado}>
+              {ocupado ? "Concluindo…" : "Confirmar pagamento"}
+            </button>
+            <button
+              className="btn ghost caixa-btn" style={{ marginTop: 12 }} disabled={ocupado}
+              onClick={() => { mexeu(); setAviso(""); setCliente(null); setPasso("ESCOLHER"); }}
+            >
+              Não é esse cliente
+            </button>
+          </>
+        )}
+
+        {passo === "CARTAO" && (
+          <>
+            <p className="sub" style={{ margin: "16px 0 8px" }}>Aprove o pagamento na maquininha ao lado.</p>
+            <button className="btn caixa-btn" onClick={pagarNoCartao} disabled={ocupado}>
+              {ocupado ? "Concluindo…" : "Pagamento aprovado"}
+            </button>
+            <button className="btn ghost caixa-btn" onClick={() => { mexeu(); setAviso(""); setPasso("ESCOLHER"); }} disabled={ocupado} style={{ marginTop: 12 }}>
+              Voltar
+            </button>
+          </>
+        )}
       </div>
     );
   }
@@ -216,7 +378,7 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
               <div className="sub">{unidades} {unidades === 1 ? "item" : "itens"}</div>
               <div className="caixa-total" style={{ fontSize: 36 }}>{reais(total)}</div>
             </div>
-            <button className="btn caixa-btn" onClick={() => { mexeu(); setAviso(""); setEtapa("PAGAMENTO"); }}>Pagar</button>
+            <button className="btn caixa-btn" onClick={() => { mexeu(); setAviso(""); setPasso("ESCOLHER"); setEtapa("PAGAMENTO"); }}>Pagar</button>
           </footer>
         </>
       )}

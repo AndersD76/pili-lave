@@ -86,6 +86,7 @@ enum WalletTxKind {
   TOPUP  // recarga confirmada (+)
   WASH   // compra de lavagem (-)
   VACUUM // compra de aspirador (-)
+  LOJA   // compra na loja de conveniência, pelo caixa (-)
   REFUND // estorno (+)
   ADJUST // ajuste manual admin (+/-)
 }

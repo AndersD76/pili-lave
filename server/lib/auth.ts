@@ -28,6 +28,32 @@ export async function getSession(req: NextRequest): Promise<SessionUser | null> 
   }
 }
 
+/**
+ * Token de pagamento na loja de conveniência: o cliente pede um (logado no
+ * app) e mostra como QR no caixa. Curto de propósito (3 min) — é só pra dar
+ * tempo de escanear e confirmar; não serve pra mais nada além de pagar.
+ * `typ` separa esse token do de login: mesmo que alguém capture um QR
+ * vencido, ele não vale como sessão do app.
+ */
+export async function signTokenPagamentoLoja(userId: string): Promise<string> {
+  return new SignJWT({ typ: "loja-pagamento" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(userId)
+    .setIssuedAt()
+    .setExpirationTime("3m")
+    .sign(secret);
+}
+
+export async function verificarTokenPagamentoLoja(token: string): Promise<string | null> {
+  try {
+    const { payload } = await jwtVerify(token, secret);
+    if (payload.typ !== "loja-pagamento" || !payload.sub) return null;
+    return payload.sub;
+  } catch {
+    return null;
+  }
+}
+
 /** Sessão obrigatória; opcionalmente restrita a um papel (checado no banco,
  *  para promoções via admin valerem sem o usuário precisar relogar). */
 export async function requireUser(req: NextRequest, role?: "LAVADOR" | "PARCEIRO" | "ADMIN") {

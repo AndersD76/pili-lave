@@ -62,6 +62,7 @@ como produto paralelo. Ao abrir o app, o cliente escolhe entre
 - **Com internet**: desconta dos créditos da carteira do app, ou paga na maquininha, à escolha do cliente.
 - **Sem internet**: só maquininha. A venda fica na fila local e sincroniza quando a conexão voltar.
 - A maquininha fica ligada ao computador central (integração local, com chip próprio), para o sistema saber se foi pago pelo app ou pelo cartão.
+- **Construído (13/11)**: a carteira do app já debita de verdade, pelo QR que o cliente mostra no app (identifica quem é e pergunta o saldo antes de cobrar). O cartão ainda é **confirmação manual do operador** — a integração de verdade com a maquininha (saber sozinho se ela aprovou) fica para quando Stone ou Cielo for escolhida.
 
 ### Saída
 - Porta com barra antipânico ou botão de emergência: **abre sempre por dentro**, com ou sem pagamento.
@@ -139,7 +140,7 @@ O item 1 depende de o computador da loja ter Windows Pro e TPM, o que deve entra
 |---|---|---|
 | 1 | **Nuvem e app**: termo de uso, data de nascimento, código do cliente, foto do rosto, tela de escolha, cadastro de lojas no admin, dono de loja, bloqueio e suporte | Construída no ambiente local; falta testar no celular |
 | 2 | **Gestão local**: produtos, estoque, entrada de mercadoria, alerta de compra | Construída, exceto a leitura de nota em PDF: primeiro uso, usuários com permissões, registro de atividades, painel, produtos e estoque, percentual de venda com reajuste automático, entrada por nota fiscal em XML e relatórios por período com planilha. O PDF fica para quando houver uma nota real para calibrar; o aviso de estoque mínimo no celular depende da sincronização |
-| 3 | **Totem**: carrinho por código de barras, carteira e maquininha, fila offline e sincronização | Em andamento (priorizado em 12/10, antes da nota fiscal): carrinho por código de barras, fechamento da venda e baixa de estoque prontos, com **pagamento simulado**; faltam carteira, maquininha, identificação do cliente e sincronização |
+| 3 | **Totem**: carrinho por código de barras, carteira e maquininha, fila offline e sincronização | Em andamento: carrinho, carteira do app (QR + débito real) e cartão (confirmação manual, sem gateway) prontos; faltam fila offline e sincronização |
 | 4 | **Entrada**: porta por BLE, credencial offline, capacidade, mensagem de lotação (firmware da trava: Giovani) | A fazer |
 | 5 | **Câmeras**: zonas de prateleira, rastreamento, divergência com imagens para o dono | A fazer |
 | 6 | **Reconhecimento facial no totem** e cópia local do banco de imagens | A fazer |
@@ -180,16 +181,19 @@ Gestão (etapa 2):
 - **Lista de compras**: o lojista escolhe ver os produtos abaixo do mínimo ou todos, marca o que vai comprar e ajusta a quantidade; a lista pode ser impressa ou baixada, e o produto sai dela sozinho quando recebe entrada.
 
 Caixa (etapa 3):
-- **Tela do cliente**: leitura do código de barras, carrinho, fechamento da venda e baixa de estoque.
+- **Tela do cliente**: leitura do código de barras, carrinho, escolha da forma de pagamento.
+- **Pagamento pela carteira do app**: o cliente abre "Pagar na loja" no app (PWA e nativo) e mostra o QR; o caixa lê no mesmo leitor dos produtos (ele também lê QR), mostra "Pagando: Fulano — saldo R$ X" e, confirmado, debita de verdade na nuvem antes de fechar a venda local. Se não houver internet, essa opção some sozinha e só sobra o cartão. Se o débito foi feito mas a venda não fechou localmente (ex.: produto saiu de linha no meio do caminho), o valor é devolvido automaticamente.
+- **Pagamento no cartão**: o operador confirma manualmente que a maquininha aprovou — **ainda não há integração com nenhuma maquininha** (sem Stone/Cielo escolhida, sem gateway).
+- **Identificação do cliente**: só existe quando ele paga pela carteira (é a própria identificação que permite debitar a conta certa). Pagamento no cartão continua anônimo pro sistema, como hoje nas lavagens presenciais.
 - **Vendas**: lista e total do dia, para o lojista.
 
 Falta nessas duas etapas:
 - Leitura de nota em PDF (depende de uma nota real para calibrar).
-- Pagamento de verdade (carteira do app e maquininha) e identificação do cliente no caixa; hoje o pagamento é simulado.
+- Integração de verdade com a maquininha (depende de escolher Stone ou Cielo).
 - Fila de vendas sem internet, sincronização com a nuvem e backup diário.
 - Aviso de estoque mínimo no celular do dono.
-- Estorno ou cancelamento de venda.
-- Teste com leitor de código de barras e com uma nota fiscal reais.
+- Estorno ou cancelamento de venda pela gestão (hoje só existe o estorno automático quando o débito pela carteira funciona mas a venda não fecha).
+- Teste com leitor de código de barras, com uma nota fiscal reais e com o fluxo de pagamento pela carteira num celular de verdade.
 
 ### Etapa 2 — especificação do programa do computador da loja
 

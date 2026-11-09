@@ -120,10 +120,11 @@ export default function LojaHome() {
       <div className="card">
         <div className="lab">Saldo disponível</div>
         <div className="money"><span className="cur">R$</span>{money(me.walletCents).replace("R$ ", "")}</div>
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Link className="btn ghost" href="/app/recarga">Adicionar saldo</Link>
         </div>
       </div>
+      <Link className="btn" href="/app/loja/pagar">Pagar na loja</Link>
 
       <div className="lab">Lojas</div>
       {lojas === null ? (

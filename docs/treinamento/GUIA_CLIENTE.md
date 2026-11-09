@@ -221,6 +221,18 @@ Quem usa só a lavagem não precisa tirar foto. Para refazer, use **"Trocar minh
 
 A loja é filmada o tempo todo, e o sistema confere o que saiu das prateleiras com o que foi pago. Isso está descrito no termo de uso.
 
+> ⚠️ A entrada pela porta (passos 1 e 2) ainda não existe — essa parte é descrição de como vai ficar. Pagar pela carteira (passo 4) **já funciona**, descrito abaixo.
+
+### Pagando na loja com a carteira do app
+
+Na tela da loja, toque em **"Pagar na loja"**. Aparece um **código (QR)** e o seu saldo.
+
+![Tela de pagamento na loja](imagens/cliente/20-pagar.png)
+
+Mostre esse código para quem está no caixa aproximar do leitor. O caixa mostra seu nome e o saldo antes de cobrar — confira se está certo. Confirmado, o valor é descontado da sua carteira na hora, e a compra aparece no seu extrato como "Loja" (seção 10).
+
+O código muda sozinho a cada poucos minutos, por segurança; só precisa deixar a tela aberta até terminar de pagar. Se preferir, também dá para pagar no cartão da maquininha, sem usar o app.
+
 ### Falar com o suporte da loja
 
 Em cada loja da lista há o botão **"Falar com o suporte"**. Sua mensagem vai para o responsável pela loja, e a resposta aparece na mesma tela, em até 24 horas.
@@ -244,4 +256,5 @@ Chegar na máquina (câmera reconhece, ou "Cheguei" manual) -> luz verde -> lava
 Quer só aspirador? -> tela da unidade -> botão "X min de aspirador de pó" -> Comprar -> Começar agora
 Quer ser Lavador/Vendedor/Aluguel? -> Perfil -> "Também é lavador, vendedor ou aluguel?" -> Pedir
 Loja de conveniência (em teste) -> aceitar o termo -> escolher "Loja conveniência" -> tirar a foto -> ver as lojas
+Pagar na loja -> "Pagar na loja" -> mostrar o QR no caixa -> conferir nome e saldo -> caixa confirma
 ```
