@@ -1,5 +1,6 @@
 import { movimentar } from "./estoque";
 import { prisma } from "./prisma";
+import { ligarVendaAVisita } from "./visitas";
 
 /* Caixa de autoatendimento (tela do cliente). O produto é identificado SÓ
  * pelo código de barras. Estas funções rodam sem usuário da gestão: quem
@@ -68,7 +69,9 @@ export async function conferirCarrinho(
 export async function finalizarVenda(
   itens: { produtoId: string; quantidade: number }[],
   forma: FormaPagamento,
-  codigo?: string
+  codigo?: string,
+  /** Visita identificada no totem (rosto ou nome) — ver ligarVendaAVisita. */
+  visitaId?: string | null
 ): Promise<ResultadoVenda> {
   // o mesmo produto pode vir em duas linhas: junta antes de conferir
   const porProduto = new Map<string, number>();
@@ -102,6 +105,7 @@ export async function finalizarVenda(
         produtoId: l.produtoId, tipo: "VENDA", quantidade: -l.quantidade,
         nota: `Venda nº ${venda.id}`, refId: venda.codigo, usuarioId: null,
       });
+    await ligarVendaAVisita(tx, venda.id, visitaId);
     return { ok: true as const, numero: venda.id, totalCents };
   });
 }

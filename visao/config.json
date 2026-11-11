@@ -1,0 +1,37 @@
+{
+  "loja": {
+    "url": "http://127.0.0.1:3100",
+    "tokenArquivo": "../loja/dados/token-local.txt"
+  },
+  "pessoas": {
+    "pesos": "yolo11n.pt",
+    "dispositivo": "auto",
+    "imgsz": 480,
+    "confianca": 0.35,
+    "fpsAlvo": 5
+  },
+  "prateleira": {
+    "detector": "diferenca",
+    "pesosSku": null,
+    "quadrosEstaveis": 5
+  },
+  "porta": {
+    "toleranciaSegundos": 5,
+    "sireneSegundos": 30
+  },
+  "dados": {
+    "pasta": "dados",
+    "diasGuardar": 7
+  },
+  "cameras": [
+    {
+      "nome": "cam1",
+      "fonte": 0,
+      "zonaPorta": [[0.35, 0.7], [0.65, 0.7], [0.65, 1.0], [0.35, 1.0]],
+      "zonas": [
+        { "nome": "A1", "poligono": [[0.05, 0.1], [0.45, 0.1], [0.45, 0.45], [0.05, 0.45]] },
+        { "nome": "A2", "poligono": [[0.55, 0.1], [0.95, 0.1], [0.95, 0.45], [0.55, 0.45]], "areaItem": 0.05 }
+      ]
+    }
+  ]
+}

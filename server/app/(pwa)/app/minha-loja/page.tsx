@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api, getToken, type LojaDoDono } from "../client";
+import { AbrirPorta, AvisosLoja, IndicadoresLoja } from "./PainelDono";
 
 function dataHora(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -93,6 +94,10 @@ function PainelLoja({ loja, onMudou }: { loja: LojaDoDono; onMudou: () => void }
         <p className="sub">Capacidade: {loja.capacidade} pessoas por vez.</p>
       </div>
 
+      <AvisosLoja loja={loja} onMudou={onMudou} />
+      <AbrirPorta loja={loja} />
+      <IndicadoresLoja loja={loja} />
+
       <div className="card">
         <div className="lab">Mensagens de clientes{semResposta > 0 ? ` · ${semResposta} sem resposta` : ""}</div>
         {loja.mensagens.length === 0 ? (
@@ -140,7 +145,8 @@ function PainelLoja({ loja, onMudou }: { loja: LojaDoDono; onMudou: () => void }
 /**
  * Área do dono de loja — só mostra as lojas em que a pessoa é o dono (o
  * admin faz esse vínculo em /admin/lojas, depois de aprovar o pedido de
- * Dono de loja). Aqui ele responde o suporte e bloqueia/desbloqueia clientes.
+ * Dono de loja). Aqui ele vê os avisos e os indicadores da loja, abre a porta à distância,
+ * responde o suporte e bloqueia/desbloqueia clientes.
  */
 export default function MinhaLoja() {
   const router = useRouter();

@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
     include: {
       bloqueios: { where: { removidoEm: null }, orderBy: { criadoEm: "desc" }, include: { user: CLIENTE } },
       mensagens: { orderBy: { criadaEm: "desc" }, take: 50, include: { user: CLIENTE } },
+      _count: { select: { alertas: { where: { lidoEm: null } } } },
     },
   });
 
@@ -27,6 +28,7 @@ export async function GET(req: NextRequest) {
       return {
         id: l.id, name: l.name, address: l.address, city: l.city, state: l.state,
         active: l.active, capacidade: l.capacidade,
+        alertasNaoLidos: l._count.alertas, temComputador: !!l.deviceKey,
         bloqueios: l.bloqueios.map((b) => ({
           id: b.id, motivo: b.motivo, criadoEm: b.criadoEm,
           cliente: { nome: b.user.name, codigo: b.user.codigoCliente },

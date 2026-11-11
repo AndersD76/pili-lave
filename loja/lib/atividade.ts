@@ -17,6 +17,11 @@ export const ROTULO_ACAO: Record<string, string> = {
   USUARIO_CRIADO: "Cadastrou usuário",
   USUARIO_ALTERADO: "Alterou usuário",
   VENDA_CANCELADA: "Cancelou venda",
+  REPOSICAO_INICIADA: "Iniciou reposição",
+  REPOSICAO_ENCERRADA: "Encerrou reposição",
+  DIVERGENCIA_REVISADA: "Revisou divergência",
+  PORTA_ABERTA: "Abriu a porta",
+  SAIDA_MANUAL: "Registrou saída de visita",
 };
 
 /**

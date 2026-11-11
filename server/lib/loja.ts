@@ -19,3 +19,12 @@ export function bloqueioAtivo(lojaId: string, userId: string) {
 export function lojaDoDono(lojaId: string, userId: string) {
   return prisma.loja.findFirst({ where: { id: lojaId, donoId: userId } });
 }
+
+/** Tipos de aviso que o computador da loja manda pro dono (LojaAlerta.tipo). */
+export const TIPOS_ALERTA = ["ESTOQUE_MINIMO", "DIVERGENCIA", "SAIDA_SEM_PAGAR", "INVASAO"] as const;
+export type TipoAlerta = (typeof TIPOS_ALERTA)[number];
+
+/** Por quanto tempo um pedido de abertura remota vale. Curto de propósito:
+ *  se a loja estiver sem internet, o pedido morre — a porta nunca abre
+ *  sozinha minutos depois, quando a conexão voltar. */
+export const ABERTURA_VALIDADE_MS = 2 * 60 * 1000;

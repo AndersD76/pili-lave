@@ -10,6 +10,8 @@ const LINKS: { href: string; label: string; soLojista?: boolean; perm?: Permissa
   { href: "/gestao/compras", label: "Compras", perm: "COMPRAS" },
   { href: "/gestao/entradas", label: "Entradas", perm: "ENTRADA" },
   { href: "/gestao/relatorios", label: "Relatórios", perm: "RELATORIOS" },
+  { href: "/gestao/visitas", label: "Visitas" },
+  { href: "/gestao/divergencias", label: "Divergências", soLojista: true },
   { href: "/gestao/vendas", label: "Vendas", soLojista: true },
   { href: "/gestao/usuarios", label: "Usuários", soLojista: true },
   { href: "/gestao/atividades", label: "Atividades", soLojista: true },

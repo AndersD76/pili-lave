@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireAdminPage } from "@/lib/admin";
 import { AdminNav } from "../nav";
@@ -102,7 +103,10 @@ export default async function AdminLojas() {
               {l.deviceKey ? "Computador da loja vinculado" : "Sem computador vinculado"} ·{" "}
               {l._count.bloqueios} cliente(s) bloqueado(s) · {l._count.mensagens} mensagem(ns) de suporte sem resposta
             </p>
-            <button className="btn ghost" type="submit" style={{ height: 36, alignSelf: "flex-start" }}>Salvar</button>
+            <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+              <button className="btn ghost" type="submit" style={{ height: 36 }}>Salvar</button>
+              <Link href={`/admin/lojas/${l.id}`} style={{ fontSize: 14 }}>Ver indicadores e avisos</Link>
+            </div>
           </form>
         ))}
 

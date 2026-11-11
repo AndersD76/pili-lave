@@ -7,3 +7,5 @@ dados/*.db
 dados/*.db-journal
 dados/backups/
 .env
+dados/token-local.txt
+dados/evidencias/

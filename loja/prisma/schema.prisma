@@ -298,3 +298,134 @@ model CodigoFornecedor {
 
   @@id([fornecedorId, codigo])
 }
+
+/// Cópia mínima dos clientes que podem entrar nesta loja (vem da nuvem,
+/// ver lib/sincronizacaoLoja.ts). A FOTO do rosto nunca fica aqui: é
+/// repassada direto ao serviço de reconhecimento (rosto/), que guarda só a
+/// assinatura. `bloqueado` = bloqueio do dono, decidido na nuvem.
+model ClienteLocal {
+  nuvemUserId   String   @id
+  codigoCliente String   @unique
+  nome          String
+  bloqueado     Boolean  @default(false)
+  /// true = o serviço de reconhecimento confirmou que cadastrou o rosto.
+  temRosto      Boolean  @default(false)
+  atualizadoEm  DateTime @default(now())
+}
+
+/// Uma pessoa dentro da loja, da entrada autorizada até a saída. Quem
+/// autoriza é sempre lib/visitas.ts, seja qual for o equipamento da porta.
+model Visita {
+  id            String    @id @default(cuid())
+  /// null só em visita lançada sem cadastro (origem MANUAL/REMOTA).
+  nuvemUserId   String?
+  codigoCliente String?
+  /// Nome na hora da entrada — é o que o totem mostra em "Você é: …?".
+  nome          String
+  criancas      Int       @default(0)
+  entrouEm      DateTime  @default(now())
+  /// null = ainda está dentro.
+  saiuEm        DateTime?
+  /// CATRACA | BLE | MANUAL | REMOTA
+  origem        String
+  /// Venda.id da compra desta visita (a última, se houver mais de uma).
+  vendaId       Int?
+  saiuSemPagar  Boolean   @default(false)
+
+  @@index([saiuEm])
+  @@index([entrouEm])
+}
+
+/// O que as câmeras (visao/) mandam: algo mudou numa zona de prateleira,
+/// alguém passou pela porta, ou uma câmera saiu do ar/desalinhou.
+model EventoVisao {
+  id            String   @id @default(cuid())
+  /// PRATELEIRA | PORTA | CAMERA
+  tipo          String
+  zona          String?
+  /// PRATELEIRA: unidades que mudaram na zona (negativo = saiu da
+  /// prateleira, positivo = voltou/foi reposto). PORTA: +1 entrou, -1 saiu.
+  delta         Int      @default(0)
+  /// JSON: ids das visitas que estavam na zona, como a câmera mandou.
+  visitasNaZona String   @default("[]")
+  /// Duas ou mais visitas na zona: não dá pra dizer de quem foi.
+  ambiguo       Boolean  @default(false)
+  /// Visita a que o evento foi atribuído (uma só na zona).
+  visitaId      String?
+  /// Aconteceu durante uma reposição: é do repositor, não gera divergência.
+  reposicaoId   String?
+  /// JSON: caminhos locais das imagens do momento.
+  imagens       String   @default("[]")
+  detalhe       String?
+  ocorridoEm    DateTime
+  criadoEm      DateTime @default(now())
+  divergenciaId String?
+
+  divergencia Divergencia? @relation(fields: [divergenciaId], references: [id])
+
+  @@index([ocorridoEm])
+  @@index([tipo, ocorridoEm])
+}
+
+/// Fechamento de um período (de loja vazia até loja vazia) em que o que
+/// saiu das prateleiras não bateu com o que foi pago. Vai pra revisão do
+/// dono — nunca gera cobrança sozinha.
+model Divergencia {
+  id             String    @id @default(cuid())
+  inicio         DateTime
+  fim            DateTime
+  /// Unidades que saíram das prateleiras no período (fora reposição).
+  saiuPrateleira Int
+  /// Unidades pagas no caixa no período (vendas não canceladas).
+  pago           Int
+  /// JSON: [{visitaId, nome}] de quem esteve na loja no período.
+  visitas        String    @default("[]")
+  /// ABERTA | REVISADA
+  situacao       String    @default("ABERTA")
+  decisao        String?
+  revisadaPor    String?
+  revisadaEm     DateTime?
+  criadaEm       DateTime  @default(now())
+
+  eventos EventoVisao[]
+
+  @@index([situacao, criadaEm])
+}
+
+/// Modo reposição: enquanto está aberta (fim = null) a loja não deixa
+/// cliente entrar e o que mudar nas prateleiras é de quem está repondo.
+model Reposicao {
+  id          String    @id @default(cuid())
+  usuarioId   String
+  usuarioNome String
+  inicio      DateTime  @default(now())
+  fim         DateTime?
+
+  @@index([fim])
+}
+
+/// Fila de avisos pro dono (vão pro app pela nuvem). Fica aqui até a nuvem
+/// confirmar — sem internet, acumula e vai depois (lib/alertas.ts).
+model AlertaNuvem {
+  /// Identificador único: reenviar o mesmo aviso não duplica na nuvem.
+  codigo     String    @id @default(cuid())
+  /// ESTOQUE_MINIMO | DIVERGENCIA | SAIDA_SEM_PAGAR | INVASAO
+  tipo       String
+  titulo     String
+  detalhe    String
+  /// JSON: caminhos locais das imagens (viram base64 só na hora de enviar).
+  imagens    String    @default("[]")
+  ocorridoEm DateTime  @default(now())
+  enviadoEm  DateTime?
+
+  @@index([enviadoEm])
+}
+
+/// Aberturas remotas da porta pedidas pelo lojista no app e já executadas
+/// aqui — existe pra mesma ordem nunca abrir a porta duas vezes.
+model AberturaRemota {
+  id        String   @id
+  pedidaPor String
+  abertaEm  DateTime @default(now())
+  ok        Boolean  @default(true)
+}

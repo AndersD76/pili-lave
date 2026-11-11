@@ -170,6 +170,31 @@ export type Loja = {
 /** Loja vista pelo dono (GET /api/dono/lojas). */
 export type LojaDoDono = {
   id: string; name: string; address: string; city: string; state: string; active: boolean; capacidade: number;
+  alertasNaoLidos: number; temComputador: boolean;
   bloqueios: { id: string; motivo: string; criadoEm: string; cliente: { nome: string | null; codigo: number } }[];
   mensagens: (LojaMensagem & { cliente: { nome: string | null; codigo: number; bloqueado: boolean } })[];
+};
+
+/** Aviso da loja pro dono (GET /api/dono/lojas/{id}/alertas). */
+export type TipoAlertaLoja = "ESTOQUE_MINIMO" | "DIVERGENCIA" | "SAIDA_SEM_PAGAR" | "INVASAO";
+export type LojaAlerta = {
+  id: string; tipo: TipoAlertaLoja; titulo: string; detalhe: string; ocorridoEm: string; lidoEm: string | null;
+  imagens: number; codigoCliente: number | null; clienteBloqueado: boolean;
+};
+/** Pedido de abertura remota da porta (GET/POST /api/dono/lojas/{id}/abrir-porta). */
+export type LojaAbertura = {
+  id: string; motivo: string; pedidaEm: string; feitaEm: string | null;
+  situacao: "ABERTA" | "AGUARDANDO" | "EXPIRADA";
+};
+type GrupoVendas = { vendas: number; totalCents: number };
+/** Indicadores da loja (GET /api/dono/lojas/{id}/indicadores?de=&ate=). */
+export type LojaIndicadores = {
+  periodo: { de: string; ate: string };
+  faturamentoCents: number; vendas: number; ticketMedioCents: number;
+  porForma: ({ forma: string } & GrupoVendas)[];
+  maisVendidos: { nome: string; ean: string | null; quantidade: number; totalCents: number }[];
+  porHora: ({ hora: number } & GrupoVendas)[];
+  porDiaSemana: ({ dia: string } & GrupoVendas)[];
+  porDia: ({ dia: string } & GrupoVendas)[];
+  faixaEtaria: ({ faixa: string } & GrupoVendas)[];
 };

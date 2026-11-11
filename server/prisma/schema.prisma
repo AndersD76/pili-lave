@@ -188,6 +188,7 @@ model User {
   lojas          Loja[]         @relation("LojaDono")
   lojaBloqueios  LojaBloqueio[]
   lojaMensagens  LojaMensagem[]
+  lojaAberturas  LojaAberturaRemota[]
 }
 
 /// Loja de conveniência autoservice (container). O estoque e o catálogo
@@ -220,6 +221,8 @@ model Loja {
   bloqueios LojaBloqueio[]
   mensagens LojaMensagem[]
   vendas    VendaLoja[]
+  alertas   LojaAlerta[]
+  aberturas LojaAberturaRemota[]
 
   @@index([donoId])
   @@index([stationId])
@@ -309,6 +312,79 @@ model FotoRosto {
   criadaEm        DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([criadaEm])
+}
+
+/// Quem TIROU a foto do rosto (revogou a autorização de biometria). Fica só
+/// o suficiente pro computador de cada loja apagar a cópia local na próxima
+/// sincronização (GET /api/loja/rostos devolve `removido: true`). Mandar
+/// foto de novo apaga esta linha.
+model RostoRemovido {
+  userId        String   @id
+  codigoCliente Int
+  removidoEm    DateTime @default(now())
+
+  @@index([removidoEm])
+}
+
+/// Aviso que o computador da loja manda pro dono: estoque no mínimo,
+/// divergência de prateleira, saída sem pagar, invasão. `codigo` é gerado
+/// pela loja e é único — reenviar depois de queda de rede não duplica.
+model LojaAlerta {
+  id         String    @id @default(cuid())
+  lojaId     String
+  codigo     String    @unique
+  /// ESTOQUE_MINIMO | DIVERGENCIA | SAIDA_SEM_PAGAR | INVASAO
+  tipo       String
+  titulo     String
+  detalhe    String    @default("")
+  /// Cliente envolvido, quando a loja souber (visita única na zona, saída
+  /// sem pagar) — é o que permite bloquear direto a partir do aviso.
+  codigoCliente Int?
+  ocorridoEm DateTime
+  recebidoEm DateTime  @default(now())
+  /// null = o dono ainda não viu. INVASAO fica em destaque até marcar.
+  lidoEm     DateTime?
+
+  loja    Loja               @relation(fields: [lojaId], references: [id])
+  imagens LojaAlertaImagem[]
+
+  @@index([lojaId, ocorridoEm])
+  @@index([lojaId, lidoEm])
+}
+
+/// Imagem do momento do aviso (JPEG pequeno). Fora de LojaAlerta pra a
+/// lista de avisos não carregar os bytes.
+model LojaAlertaImagem {
+  id       String @id @default(cuid())
+  alertaId String
+  ordem    Int
+  jpeg     Bytes
+
+  alerta LojaAlerta @relation(fields: [alertaId], references: [id], onDelete: Cascade)
+
+  @@index([alertaId, ordem])
+}
+
+/// Pedido do DONO pra abrir a porta da loja à distância (entregador sem
+/// cadastro, cliente que precisa voltar). O computador da loja busca em
+/// GET /api/loja/comandos e confirma quando abrir. Vale por pouco tempo
+/// (ver lib/loja.ts): pedido velho nunca abre a porta depois.
+model LojaAberturaRemota {
+  id          String    @id @default(cuid())
+  lojaId      String
+  pedidaPorId String
+  motivo      String    @default("")
+  pedidaEm    DateTime  @default(now())
+  /// Quando o computador da loja confirmou que abriu. null = pendente (ou
+  /// expirou sem a loja buscar).
+  feitaEm     DateTime?
+
+  loja      Loja @relation(fields: [lojaId], references: [id])
+  pedidaPor User @relation(fields: [pedidaPorId], references: [id])
+
+  @@index([lojaId, pedidaEm])
 }
 
 enum StatusSolicitacao {

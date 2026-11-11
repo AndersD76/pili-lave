@@ -8,7 +8,11 @@ export type ChaveConfig =
   | "lojaCidade"
   | "lojaRua"
   | "lojaCapacidade"
-  | "segredoSessao"; // assina o cookie de sessão da gestão
+  | "segredoSessao" // assina o cookie de sessão da gestão
+  | "tokenLocal" // senha das rotas locais usadas pela porta e pelas câmeras (lib/tokenLocal.ts)
+  | "lojaAberta" // "0" = o admin fechou a loja na nuvem (vem em /api/loja/comandos)
+  | "ultimoFechamento" // fim do último período conferido (lib/visao.ts)
+  | "rostosDesde"; // até onde a cópia dos clientes já foi trazida da nuvem
 
 export async function lerConfig(chave: ChaveConfig): Promise<string | null> {
   return (await prisma.config.findUnique({ where: { chave } }))?.valor ?? null;
@@ -30,6 +34,9 @@ export const NUVEM_URL = process.env.NUVEM_URL ?? "http://localhost:3000";
  *  SENHA_FABRICA no loja/.env — vem na instalação, como a que vai gravada
  *  no firmware das máquinas; ninguém digita na tela. */
 export const SENHA_FABRICA = process.env.SENHA_FABRICA ?? "";
+
+/** Serviço de reconhecimento facial (pasta rosto/), no mesmo computador. */
+export const ROSTO_URL = process.env.ROSTO_URL ?? "http://127.0.0.1:3200";
 
 export type Loja = { id: string; nome: string; cidade: string; rua: string; capacidade: number };
 

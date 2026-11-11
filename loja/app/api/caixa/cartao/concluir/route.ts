@@ -9,6 +9,7 @@ const Body = z.object({
     .array(z.object({ produtoId: z.string().min(1), quantidade: z.number().int().min(1).max(MAX_POR_ITEM) }))
     .min(1)
     .max(MAX_ITENS),
+  visitaId: z.string().min(1).nullish(),
 });
 
 /**
@@ -30,6 +31,6 @@ export async function POST(req: NextRequest) {
       { status: 409 }
     );
 
-  const r = await finalizarVenda(parsed.data.itens, "MAQUININHA", operacaoId);
+  const r = await finalizarVenda(parsed.data.itens, "MAQUININHA", operacaoId, parsed.data.visitaId);
   return NextResponse.json(r, { status: r.ok ? 201 : 409 });
 }

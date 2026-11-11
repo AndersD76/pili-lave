@@ -163,10 +163,14 @@ O item 1 depende de o computador da loja ter Windows Pro e TPM, o que deve entra
 | 1 | **Nuvem e app**: termo de uso, data de nascimento, código do cliente, foto do rosto, tela de escolha, cadastro de lojas no admin, dono de loja, bloqueio e suporte | Construída no ambiente local; falta testar no celular |
 | 2 | **Gestão local**: produtos, estoque, entrada de mercadoria, alerta de compra | Construída, exceto a leitura de nota em PDF: primeiro uso, usuários com permissões, registro de atividades, painel, produtos e estoque (com edição do cadastro já lançado), vínculo de fornecedor por produto, pedido mínimo por fornecedor com selo de alerta, lista de compras por fornecedor com exportação pra WhatsApp/e-mail, percentual de venda com reajuste automático, entrada por nota fiscal em XML e relatórios por período com planilha. O PDF fica para quando houver uma nota real para calibrar; o aviso de estoque mínimo no celular depende da sincronização |
 | 3 | **Totem**: carrinho por código de barras, carteira e maquininha, fila offline e sincronização | Quase pronta: carrinho, carteira do app, cartão (confirmação manual, sem gateway ainda), cancelamento de venda, sincronização e backup diário prontos; falta só o driver de verdade da maquininha (depende de escolher Stone/Cielo) |
-| 4 | **Entrada**: porta por BLE, credencial offline, capacidade, mensagem de lotação (firmware da trava: Giovani) | A fazer |
-| 5 | **Câmeras**: zonas de prateleira, rastreamento, divergência com imagens para o dono | A fazer |
-| 6 | **Reconhecimento facial no totem** e cópia local do banco de imagens | A fazer |
-| 7 | **Indicadores** no app e no admin; nota fiscal quando o contador definir | A fazer |
+| 4 | **Entrada**: catraca facial ou porta por BLE, capacidade, mensagem de lotação (firmware da trava: Giovani) | Programa construído em 10/11 (visitas, lotação, bloqueio, reposição, saída sem pagar, abertura remota, adaptador provisório da catraca), sem equipamento: falta decidir catraca × BLE, o hardware da porta e, no caso do BLE, a credencial offline e a tela no app |
+| 5 | **Câmeras**: zonas de prateleira, rastreamento, divergência com imagens para o dono | Programa construído em 10/11 (`visao/`), testado só com vídeo sintético: falta instalar e calibrar as câmeras, um PC com placa de vídeo, o modelo de contagem de produtos (SKU-110K) e o ESP32 da sirene/barreira |
+| 6 | **Reconhecimento facial no totem** e cópia local do banco de imagens | Programa construído em 10/11 (`rosto/` + passo de rosto no caixa), guardando só a assinatura cifrada: falta calibrar com rostos reais, a câmera do totem e o BitLocker no PC da loja |
+| 7 | **Indicadores** no app e no admin; nota fiscal quando o contador definir | Indicadores e avisos ao dono construídos em 10/11, sem teste no celular; nota fiscal aguardando o contador |
+
+Detalhe técnico do que foi construído em 10/11 e do que nunca foi testado: `GUIA_TECNICO_COMPLETO.md`, seção 6.12. As quatro partes foram testadas cada uma contra vizinhos simulados; **o teste delas conversando de verdade ainda não foi feito**.
+
+Achados na documentação pública da Control iD (a confirmar com o fabricante): o template facial é proprietário (Innovatrics), então só a imagem serve ao nosso motor; a resposta de autorização só leva um `user_id` inteiro; após 3 falhas de contato com o servidor a catraca entra em contingência e decide pela base local dela (a de ~3 mil rostos).
 
 ### Etapa 1 — o que já existe (branch `loja-conveniencia`, só banco local)
 

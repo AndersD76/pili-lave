@@ -2,6 +2,7 @@ import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import { Alert, ScrollView, Text, View } from "react-native";
 import { api, type LojaDoDono } from "@/lib/api";
+import { AbrirPorta, AvisosLoja, IndicadoresLoja } from "@/painelDono";
 import { Btn, Card, ErrText, Input, Label, Screen, Sub } from "@/ui";
 import { C, F } from "@/theme";
 
@@ -102,6 +103,10 @@ function PainelLoja({ loja, onMudou }: { loja: LojaDoDono; onMudou: () => void }
         <Sub>Capacidade: {loja.capacidade} pessoas por vez.</Sub>
       </Card>
 
+      <AvisosLoja loja={loja} onMudou={onMudou} />
+      <AbrirPorta loja={loja} />
+      <IndicadoresLoja loja={loja} />
+
       <Card>
         <Label>Mensagens de clientes{semResposta > 0 ? ` · ${semResposta} sem resposta` : ""}</Label>
         {loja.mensagens.length === 0 ? (
@@ -145,7 +150,8 @@ function PainelLoja({ loja, onMudou }: { loja: LojaDoDono; onMudou: () => void }
 /**
  * Área do dono de loja — só mostra as lojas em que a pessoa é o dono (o
  * admin faz esse vínculo em /admin/lojas, depois de aprovar o pedido de
- * Dono de loja). Aqui ele responde o suporte e bloqueia/desbloqueia clientes.
+ * Dono de loja). Aqui ele vê os avisos e os indicadores da loja, abre a porta à distância,
+ * responde o suporte e bloqueia/desbloqueia clientes.
  */
 export default function MinhaLoja() {
   const [lojas, setLojas] = useState<LojaDoDono[] | null>(null);

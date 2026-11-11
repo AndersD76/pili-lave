@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { criarAlerta } from "./alertas";
 import { registrarAtividade } from "./atividade";
 import { reais } from "./dinheiro";
 import type { UsuarioGestao } from "./permissoes";
@@ -41,6 +42,13 @@ export async function movimentar(
       usuarioId: args.usuarioId,
     },
   });
+  // cruzou o estoque mínimo agora (antes estava acima): avisa o dono
+  const antes = produto.estoqueAtual - args.quantidade;
+  if (produto.ativo && args.quantidade < 0 && antes > produto.estoqueMinimo && produto.estoqueAtual <= produto.estoqueMinimo)
+    await criarAlerta(tx, {
+      tipo: "ESTOQUE_MINIMO", titulo: "Estoque mínimo atingido",
+      detalhe: `${produto.nome}: restam ${produto.estoqueAtual} (mínimo ${produto.estoqueMinimo}).`,
+    });
   // chegou mercadoria: o produto sai da lista de compras
   if (args.tipo === "ENTRADA") await tx.itemCompra.deleteMany({ where: { produtoId: args.produtoId } });
   return produto.estoqueAtual;

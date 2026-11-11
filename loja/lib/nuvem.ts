@@ -168,3 +168,61 @@ export async function nuvemAlcancavel(nuvemUrl: string): Promise<boolean> {
     return false;
   }
 }
+
+/* ── Clientes, comandos e avisos (entrada, câmeras e reconhecimento) ────
+ * Tudo identificado pelo deviceKey, como a sincronização de vendas. */
+
+async function buscarComDeviceKey(nuvemUrl: string, deviceKey: string, caminho: string, timeoutMs: number) {
+  try {
+    const res = await fetch(nuvemUrl.replace(/\/$/, "") + caminho, {
+      headers: { "x-device-key": deviceKey }, cache: "no-store", signal: AbortSignal.timeout(timeoutMs),
+    });
+    return { ok: res.ok, json: await res.json().catch(() => null) };
+  } catch {
+    return { ok: false as const, json: null };
+  }
+}
+
+export type ClienteNuvem = {
+  userId: string; codigoCliente: string; nome: string;
+  /** Foto do rosto (JPEG em base64) — só quando mudou; null = sem foto nova. */
+  fotoBase64: string | null;
+  /** true = cancelou a conta ou a autorização: apagar daqui. */
+  removido: boolean;
+  atualizadoEm: string;
+};
+
+/** Clientes desta loja que mudaram desde `desde` (ISO) — null = todos.
+ *  Devolve null quando a nuvem não respondeu. */
+export async function buscarRostosNuvem(nuvemUrl: string, deviceKey: string, desde: string | null): Promise<ClienteNuvem[] | null> {
+  const r = await buscarComDeviceKey(nuvemUrl, deviceKey, `/api/loja/rostos${desde ? `?desde=${encodeURIComponent(desde)}` : ""}`, 30000);
+  return r.ok && Array.isArray(r.json?.clientes) ? (r.json.clientes as ClienteNuvem[]) : null;
+}
+
+export type ComandosNuvem = {
+  /** Códigos de cliente bloqueados pelo dono (a lista inteira, a cada vez). */
+  bloqueados: string[];
+  aberturasRemotas: { id: string; pedidaPor: string }[];
+  /** Opcional: false = o admin fechou a loja. */
+  aberta?: boolean;
+};
+
+export async function buscarComandosNuvem(nuvemUrl: string, deviceKey: string): Promise<ComandosNuvem | null> {
+  const r = await buscarComDeviceKey(nuvemUrl, deviceKey, "/api/loja/comandos", 10000);
+  if (!r.ok || !r.json || !Array.isArray(r.json.bloqueados)) return null;
+  return {
+    bloqueados: r.json.bloqueados.map(String),
+    aberturasRemotas: Array.isArray(r.json.aberturasRemotas) ? r.json.aberturasRemotas : [],
+    aberta: typeof r.json.aberta === "boolean" ? r.json.aberta : undefined,
+  };
+}
+
+export type AlertaParaNuvem = {
+  codigo: string; tipo: string; titulo: string; detalhe: string; imagens: string[]; ocorridoEm: string;
+};
+
+/** true = a nuvem recebeu (ou já tinha recebido) este aviso. */
+export async function enviarAlertaNuvem(nuvemUrl: string, deviceKey: string, alerta: AlertaParaNuvem): Promise<boolean> {
+  const r = await chamarComDeviceKey(nuvemUrl, deviceKey, "/api/loja/alertas", alerta, 20000);
+  return r.ok;
+}

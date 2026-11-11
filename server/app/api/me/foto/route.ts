@@ -49,11 +49,15 @@ export async function POST(req: NextRequest) {
   const conferida = conferencia.situacao === "APROVADA";
 
   const agora = new Date();
-  await prisma.fotoRosto.upsert({
-    where: { userId: auth.user.id },
-    create: { userId: auth.user.id, jpeg, bytes: jpeg.length, consentimentoEm: agora, conferida },
-    update: { jpeg, bytes: jpeg.length, consentimentoEm: agora, criadaEm: agora, conferida },
-  });
+  await prisma.$transaction([
+    prisma.fotoRosto.upsert({
+      where: { userId: auth.user.id },
+      create: { userId: auth.user.id, jpeg, bytes: jpeg.length, consentimentoEm: agora, conferida },
+      update: { jpeg, bytes: jpeg.length, consentimentoEm: agora, criadaEm: agora, conferida },
+    }),
+    // voltou a autorizar: deixa de constar como removido pras lojas
+    prisma.rostoRemovido.deleteMany({ where: { userId: auth.user.id } }),
+  ]);
   await prisma.event.create({
     data: {
       type: "foto_rosto_enviada",
@@ -63,5 +67,27 @@ export async function POST(req: NextRequest) {
       },
     },
   });
+  return NextResponse.json({ ok: true });
+}
+
+/**
+ * Tira a foto do rosto (revoga a autorização de biometria). A foto some da
+ * nuvem na hora e fica o registro da remoção, pra cada loja apagar a cópia
+ * local na sincronização seguinte (GET /api/loja/rostos).
+ */
+export async function DELETE(req: NextRequest) {
+  const auth = await requireUser(req);
+  if ("error" in auth) return auth.error;
+
+  const apagadas = await prisma.fotoRosto.deleteMany({ where: { userId: auth.user.id } });
+  if (apagadas.count > 0) {
+    const agora = new Date();
+    await prisma.rostoRemovido.upsert({
+      where: { userId: auth.user.id },
+      create: { userId: auth.user.id, codigoCliente: auth.user.codigoCliente, removidoEm: agora },
+      update: { removidoEm: agora },
+    });
+    await prisma.event.create({ data: { type: "foto_rosto_removida", payload: { userId: auth.user.id } } });
+  }
   return NextResponse.json({ ok: true });
 }

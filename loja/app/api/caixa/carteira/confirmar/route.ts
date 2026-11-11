@@ -11,6 +11,7 @@ const Body = z.object({
     .array(z.object({ produtoId: z.string().min(1), quantidade: z.number().int().min(1).max(MAX_POR_ITEM) }))
     .min(1)
     .max(MAX_ITENS),
+  visitaId: z.string().min(1).nullish(),
 });
 
 const MENSAGEM: Record<string, string> = {
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
       { status: debito.situacao === "SALDO_INSUFICIENTE" ? 402 : 409 }
     );
 
-  const r = await finalizarVenda(parsed.data.itens, "CARTEIRA", vendaCodigo);
+  const r = await finalizarVenda(parsed.data.itens, "CARTEIRA", vendaCodigo, parsed.data.visitaId);
   if (!r.ok) {
     // o débito já foi feito na nuvem — devolve, pro cliente não pagar por nada
     const estornado = await estornarCarteira(NUVEM_URL, deviceKey, vendaCodigo);

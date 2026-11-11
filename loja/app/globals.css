@@ -116,6 +116,9 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .btn.caixa-btn { height: 64px; padding: 0 36px; font-size: 20px; }
 .btn.ghost.caixa-btn { height: 64px; padding: 0 28px; font-size: 17px; }
 .btn:disabled { opacity: 0.5; cursor: default; }
+.caixa-camera { width: 320px; max-width: 80vw; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 16px; border: 1px solid var(--linha); background: var(--verniz2); transform: scaleX(-1); }
+.evidencias { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.evidencias img { width: 180px; height: 120px; object-fit: cover; border-radius: 10px; border: 1px solid var(--linha); }
 
 /* --- impressão (lista de compras): só o conteúdo, preto no branco --- */
 @media print {

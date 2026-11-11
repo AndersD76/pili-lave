@@ -401,12 +401,12 @@ Para liberar de novo, toque em **Desbloquear** ao lado do nome. O histórico do 
 |---|---|
 | Entrada por nota fiscal a partir do PDF (hoje só o XML) | Depois, com uma nota real para calibrar |
 | Integração de verdade com a maquininha (hoje é confirmação manual do operador) | Depende de escolher Stone ou Cielo |
-| Abertura da porta pelo celular e controle de capacidade | A fazer |
-| Modo reposição (loja bloqueada para clientes enquanto um funcionário repõe) | A fazer, junto com a porta |
-| Abrir a porta à distância pelo app (só o lojista) | A fazer, junto com a porta |
-| Câmeras e aviso de divergência com imagens | A fazer |
-| Reconhecimento facial no caixa | A fazer |
-| Indicadores no app (faturamento, mais vendidos, faixa etária) e aviso de estoque mínimo no celular | A fazer |
+| Entrada com controle de capacidade (catraca facial ou porta pelo celular) | Programa pronto (telas **Visitas** e botão de reposição na gestão); falta o equipamento da porta |
+| Modo reposição (loja bloqueada para clientes enquanto um funcionário repõe) | Programa pronto (permissão "Fazer reposição", na tela **Visitas**); só bloqueia de verdade com o equipamento da porta |
+| Abrir a porta à distância pelo app (só o lojista) | Botão pronto em "Minha loja"; falta a trava física |
+| Câmeras e aviso de divergência com imagens | Programa pronto (tela **Divergências**, só o lojista); falta instalar e calibrar as câmeras |
+| Reconhecimento facial no caixa | Programa pronto; falta a câmera do caixa e calibrar com rostos reais |
+| Indicadores no app (faturamento, mais vendidos, faixa etária) e avisos no celular (estoque mínimo, divergência, saída sem pagar, invasão) | Construídos em "Minha loja"; ainda sem teste no celular |
 | Nota fiscal das vendas | Depende de definição com o contador |
 
 ---

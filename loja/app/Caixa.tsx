@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { BuscaCaixa, ResultadoVenda, ProdutoCaixa } from "@/lib/caixa";
 import type { ResultadoCobranca } from "@/lib/maquininha";
 import type { IdentificarCarteira } from "@/lib/nuvem";
+import type { IdentificacaoCaixa } from "@/lib/rosto";
 
 /** A cada quanto tempo o caixa pergunta pra maquininha como está indo a
  *  cobrança (driver manual: só muda quando o operador clica). */
@@ -16,12 +17,17 @@ const OCIOSO_MS = 3 * 60 * 1000;
 const OBRIGADO_MS = 8000;
 /** Prefixo do QR que o app mostra em "Pagar na loja" (ver server/app/(pwa)/app/loja/pagar). */
 const PREFIXO_QR_CARTEIRA = "PILILOJA:";
+/** Reconhecimento facial: de quanto em quanto tempo manda um quadro, e por
+ *  quanto tempo insiste antes de perguntar o nome. */
+const ROSTO_INTERVALO_MS = 1200;
+const ROSTO_LIMITE_MS = 12000;
 
 type Item = ProdutoCaixa & { quantidade: number };
 type Etapa = "COMPRANDO" | "PAGAMENTO" | "CONCLUIDA";
 /** Sub-passos da etapa PAGAMENTO: escolher a forma, escanear o QR da
  *  carteira, confirmar com o cliente identificado, ou aprovar no cartão. */
-type PassoPagamento = "ESCOLHER" | "ESCANEANDO" | "IDENTIFICADO" | "CARTAO";
+type PassoPagamento = "QUEM" | "ESCOLHER" | "ESCANEANDO" | "IDENTIFICADO" | "CARTAO";
+type Pessoa = { visitaId: string; nome: string };
 
 function reais(cents: number): string {
   return `R$ ${(cents / 100).toFixed(2).replace(".", ",")}`;
@@ -55,6 +61,14 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
     operacaoId: string; nome: string; confirmacaoManual: boolean; situacao: ResultadoCobranca["situacao"];
   } | null>(null);
 
+  /** De quem é a compra (rosto reconhecido ou nome escolhido) — null = não
+   *  identificada. Não cobra nada: só liga a venda à visita. */
+  const [quem, setQuem] = useState<Pessoa | null>(null);
+  /** Lista pra "Você é: …?" — null enquanto ainda tenta o rosto. */
+  const [opcoes, setOpcoes] = useState<Pessoa[] | null>(null);
+  const [semRosto, setSemRosto] = useState(false);
+  const video = useRef<HTMLVideoElement>(null);
+
   const total = itens.reduce((s, i) => s + i.quantidade * i.precoCents, 0);
   const unidades = itens.reduce((s, i) => s + i.quantidade, 0);
 
@@ -64,7 +78,79 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
   const recomecar = useCallback(() => {
     setItens([]); setCodigo(""); setAviso(""); setVenda(null); setEtapa("COMPRANDO");
     setPasso("ESCOLHER"); setCodigoCarteira(""); setCliente(null); setCobranca(null);
+    setQuem(null); setOpcoes(null); setSemRosto(false);
   }, []);
+
+  // passo QUEM: descobre de quem é a compra, só entre quem está dentro da
+  // loja. Ninguém com entrada registrada → segue direto, sem identificar.
+  useEffect(() => {
+    if (!(etapa === "PAGAMENTO" && passo === "QUEM")) return;
+    let ativo = true;
+    let midia: MediaStream | null = null;
+    let relogio: ReturnType<typeof setTimeout> | undefined;
+
+    const perguntar = async (imagemBase64: string | null): Promise<IdentificacaoCaixa> => {
+      const res = await fetch("/api/caixa/rosto", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imagemBase64 }),
+      });
+      return (await res.json()) as IdentificacaoCaixa;
+    };
+    const quadro = (): string | null => {
+      const v = video.current;
+      if (!v || !v.videoWidth) return null;
+      const tela = document.createElement("canvas");
+      tela.width = 480;
+      tela.height = Math.round((480 * v.videoHeight) / v.videoWidth);
+      tela.getContext("2d")?.drawImage(v, 0, 0, tela.width, tela.height);
+      return tela.toDataURL("image/jpeg", 0.85).split(",")[1] ?? null;
+    };
+
+    (async () => {
+      try {
+        const primeira = await perguntar(null);
+        if (!ativo) return;
+        if (primeira.situacao === "NINGUEM") { setPasso("ESCOLHER"); return; }
+        const lista = "visitas" in primeira ? primeira.visitas : [];
+        try {
+          midia = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+        } catch {
+          midia = null; // sem câmera no totem: pergunta o nome
+        }
+        if (!ativo) { midia?.getTracks().forEach((t) => t.stop()); return; }
+        if (!midia || !video.current) { setOpcoes(lista); return; }
+        video.current.srcObject = midia;
+        await video.current.play().catch(() => undefined);
+
+        const limite = Date.now() + ROSTO_LIMITE_MS;
+        const tentar = async () => {
+          if (!ativo) return;
+          let r: IdentificacaoCaixa | null = null;
+          try {
+            const img = quadro();
+            if (img) r = await perguntar(img);
+          } catch {
+            r = null;
+          }
+          if (!ativo) return;
+          if (r?.situacao === "OK") { setQuem({ visitaId: r.visitaId, nome: r.nome }); setPasso("ESCOLHER"); return; }
+          if (r?.situacao === "NINGUEM") { setPasso("ESCOLHER"); return; }
+          if (r?.situacao === "ESCOLHER") { setOpcoes(r.visitas); return; }
+          if (r?.situacao === "SEM_ROSTO") setSemRosto(true);
+          if (Date.now() > limite) { setOpcoes(r && "visitas" in r ? r.visitas : lista); return; }
+          relogio = setTimeout(tentar, ROSTO_INTERVALO_MS);
+        };
+        relogio = setTimeout(tentar, 600);
+      } catch {
+        if (ativo) setPasso("ESCOLHER"); // não deu pra consultar: segue sem identificar
+      }
+    })();
+
+    return () => {
+      ativo = false;
+      clearTimeout(relogio);
+      midia?.getTracks().forEach((t) => t.stop());
+    };
+  }, [etapa, passo]);
 
   // foco de volta no campo sempre que a tela de compra aparece
   useEffect(() => {
@@ -146,7 +232,9 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
     focar();
   }
 
-  const corpoItens = () => ({ itens: itens.map((i) => ({ produtoId: i.id, quantidade: i.quantidade })) });
+  const corpoItens = () => ({
+    itens: itens.map((i) => ({ produtoId: i.id, quantidade: i.quantidade })), visitaId: quem?.visitaId ?? null,
+  });
 
   // entrando no passo CARTAO: pede a cobrança pra maquininha (driver atual
   // ou futuro — a tela não sabe qual é, só segue o contrato)
@@ -306,8 +394,40 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
         <p className="caixa-total">{reais(total)}</p>
         {aviso && <p className="caixa-aviso" style={{ marginTop: 12 }}>{aviso}</p>}
 
+        {passo === "QUEM" && (
+          <>
+            {opcoes === null ? (
+              <>
+                <p className="sub" style={{ margin: "16px 0 8px", fontSize: 18 }}>
+                  {semRosto ? "Fique em frente à tela para reconhecimento facial" : "Olhe para a câmera — identificando…"}
+                </p>
+                <video ref={video} muted playsInline className="caixa-camera" />
+              </>
+            ) : (
+              <>
+                <p className="sub" style={{ margin: "16px 0 8px", fontSize: 18 }}>Você é:</p>
+                {opcoes.map((o) => (
+                  <button
+                    key={o.visitaId} className="btn caixa-btn" style={{ marginTop: 10, minWidth: 320 }}
+                    onClick={() => { mexeu(); setQuem(o); setPasso("ESCOLHER"); }}
+                  >
+                    {o.nome}
+                  </button>
+                ))}
+                <button className="btn ghost caixa-btn" style={{ marginTop: 12 }} onClick={() => { mexeu(); setPasso("ESCOLHER"); }}>
+                  Nenhum destes
+                </button>
+              </>
+            )}
+            <button className="btn ghost caixa-btn" onClick={() => { mexeu(); setEtapa("COMPRANDO"); }} style={{ marginTop: 12 }}>
+              Voltar para a compra
+            </button>
+          </>
+        )}
+
         {passo === "ESCOLHER" && (
           <>
+            {quem && <p style={{ marginTop: 12, fontSize: 20, fontWeight: 600 }}>Compra de {quem.nome}</p>}
             <p className="sub" style={{ margin: "16px 0 8px" }}>Como o cliente vai pagar?</p>
             <button
               className="btn caixa-btn" disabled={ocupado || conectado === null || !conectado}
@@ -460,7 +580,7 @@ export function Caixa({ lojaNome }: { lojaNome: string }) {
               <div className="sub">{unidades} {unidades === 1 ? "item" : "itens"}</div>
               <div className="caixa-total" style={{ fontSize: 36 }}>{reais(total)}</div>
             </div>
-            <button className="btn caixa-btn" onClick={() => { mexeu(); setAviso(""); setPasso("ESCOLHER"); setEtapa("PAGAMENTO"); }}>Pagar</button>
+            <button className="btn caixa-btn" onClick={() => { mexeu(); setAviso(""); setOpcoes(null); setSemRosto(false); setPasso(quem ? "ESCOLHER" : "QUEM"); setEtapa("PAGAMENTO"); }}>Pagar</button>
           </footer>
         </>
       )}
