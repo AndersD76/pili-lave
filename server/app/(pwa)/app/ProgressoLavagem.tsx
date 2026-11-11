@@ -14,7 +14,9 @@ const PASSOS = [
  * Onde a lavagem está, em etapas — em vez de uma frase solta que não diz o
  * que já passou nem o que falta.
  */
-export function ProgressoLavagem({ status }: { status: StatusLavagem }) {
+export type EtapasLavagem = { itens: string[]; atual: number | null };
+
+export function ProgressoLavagem({ status, etapas }: { status: StatusLavagem; etapas?: EtapasLavagem | null }) {
   if (!status || status === "EXPIRED") return null;
 
   if (status === "FAILED")
@@ -43,11 +45,41 @@ export function ProgressoLavagem({ status }: { status: StatusLavagem }) {
               <span className="txt">
                 {p.titulo}
                 {agora && <><br /><span className="sub" style={{ fontSize: 13 }}>{p.ajuda}</span></>}
+                {agora && p.chave === "ENTERED" && etapas && etapas.itens.length > 0 && <ListaEtapas etapas={etapas} />}
               </span>
             </div>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** Tarefas da lavagem escolhida, com a que a máquina está fazendo agora marcada: ✓ já feita · ● em andamento · ○ falta. */
+function ListaEtapas({ etapas }: { etapas: EtapasLavagem }) {
+  const { itens, atual } = etapas;
+  return (
+    <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+      <span className="sub" style={{ fontSize: 13 }}>
+        {atual === null ? `${itens.length} etapas — começando…` : `Etapa ${atual + 1} de ${itens.length}`}
+      </span>
+      {itens.map((nome, i) => {
+        const feita = atual !== null && i < atual;
+        const agora = atual !== null && i === atual;
+        return (
+          <div key={i} style={{
+            display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", borderRadius: 10,
+            background: agora ? "rgba(255,255,255,0.08)" : "transparent",
+            opacity: feita ? 0.55 : 1,
+            fontWeight: agora ? 700 : 400,
+            color: agora ? "var(--jato)" : "inherit",
+          }}>
+            <span style={{ width: 18, textAlign: "center" }}>{feita ? "✓" : agora ? "●" : "○"}</span>
+            <span>{nome}</span>
+            {agora && <span className="sub" style={{ marginLeft: "auto", fontSize: 12 }}>agora</span>}
+          </div>
+        );
+      })}
     </div>
   );
 }

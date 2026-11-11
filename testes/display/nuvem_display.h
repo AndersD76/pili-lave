@@ -79,12 +79,15 @@ static uint8_t  nd_evq_n()     { return g_nd_evq_n; }
 // ------------------------------------------------------------- envios ---
 static const char* nd_estado_str() {
     if (!g_st_ok || (millis() - g_st_ms) > 5000) return "WASHING";           // sem contato com a W1 nao se sabe o estado: avisa OCUPADA (o app nao reserva)
+    if (g_st.estado_auto == 7) return "FAULT";                              // AUTO_ERRO: o heartbeat deixa de apagar o FAULT que o evento de falha pos (antes o painel mostrava "OK" com a maquina parada)
     if (((g_st.io2_di >> 4) & 1) || ((g_st.io2_di >> 5) & 1)) return "WASHING";     // X14 / X15: carro presente NUNCA e "livre" pro app
     switch (g_st.estado_auto) { case 5: case 2: case 8: return "WASHING"; default: return "FREE"; }   // PROCESSO, CARRO_ENTRANDO, PAUSADO
 }
 static void nd_enviar_hb() {
     MsgHbState m = {}; m.cab.tipo = MSG_HB_STATE; m.cab.id_maquina = ID_MAQUINA; m.cab.origem = ORIGEM_DISPLAY; m.cab.seq = g_seq++;
     strncpy(m.state, nd_estado_str(), sizeof(m.state) - 1); m.restanteSeg = 0;
+    // etapa em andamento (so durante o ciclo: PROCESSO ou PAUSADO): a camera leva no heartbeat e o app mostra a lista de tarefas com a atual marcada
+    if (g_st_ok && (millis() - g_st_ms) <= 5000 && (g_st.estado_auto == 5 || g_st.estado_auto == 8)) { m.proc = g_st.proc_ativo; m.modelo = g_st.programa_sel; }
     esp_now_send((uint8_t*)MAC_CAMERA, (uint8_t*)&m, sizeof(m));
 }
 static void nd_enviar_cabeca_camera() {

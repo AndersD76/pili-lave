@@ -1,4 +1,4 @@
-# Paridade: firmware antigo (`lava_car_485/`, display mestre) x novo (`testes/`, W1 mestre)
+# Paridade: firmware antigo (`lixo/lava_car_485/`, display mestre) x novo (`testes/`, W1 mestre)
 
 Análise de 2026-10-24, feita lendo o código dos dois e o `GUIA_TECNICO_COMPLETO.md`. Serve para decidir **o que falta** antes de o novo
 poder substituir o antigo. Legenda: ✅ já tem · ⚠️ tem pela metade / não rodou · ❌ não tem.
@@ -71,5 +71,5 @@ Em qualquer caso a câmera precisa aceitar a W1 como interlocutora (hoje ela só
 1. **Sem câmera, na máquina:** ligar e testar a recuperação de boot; luz vermelha piscando em erro; hard reset do display; horas no manual.
 2. **Câmera + protocolo:** canal (firmware da câmera), depois heartbeat, `start` do app, eventos com fila e ACK, licença, lâmpada, aspirador.
 3. **Cadastro da máquina** (nova / trocou display / trocou câmera).
-4. Só então: validar tudo em conjunto e decidir se `testes/` substitui `lava_car_485/`.
+4. Só então: validar tudo em conjunto e decidir se `testes/` substitui `lixo/lava_car_485/`.
 Até o item 2 estar pronto e testado, **o antigo continua sendo o firmware de produção do app**; o novo roda bem para operação local.

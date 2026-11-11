@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { useEffect, useState } from "react";
-import { api, money, type Me, type Order, type Program, type Station } from "../client";
+import { ApiError, api, money, type Me, type Order, type Program, type Station } from "../client";
 
 type Saude = { disponivel: boolean; motivo: string | null; cameraOffline: boolean };
 
@@ -20,6 +20,7 @@ function NovaLavagemConteudo() {
   const [sel, setSel] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [jaTem, setJaTem] = useState(false);   // 409: ja existe lavagem paga/em andamento -> leva para a tela inicial, onde ela aparece
   const [saude, setSaude] = useState<Saude | null>(null);
   /** Primeira máquina da unidade com aspirador habilitado — oferecido como
    *  add-on depois de comprar a lavagem (decisão de produto: só nesse
@@ -85,6 +86,7 @@ function NovaLavagemConteudo() {
       router.replace("/app");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível concluir");
+      setJaTem(e instanceof ApiError && e.status === 409);
       setLoading(false);
     }
   }
@@ -121,6 +123,7 @@ function NovaLavagemConteudo() {
         ))}
       </div>
       {error && <p className="err">{error}</p>}
+      {jaTem && <Link className="btn" href="/app">Ver minha lavagem (cancelar ou liberar)</Link>}
       {selected && falta > 0 ? (
         <>
           <p className="err">Saldo insuficiente — faltam {money(falta)}.</p>

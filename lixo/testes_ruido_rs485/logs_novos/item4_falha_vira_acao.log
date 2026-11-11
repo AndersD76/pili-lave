@@ -1,0 +1,399 @@
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x15 (USB_UART_CHIP_RESET),boot:0x39 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037ade6
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x10cc
+load:0x403c8700,len:0xc2c
+load:0x403cb700,len:0x30b0
+entry 0x403c88b8
+[WAVE1-MESTRE] boot limpo (motivo=11, hard reset ja feito)
+[WAVE1-MESTRE] pronto (ESP-NOW canal 1, RS-485 Delta/SAJ sozinho)
+[AUTO] estado=0 idx=0 proc=0
+[LINK] loop_max=59ms w2_gap_max=211ms tx_ok=16 tx_fail=0
+[RS485] ok=22 zero_bytes=0 curta=0 crc=0 | total=22 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=204ms tx_ok=32 tx_fail=0
+[RS485] ok=42 zero_bytes=0 curta=0 crc=0 | total=42 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=219ms tx_ok=49 tx_fail=0
+[RS485] ok=62 zero_bytes=0 curta=0 crc=0 | total=62 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=206ms tx_ok=66 tx_fail=0
+[RS485] ok=82 zero_bytes=0 curta=0 crc=0 | total=82 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=203ms tx_ok=82 tx_fail=0
+[RS485] ok=102 zero_bytes=0 curta=0 crc=0 | total=102 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=206ms tx_ok=99 tx_fail=0
+[RS485] ok=122 zero_bytes=0 curta=0 crc=0 | total=122 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=208ms tx_ok=116 tx_fail=0
+[RS485] ok=142 zero_bytes=0 curta=0 crc=0 | total=142 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=207ms tx_ok=132 tx_fail=0
+[RS485] ok=162 zero_bytes=0 curta=0 crc=0 | total=162 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=203ms tx_ok=149 tx_fail=0
+[RS485] ok=182 zero_bytes=0 curta=0 crc=0 | total=182 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=207ms tx_ok=166 tx_fail=0
+[RS485] ok=202 zero_bytes=0 curta=0 crc=0 | total=202 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=203ms tx_ok=182 tx_fail=0
+[RS485] ok=222 zero_bytes=0 curta=0 crc=0 | total=222 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=60ms w2_gap_max=212ms tx_ok=199 tx_fail=0
+[RS485] ok=242 zero_bytes=0 curta=0 crc=0 | total=242 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=207ms tx_ok=216 tx_fail=0
+[RS485] ok=262 zero_bytes=0 curta=0 crc=0 | total=262 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=60ms w2_gap_max=214ms tx_ok=232 tx_fail=0
+[RS485] ok=282 zero_bytes=0 curta=0 crc=0 | total=282 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=58ms w2_gap_max=204ms tx_ok=249 tx_fail=0
+[RS485] ok=302 zero_bytes=0 curta=0 crc=0 | total=302 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=206ms tx_ok=266 tx_fail=0
+[RS485] ok=322 zero_bytes=0 curta=0 crc=0 | total=322 (100% ok) | mov=0 giro=0 home=0
+[TESTE] iniciado (bomba OFF)
+[AUTO] estado=5 idx=0 proc=0
+[LINK] loop_max=59ms w2_gap_max=205ms tx_ok=287 tx_fail=0
+[RS485] ok=339 zero_bytes=0 curta=0 crc=0 | total=339 (100% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=1ms w2_gap_max=209ms tx_ok=304 tx_fail=0
+[RS485] ok=339 zero_bytes=0 curta=0 crc=0 | total=339 (100% ok) | mov=0 giro=0 home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=0ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=0 X11=0 X7=0 | dt=655ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=923ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=1696ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=2282ms fase=0 dest_home=0
+[LINK] loop_max=1098ms w2_gap_max=205ms tx_ok=318 tx_fail=0
+[RS485] ok=360 zero_bytes=1 curta=0 crc=0 | total=361 (99% ok) | mov=2 giro=1 home=0
+[GIRO] sensores parados ha 2550ms -> reenviando comando
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=169 f=142 (freq_giro=150)
+[RAMPA] dtr=337 f=134 (freq_giro=150)
+[RAMPA] dtr=506 f=125 (freq_giro=150)
+[RAMPA] dtr=674 f=117 (freq_giro=150)
+[RAMPA] dtr=842 f=108 (freq_giro=150)
+[RAMPA] dtr=1010 f=100 (freq_giro=150)
+[RAMPA] dtr=1178 f=92 (freq_giro=150)
+[RAMPA] dtr=1315 f=85 (freq_giro=150)
+[RAMPA] dtr=1484 f=76 (freq_giro=150)
+[RAMPA] dtr=1621 f=69 (freq_giro=150)
+[RAMPA] dtr=1790 f=61 (freq_giro=150)
+[LINK] loop_max=138ms w2_gap_max=203ms tx_ok=334 tx_fail=0
+[RS485] ok=410 zero_bytes=7 curta=0 crc=0 | total=417 (98% ok) | mov=2 giro=1 home=0
+[GIRO] 1->2 tempo 7500ms -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[GIRO] saiu pos2 dt_y4=0ms
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=69ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=119ms fase=0 dest_home=1
+[LINK] loop_max=1099ms w2_gap_max=208ms tx_ok=348 tx_fail=0
+[RS485] ok=436 zero_bytes=8 curta=0 crc=0 | total=444 (98% ok) | mov=1 giro=1 home=0
+[GIRO] sensores parados ha 2531ms -> reenviando comando
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=5118ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=5704ms fase=0 dest_home=1
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=169 f=142 (freq_giro=150)
+[RAMPA] dtr=337 f=134 (freq_giro=150)
+[GIRO] sensores X16=1 X17=0 X11=0 X7=0 | dt=6445ms fase=0 dest_home=1
+[RAMPA] dtr=505 f=125 (freq_giro=150)
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=6713ms fase=0 dest_home=1
+[RAMPA] dtr=673 f=117 (freq_giro=150)
+[GIRO] 2->1 fim giro (viu_home=1 parada=1 dt_saiu=6831ms) -> fine-home
+[GIRO] fine-home OK (X17+HOME) [imediato] -> confirmando parada
+[LINK] loop_max=138ms w2_gap_max=205ms tx_ok=365 tx_fail=0
+[RS485] ok=480 zero_bytes=10 curta=0 crc=0 | total=490 (97% ok) | mov=0 giro=1 home=0
+[GIRO] parada confirmada (reenvios)
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=0ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=0 X11=0 X7=0 | dt=487ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=755ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=1578ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=2133ms fase=0 dest_home=0
+[LINK] loop_max=1099ms w2_gap_max=212ms tx_ok=379 tx_fail=0
+[RS485] ok=507 zero_bytes=14 curta=0 crc=0 | total=521 (97% ok) | mov=2 giro=1 home=0
+[GIRO] sensores parados ha 2544ms -> reenviando comando
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=206 f=140 (freq_giro=150)
+[RAMPA] dtr=375 f=132 (freq_giro=150)
+[RAMPA] dtr=543 f=123 (freq_giro=150)
+[RAMPA] dtr=711 f=115 (freq_giro=150)
+[RAMPA] dtr=879 f=107 (freq_giro=150)
+[RAMPA] dtr=1047 f=98 (freq_giro=150)
+[RAMPA] dtr=1215 f=90 (freq_giro=150)
+[RAMPA] dtr=1352 f=83 (freq_giro=150)
+[RAMPA] dtr=1521 f=74 (freq_giro=150)
+[RAMPA] dtr=1689 f=66 (freq_giro=150)
+[RAMPA] dtr=1826 f=59 (freq_giro=150)
+[GIRO] 1->2 tempo 7500ms -> confirmando parada
+[LINK] loop_max=207ms w2_gap_max=214ms tx_ok=395 tx_fail=0
+[RS485] ok=556 zero_bytes=23 curta=0 crc=0 | total=579 (96% ok) | mov=0 giro=1 home=0
+[GIRO] parada confirmada (reenvios)
+[LINK] loop_max=1095ms w2_gap_max=213ms tx_ok=409 tx_fail=0
+[RS485] ok=573 zero_bytes=23 curta=0 crc=0 | total=596 (96% ok) | mov=1 giro=0 home=0
+[GIRO] saiu pos2 dt_y4=0ms
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=138ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=188ms fase=0 dest_home=1
+[LINK] loop_max=1099ms w2_gap_max=209ms tx_ok=424 tx_fail=0
+[RS485] ok=601 zero_bytes=26 curta=0 crc=0 | total=627 (95% ok) | mov=2 giro=1 home=0
+[GIRO] sensores parados ha 2507ms -> reenviando comando
+[GIRO] sensores parados ha 2505ms -> reenviando comando
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=5687ms fase=0 dest_home=1
+[LINK] loop_max=207ms w2_gap_max=206ms tx_ok=439 tx_fail=0
+[RS485] ok=643 zero_bytes=34 curta=0 crc=0 | total=677 (94% ok) | mov=2 giro=1 home=0
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=138 f=144 (freq_giro=150)
+[RAMPA] dtr=307 f=135 (freq_giro=150)
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=6567ms fase=0 dest_home=1
+[RAMPA] dtr=475 f=127 (freq_giro=150)
+[RAMPA] dtr=643 f=118 (freq_giro=150)
+[RAMPA] dtr=811 f=110 (freq_giro=150)
+[RAMPA] dtr=979 f=102 (freq_giro=150)
+[RAMPA] dtr=1116 f=95 (freq_giro=150)
+[RAMPA] dtr=1285 f=86 (freq_giro=150)
+[RAMPA] dtr=1453 f=78 (freq_giro=150)
+[RAMPA] dtr=1621 f=69 (freq_giro=150)
+[RAMPA] dtr=1789 f=61 (freq_giro=150)
+[GIRO] sensores X16=0 X17=1 X11=0 X7=0 | dt=7949ms fase=0 dest_home=1
+[RAMPA] dtr=1957 f=53 (freq_giro=150)
+[RAMPA] dtr=2125 f=50 (freq_giro=150)
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=9236ms fase=0 dest_home=1
+[GIRO] 2->1 fim giro (viu_home=1 parada=1 dt_saiu=9336ms) -> fine-home
+[GIRO] fine-home OK (X17+HOME) [imediato] -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[LINK] loop_max=1099ms w2_gap_max=214ms tx_ok=455 tx_fail=0
+[RS485] ok=680 zero_bytes=36 curta=0 crc=0 | total=716 (94% ok) | mov=1 giro=1 home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=1ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=1 | dt=69ms fase=0 dest_home=0
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=119ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=1 X11=0 X7=0 | dt=387ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=805ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=1728ms fase=0 dest_home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=2601ms fase=0 dest_home=0
+[LINK] loop_max=138ms w2_gap_max=205ms tx_ok=472 tx_fail=0
+[RS485] ok=718 zero_bytes=38 curta=0 crc=0 | total=756 (94% ok) | mov=1 giro=1 home=0
+[GIRO] sensores parados ha 2531ms -> reenviando comando
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=168 f=142 (freq_giro=150)
+[RAMPA] dtr=305 f=135 (freq_giro=150)
+[RAMPA] dtr=474 f=127 (freq_giro=150)
+[RAMPA] dtr=611 f=120 (freq_giro=150)
+[RAMPA] dtr=780 f=111 (freq_giro=150)
+[RAMPA] dtr=948 f=103 (freq_giro=150)
+[RAMPA] dtr=1117 f=95 (freq_giro=150)
+[RAMPA] dtr=1285 f=86 (freq_giro=150)
+[RAMPA] dtr=1453 f=78 (freq_giro=150)
+[RAMPA] dtr=1621 f=69 (freq_giro=150)
+[RAMPA] dtr=1789 f=61 (freq_giro=150)
+[RAMPA] dtr=1957 f=53 (freq_giro=150)
+[GIRO] 1->2 tempo 7500ms -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[LINK] loop_max=1098ms w2_gap_max=205ms tx_ok=485 tx_fail=0
+[RS485] ok=758 zero_bytes=40 curta=0 crc=0 | total=798 (94% ok) | mov=2 giro=1 home=0
+[GIRO] saiu pos2 dt_y4=1ms
+[GIRO] sensores X16=0 X17=0 X11=0 X7=1 | dt=69ms fase=0 dest_home=1
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=169ms fase=0 dest_home=1
+[GIRO] sensores parados ha 2637ms -> reenviando comando
+[GIRO] sensores X16=0 X17=0 X11=1 X7=0 | dt=4770ms fase=0 dest_home=1
+[LINK] loop_max=206ms w2_gap_max=206ms tx_ok=501 tx_fail=0
+[RS485] ok=798 zero_bytes=44 curta=0 crc=0 | total=842 (94% ok) | mov=2 giro=1 home=0
+[GIRO] sensores X16=0 X17=0 X11=0 X7=0 | dt=5680ms fase=0 dest_home=1
+[RAMPA] dtr=0 f=150 (freq_giro=150)
+[RAMPA] dtr=168 f=142 (freq_giro=150)
+[RAMPA] dtr=336 f=134 (freq_giro=150)
+[GIRO] sensores X16=0 X17=1 X11=0 X7=0 | dt=6552ms fase=0 dest_home=1
+[RAMPA] dtr=504 f=125 (freq_giro=150)
+[RAMPA] dtr=672 f=117 (freq_giro=150)
+[RAMPA] dtr=840 f=108 (freq_giro=150)
+[GIRO] sensores X16=1 X17=1 X11=0 X7=0 | dt=7057ms fase=0 dest_home=1
+[RAMPA] dtr=1009 f=100 (freq_giro=150)
+[GIRO] 2->1 fim giro (viu_home=1 parada=1 dt_saiu=7194ms) -> fine-home
+[GIRO] fine-home OK (X17+HOME) [imediato] -> confirmando parada
+[GIRO] parada confirmada (reenvios)
+[CARRINHO] REV_X12 (retorno final) freq=35.0Hz
+[LINK] loop_max=1097ms w2_gap_max=208ms tx_ok=515 tx_fail=0
+[RS485] ok=841 zero_bytes=47 curta=0 crc=0 | total=888 (94% ok) | mov=2 giro=0 home=0
+[AUTO] estado=6 idx=1 proc=7
+[AUTO] estado=0 idx=1 proc=0
+[LINK] loop_max=138ms w2_gap_max=213ms tx_ok=540 tx_fail=0
+[RS485] ok=859 zero_bytes=48 curta=0 crc=0 | total=907 (94% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=216ms tx_ok=556 tx_fail=0
+[RS485] ok=879 zero_bytes=48 curta=0 crc=0 | total=927 (94% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=108ms w2_gap_max=209ms tx_ok=573 tx_fail=0
+[RS485] ok=893 zero_bytes=54 curta=0 crc=0 | total=947 (94% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=108ms w2_gap_max=207ms tx_ok=588 tx_fail=0
+[RS485] ok=893 zero_bytes=74 curta=0 crc=0 | total=967 (92% ok) | mov=0 giro=0 home=0
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=1, seguidas=1)
+[TESTE] iniciado (bomba OFF)
+[AUTO] estado=5 idx=0 proc=0
+[LINK] loop_max=280ms w2_gap_max=209ms tx_ok=608 tx_fail=0
+[RS485] ok=893 zero_bytes=90 curta=0 crc=0 | total=983 (90% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=1ms w2_gap_max=210ms tx_ok=625 tx_fail=0
+[RS485] ok=893 zero_bytes=90 curta=0 crc=0 | total=983 (90% ok) | mov=0 giro=0 home=0
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=2, seguidas=2)
+[VFD] FALHA escrita reg=0x2001 val=1500 apos 4 tentativas (total falhas=3, seguidas=3)
+[VFD] FALHA escrita reg=0x2000 val=34 apos 4 tentativas (total falhas=4, seguidas=4)
+[VFD] FALHA escrita reg=0x2001 val=1500 apos 4 tentativas (total falhas=5, seguidas=5)
+[VFD] FALHA escrita reg=0x2000 val=34 apos 4 tentativas (total falhas=6, seguidas=6)
+[VFD] FALHA escrita reg=0x2001 val=1500 apos 4 tentativas (total falhas=7, seguidas=7)
+[VFD] FALHA escrita reg=0x2000 val=34 apos 4 tentativas (total falhas=8, seguidas=8)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=9, seguidas=9)
+[AUTO] ERRO: RS-485: Delta nao recebeu o comando do giro
+[AUTO] estado=7 idx=0 proc=7
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=10, seguidas=10)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=11, seguidas=11)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=12, seguidas=12)
+[LINK] loop_max=3335ms w2_gap_max=206ms tx_ok=636 tx_fail=0
+[RS485] ok=893 zero_bytes=138 curta=0 crc=0 | total=1031 (86% ok) | mov=0 giro=1 home=0
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=13, seguidas=13)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=14, seguidas=14)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=15, seguidas=15)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=16, seguidas=16)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=17, seguidas=17)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=18, seguidas=18)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=19, seguidas=19)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=20, seguidas=20)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=21, seguidas=21)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=22, seguidas=22)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=23, seguidas=23)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=24, seguidas=24)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=25, seguidas=25)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=26, seguidas=26)
+[LINK] loop_max=385ms w2_gap_max=209ms tx_ok=650 tx_fail=0
+[RS485] ok=893 zero_bytes=208 curta=0 crc=0 | total=1101 (81% ok) | mov=0 giro=1 home=0
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=27, seguidas=27)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=28, seguidas=28)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=29, seguidas=29)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=30, seguidas=30)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=31, seguidas=31)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=32, seguidas=32)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=33, seguidas=33)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=34, seguidas=34)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=35, seguidas=35)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=36, seguidas=36)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=37, seguidas=37)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=38, seguidas=38)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=39, seguidas=39)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=40, seguidas=40)
+[LINK] loop_max=385ms w2_gap_max=213ms tx_ok=665 tx_fail=0
+[RS485] ok=893 zero_bytes=278 curta=0 crc=0 | total=1171 (76% ok) | mov=0 giro=1 home=0
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=41, seguidas=41)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=42, seguidas=42)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=43, seguidas=43)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=44, seguidas=44)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=45, seguidas=45)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=46, seguidas=46)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=47, seguidas=47)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=48, seguidas=48)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=49, seguidas=49)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=50, seguidas=50)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=51, seguidas=51)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=52, seguidas=52)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=53, seguidas=53)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=54, seguidas=54)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=55, seguidas=55)
+[LINK] loop_max=385ms w2_gap_max=209ms tx_ok=679 tx_fail=0
+[RS485] ok=893 zero_bytes=354 curta=0 crc=0 | total=1247 (71% ok) | mov=0 giro=1 home=0
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=56, seguidas=56)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=57, seguidas=57)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=58, seguidas=58)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=59, seguidas=59)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=60, seguidas=60)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=61, seguidas=61)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=62, seguidas=62)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=63, seguidas=63)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=64, seguidas=64)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=65, seguidas=65)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=66, seguidas=66)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=67, seguidas=67)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=68, seguidas=68)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=69, seguidas=69)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=70, seguidas=70)
+[LINK] loop_max=385ms w2_gap_max=202ms tx_ok=694 tx_fail=0
+[RS485] ok=893 zero_bytes=428 curta=0 crc=0 | total=1321 (67% ok) | mov=0 giro=1 home=0
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=71, seguidas=71)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=72, seguidas=72)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=73, seguidas=73)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=74, seguidas=74)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=75, seguidas=75)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=76, seguidas=76)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=77, seguidas=77)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=78, seguidas=78)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=79, seguidas=79)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=80, seguidas=80)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=81, seguidas=81)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=82, seguidas=82)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=83, seguidas=83)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=84, seguidas=84)
+[LINK] loop_max=385ms w2_gap_max=212ms tx_ok=708 tx_fail=0
+[RS485] ok=893 zero_bytes=498 curta=0 crc=0 | total=1391 (64% ok) | mov=0 giro=1 home=0
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=85, seguidas=85)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=86, seguidas=86)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=87, seguidas=87)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=88, seguidas=88)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=89, seguidas=89)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=90, seguidas=90)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=91, seguidas=91)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=92, seguidas=92)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=93, seguidas=93)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=94, seguidas=94)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=95, seguidas=95)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=96, seguidas=96)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=97, seguidas=97)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=98, seguidas=98)
+[LINK] loop_max=385ms w2_gap_max=206ms tx_ok=723 tx_fail=0
+[RS485] ok=893 zero_bytes=568 curta=0 crc=0 | total=1461 (61% ok) | mov=0 giro=1 home=0
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=99, seguidas=99)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=100, seguidas=100)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=101, seguidas=101)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=102, seguidas=102)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=103, seguidas=103)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=104, seguidas=104)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=105, seguidas=105)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=106, seguidas=106)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=107, seguidas=107)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=108, seguidas=108)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=109, seguidas=109)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=110, seguidas=110)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=111, seguidas=111)
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=112, seguidas=112)
+[LINK] loop_max=385ms w2_gap_max=205ms tx_ok=737 tx_fail=0
+[RS485] ok=894 zero_bytes=641 curta=0 crc=0 | total=1535 (58% ok) | mov=0 giro=1 home=0
+[LINK] loop_max=207ms w2_gap_max=206ms tx_ok=754 tx_fail=0
+[RS485] ok=926 zero_bytes=647 curta=0 crc=0 | total=1573 (58% ok) | mov=0 giro=1 home=0
+[VFD] FALHA escrita reg=0x2000 val=1 apos 4 tentativas (total falhas=113, seguidas=1)
+[LINK] loop_max=292ms w2_gap_max=207ms tx_ok=769 tx_fail=0
+[RS485] ok=957 zero_bytes=658 curta=1 crc=1 | total=1617 (59% ok) | mov=0 giro=1 home=0
+[TESTE] PARADO pelo operador
+[AUTO] estado=0 idx=0 proc=0
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[TESTE] PARADO pelo operador
+[LINK] loop_max=150ms w2_gap_max=216ms tx_ok=810 tx_fail=0
+[RS485] ok=997 zero_bytes=658 curta=1 crc=1 | total=1657 (60% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=210ms tx_ok=826 tx_fail=0
+[RS485] ok=1017 zero_bytes=658 curta=1 crc=1 | total=1677 (60% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=208ms tx_ok=843 tx_fail=0
+[RS485] ok=1037 zero_bytes=658 curta=1 crc=1 | total=1697 (61% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=58ms w2_gap_max=212ms tx_ok=860 tx_fail=0
+[RS485] ok=1057 zero_bytes=658 curta=1 crc=1 | total=1717 (61% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=208ms tx_ok=876 tx_fail=0
+[RS485] ok=1077 zero_bytes=658 curta=1 crc=1 | total=1737 (62% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=205ms tx_ok=893 tx_fail=0
+[RS485] ok=1097 zero_bytes=658 curta=1 crc=1 | total=1757 (62% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=227ms tx_ok=910 tx_fail=0
+[RS485] ok=1117 zero_bytes=658 curta=1 crc=1 | total=1777 (62% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=215ms tx_ok=926 tx_fail=0
+[RS485] ok=1137 zero_bytes=658 curta=1 crc=1 | total=1797 (63% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=204ms tx_ok=943 tx_fail=0
+[RS485] ok=1157 zero_bytes=658 curta=1 crc=1 | total=1817 (63% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=203ms tx_ok=960 tx_fail=0
+[RS485] ok=1177 zero_bytes=658 curta=1 crc=1 | total=1837 (64% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=206ms tx_ok=976 tx_fail=0
+[RS485] ok=1197 zero_bytes=658 curta=1 crc=1 | total=1857 (64% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=207ms tx_ok=993 tx_fail=0
+[RS485] ok=1217 zero_bytes=658 curta=1 crc=1 | total=1877 (64% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=209ms tx_ok=1010 tx_fail=0
+[RS485] ok=1237 zero_bytes=658 curta=1 crc=1 | total=1897 (65% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=205ms tx_ok=1026 tx_fail=0
+[RS485] ok=1257 zero_bytes=658 curta=1 crc=1 | total=1917 (65% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=203ms tx_ok=1043 tx_fail=0
+[RS485] ok=1277 zero_bytes=658 curta=1 crc=1 | total=1937 (65% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=204ms tx_ok=1060 tx_fail=0
+[RS485] ok=1297 zero_bytes=658 curta=1 crc=1 | total=1957 (66% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=205ms tx_ok=1076 tx_fail=0
+[RS485] ok=1317 zero_bytes=658 curta=1 crc=1 | total=1977 (66% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=205ms tx_ok=1093 tx_fail=0
+[RS485] ok=1337 zero_bytes=658 curta=1 crc=1 | total=1997 (66% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=207ms tx_ok=1110 tx_fail=0
+[RS485] ok=1357 zero_bytes=658 curta=1 crc=1 | total=2017 (67% ok) | mov=0 giro=0 home=0
+[LINK] loop_max=59ms w2_gap_max=205ms tx_ok=1126 tx_fail=0
+[RS485] ok=1377 zero_bytes=658 curta=1 crc=1 | total=2037 (67% ok) | mov=0 giro=0 home=0

@@ -1,0 +1,2 @@
+# binarios de 16 MB (flash inteira) ficam so no disco, fora do git
+*.merged.bin

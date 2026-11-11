@@ -64,9 +64,9 @@ Todos compilam com o FQBN da seção 6 e não dependem de LVGL/ESP-NOW.
 
 | Pasta | O que faz | Resultado neste caso |
 |---|---|---|
-| `testes/diag_i2c_scan/` | Varre I2C 1..126 ao ligar, depois liga o CH422G e reseta o GT911 com INT baixo e alto, testando 0x5D/0x14 | CH422G responde; **GT911 mudo em 0x5D e 0x14** em todos os estados |
-| `testes/diag_i2c_scan2/` | Usa cada uma das 8 saídas do CH422G como possível reset do toque (INT baixo e alto) e estados fixos tudo-1/tudo-0 | **Nenhuma** combinação acordou o GT911 |
-| `testes/display_sem_toque/` | Firmware de teste completo com `ESP_OPEN_TOUCH 0` | Sobe sem erros, **tela aparece** |
+| `lixo/testes/diag_i2c_scan/` | Varre I2C 1..126 ao ligar, depois liga o CH422G e reseta o GT911 com INT baixo e alto, testando 0x5D/0x14 | CH422G responde; **GT911 mudo em 0x5D e 0x14** em todos os estados |
+| `lixo/testes/diag_i2c_scan2/` | Usa cada uma das 8 saídas do CH422G como possível reset do toque (INT baixo e alto) e estados fixos tudo-1/tudo-0 | **Nenhuma** combinação acordou o GT911 |
+| `lixo/testes/display_sem_toque/` | Firmware de teste completo com `ESP_OPEN_TOUCH 0` | Sobe sem erros, **tela aparece** |
 
 Interpretação: bus I2C e CH422G estão bons; o GT911 não responde de jeito nenhum. Isso afasta
 endereço trocado, reset no bit errado e cabo do I2C. Sobram: cabo flat do touch mal encaixado,
@@ -103,7 +103,7 @@ GT911 encaixado = tem toque. Vazio = sem toque. Pedir ao vendedor a versão **co
 (Touch-LCD-7 com GT911), ou comprar o painel de toque + flat separado.
 
 Enquanto isso, o firmware do display sem toque só mostra a interface (`ESP_OPEN_TOUCH 0`,
-`testes/display_sem_toque/`): serve para visualizar o estado da máquina, não para operar.
+`lixo/testes/display_sem_toque/`): serve para visualizar o estado da máquina, não para operar.
 
 ## 6. Passo a passo para trocar de display
 
@@ -116,11 +116,11 @@ Enquanto isso, o firmware do display sem toque só mostra a interface (`ESP_OPEN
    (a pasta de produção usa `...CDCOnBoot=default,FlashMode=qio,FlashSize=8M,PartitionScheme=default_8MB,PSRAM=opi,CPUFreq=240`;
    ambos sobem no hardware N16R8).
 3. Gravar o firmware normal (`testes/display/` no projeto de testes). Ler a serial (seção 2).
-4. **Se subir com tela preta + erros do GT911**: rodar `testes/diag_i2c_scan/` para confirmar.
+4. **Se subir com tela preta + erros do GT911**: rodar `lixo/testes/diag_i2c_scan/` para confirmar.
    Se o GT911 aparecer em 0x5D ou 0x14 em algum caso, o problema é de config (ajustar endereço/reset);
    se não aparecer em nenhum, é hardware.
 5. Para ter tela mesmo sem toque: copiar a pasta do sketch, trocar `#define ESP_OPEN_TOUCH 1` por `0` em
-   `esp_panel_board_custom_conf.h` e gravar (exemplo pronto: `testes/display_sem_toque/`).
+   `esp_panel_board_custom_conf.h` e gravar (exemplo pronto: `lixo/testes/display_sem_toque/`).
 6. Física: com tudo desligado, abrir a caixa e reencaixar o flat do touch (conector escuro do
    painel para a placa). Religar e repetir o passo 3.
 7. Se um display novo funcionar completo, registrar a COM e a revisão aqui.

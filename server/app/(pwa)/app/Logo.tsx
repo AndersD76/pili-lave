@@ -12,7 +12,7 @@
  * a altura aqui é maior para a marca aparecer no tamanho certo: 62px de
  * caixa ≈ 34px de desenho visível.
  */
-export function Logo({ altura = 62 }: { altura?: number }) {
+export function Logo({ altura = 62, centralizada = false }: { altura?: number; centralizada?: boolean }) {
   return (
     <img
       src="/logo-pili-clean.png"
@@ -24,9 +24,16 @@ export function Logo({ altura = 62 }: { altura?: number }) {
       style={{
         height: altura,
         width: "auto",
-        alignSelf: "flex-start",
+        alignSelf: centralizada ? "center" : "flex-start",
+        /* margem automática centraliza também quando o pai não é flex
+           (login: a logo fica dentro de uma div comum). */
+        marginInline: centralizada ? "auto" : undefined,
         objectFit: "contain",
         display: "block",
+        /* a moldura preta do arquivo é mais escura que o fundo da tela e
+           aparecia como um retângulo; "lighten" deixa o fundo vencer onde
+           a imagem é mais escura, e o desenho (vermelho/branco) continua. */
+        mixBlendMode: "lighten",
       }}
     />
   );

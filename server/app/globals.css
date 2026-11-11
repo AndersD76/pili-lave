@@ -112,3 +112,9 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .maq-subtab:hover { color: var(--cromo); }
 .maq-subtab.active { background: var(--jato); border-color: var(--jato); color: var(--verniz); }
 .maq-subtab.active .maq-dot { filter: brightness(0.7); }
+
+/* Aba / pagina ATUAL grifada (menu do admin e abas de unidade/maquina) */
+.admin-nav a.ativo { color: var(--cromo); border-bottom: 2px solid var(--jato); padding-bottom: 4px; }
+.maq-tab.active { border-color: var(--jato); box-shadow: 0 0 0 1px var(--jato) inset, 0 0 14px rgba(232, 16, 42, 0.25); }
+.maq-tab.active .maq-tab-titulo { color: var(--cromo); }
+.maq-subtab.active { box-shadow: 0 0 10px rgba(232, 16, 42, 0.35); }

@@ -6,15 +6,16 @@ Os outros documentos têm o detalhe; este diz onde ele está e o que mudou por �
 ## 1. Arquitetura que está rodando na máquina (Pili Clean, unidade João Carlon, Erechim)
 | Peça | Papel | Onde está o código |
 |---|---|---|
-| **W1** (Waveshare ESP32-S3, COM24) | **Só operação**: máquina de estados do ciclo, RS-485 com o Delta, painel físico/controle remoto, ESP-NOW com a W2 e o display. Guarda **eventos** na NVS até o display confirmar. **Não fala com a câmera.** | `testes/waveshare1/` |
-| **W2** (Waveshare, COM10) | E/S burra (sensores, saídas: Y13 bomba alta pressão no canal 3, luzes DO7, aspirador DO8) | `testes/waveshare2/` |
+| **W1** (Waveshare ESP32-S3, COM24) | **Só operação**: máquina de estados do ciclo, RS-485 com o Delta, painel físico/controle remoto, ESP-NOW com a W2 e o display. Guarda **eventos** na NVS até o display confirmar. **Não fala com a câmera.** | `testes/w1_w2_por_rxtx/waveshare1/` (link por cabo UART; versão ESP-NOW antiga em `lixo/testes/waveshare1/`) |
+| **W2** (Waveshare, COM10) | E/S burra (sensores, saídas: Y13 bomba alta pressão no canal 3, luzes DO7, aspirador DO8) | `testes/w1_w2_por_rxtx/waveshare2/` (versão ESP-NOW antiga em `lixo/testes/waveshare2/`) |
 | **Display** (ESP32-S3-Touch-LCD-7, COM11) | Cliente fino **e hub da nuvem**: fala com a câmera (heartbeat a cada 5 s, fila de eventos com ACK, licença) e manda **ordens** à W1 a cada 2 s (lâmpada, licença, aspirador, iniciar reserva do app) | `testes/display/` (`nuvem_display.h`, `wifi_tecnico.h`, `cadastro_tecnico.h`) |
 | **Câmera** (ESP32-CAM, **v6**) | Única com Wi-Fi/HTTPS: heartbeat/eventos/foto da placa. Informa ao display a rede conectada (`MSG_REDE_INFO`). Atualiza por **OTA** | `firmware_camera/` |
 | **Backend** (Next.js + Prisma/Postgres Neon, Railway, branch `main`) | Reservas, pagamento, leitura de placa, heartbeat, admin, PWA | `server/` |
-- O antigo (`lava_car_485/`, display mestre) e `wave1_mestre/` ficam **intactos, só consulta**. Backup: tag git `backup-w1-mestre-funcionando-2026-10-24` + `docs/BACKUP_E_RESTAURACAO.md`.
-- Protocolo ESP-NOW: `protocolo_teste.h` **idêntico** em `testes/display/`, `testes/waveshare1/` e `testes/display_sem_toque/`. Mensagens 30–35 (teste/config), 36–38 (W1↔display: `MSG_NV_EVT`, `MSG_NV_EVT_ACK`, `MSG_NV_ORDEM`),
+- O antigo (`lixo/lava_car_485/`, display mestre) e `lixo/wave1_mestre/` ficam **intactos, só consulta**. Backup: tag git `backup-w1-mestre-funcionando-2026-10-24` + `docs/BACKUP_E_RESTAURACAO.md`.
+- Protocolo ESP-NOW: `protocolo_teste.h` **idêntico** em `testes/display/`, `lixo/testes/waveshare1/` e `lixo/testes/display_sem_toque/`. Mensagens 30–35 (teste/config), 36–38 (W1↔display: `MSG_NV_EVT`, `MSG_NV_EVT_ACK`, `MSG_NV_ORDEM`),
   4–22 compatíveis com a câmera (canal, Wi-Fi, heartbeat 7/8, evento 9/10, scan, cadastro 13–20, re-sync 21, **rede da câmera 22**).
 - Todos no **canal 6** (o do roteador). A migração de canal é orquestrada pelo display (câmera → W1/W2 → credenciais), com rollback; a câmera v5+ pede **re-sync** ao display se o roteador mudar.
+- **Link W1↔W2 por cabo (em desenvolvimento, branch `link-uart-w1-w2`, 2026-11-01):** troca o ESP-NOW entre W1 e W2 por UART0 (TXD GPIO43 / RXD GPIO44, 115200). A W2 deixa de usar rádio e de ter canal; o rádio fica só na W1 (display e câmera como hoje). Fase 1 = firmware só de teste do cabo; Fase 2 = W1/W2 de produção com a chave `LINK_W1_W2_UART` (0 = ESP-NOW antigo) e **fail-safe da W2** (sem W1 por 2 s desliga as saídas, menos as luzes). Projeto, roteiro e reversão: `docs/LINK_W1_W2_UART.md`. **Nada gravado ainda.**
 
 ## 2. Estado em 2026-10-25/27 (validado na máquina)
 - **Teste com o app, de ponta a ponta, funcionou** (reserva RYD1E43, modelo 1): reserva paga → câmera leu a placa → luz verde → `START pelo app` → X14 → ciclo → `car_entered` e `wash_completed` no backend → COMPLETED/REDEEMED.
@@ -49,7 +50,7 @@ Os outros documentos têm o detalhe; este diz onde ele está e o que mudou por �
 - Reserva: `HELD` (paga, esperando) → `ACTIVE` (placa lida ou "Já estou na máquina": luz **verde**, heartbeat manda `start`) → `ENTERED` (X14) → `COMPLETED`/`FAILED`.
   Só dá para cancelar em HELD/ACTIVE (`/api/reservations/[id]/cancel`); em ENTERED não. A PWA só mostra o botão de cancelar em **HELD** (lacuna).
 - `expireStale()`: ACTIVE sem X14 há 5 min volta a HELD; ENTERED vira FAILED+estorno após 2× a duração do programa. Roda no cron `/api/cron/expire-reservations` (POST, aberto se não houver `CRON_SECRET`) e em chamadas a `/api/reservations` e à leitura de placa.
-  Não achamos agendamento do cron no repositório.
+  O agendamento do cron existe desde 2026-11-01 no serviço `cron-pili` do Railway (a cada 5 min); ver GUIA_TECNICO_COMPLETO, seção "Cron de expiração".
 - `computeLight()` manda a lâmpada no heartbeat; a W1 ociosa **segue a lâmpada do backend** (verde preso se a reserva ACTIVE ficou).
 - Leitura de placa: filtro "cena parada (não analisada)" compara cada foto com a **anterior**; com o carro parado só há 1 análise forçada por minuto (placa pode demorar até 1 min).
 - `/admin/lavagens` lista **vouchers** (fluxo antigo), não as reservas do app. `remainingSec` vem sempre 0.
@@ -59,8 +60,8 @@ Os outros documentos têm o detalhe; este diz onde ele está e o que mudou por �
 - `[SEGURANCA] Y7 bloqueado` na Cor Mágica (intertravamento ignora o Y1); correção preparada mas **não gravada** por decisão do Giovani.
 
 ## 8. Ordem de leitura sugerida
-1. Este arquivo. 2. `CLAUDE.md` (regras). 3. `docs/COMBINADOS.md` (decisões). 4. `testes/PENDENCIAS_NA_MAQUINA.md` (**seções H e I** são as mais recentes). 5. `docs/PARIDADE_ANTIGO_NOVO.md` (o que o novo já faz vs o antigo).
-6. `testes/LEIAME.md` (base de testes e telas). 7. `GUIA_TECNICO_COMPLETO.md` (referência técnica; seção 3.13 e as do backend). 8. `docs/BACKUP_E_RESTAURACAO.md`, `docs/TROCA_DE_DISPLAY.md`, `firmware_camera/release/LEIAME.md`.
+1. Este arquivo. 2. `CLAUDE.md` (regras). 3. `docs/COMBINADOS.md` (decisões). 4. `testes/PENDENCIAS_NA_MAQUINA.md` (**seções H e I** são as mais recentes). 5. `docs/PARIDADE_ANTIGO_NOVO.md` (o que o novo já faz vs o antigo). Link W1↔W2 por cabo (projeto e teste): `docs/LINK_W1_W2_UART.md`.
+6. `testes/LEIAME.md` (base de testes e telas). 7. `GUIA_TECNICO_COMPLETO.md` (referência técnica; seções 3 e 4 (firmware atual), Apêndices A/B (firmware antigo) e as do backend). 8. `docs/BACKUP_E_RESTAURACAO.md`, `docs/TROCA_DE_DISPLAY.md`, `firmware_camera/release/LEIAME.md`.
 
 ## 9. Como compilar e gravar (resumo)
 - W1/W2: `arduino-cli compile|upload --fqbn esp32:esp32:esp32s3:PSRAM=opi,CPUFreq=240,FlashMode=qio,FlashSize=16M,CDCOnBoot=cdc` (W1 = COM24, W2 = COM10). **Abrir a serial da W1 a reinicia.**

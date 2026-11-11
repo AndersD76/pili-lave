@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireMachine } from "@/lib/device";
 import { computeLight, pendingStart } from "@/lib/reservations";
+import { registrarEtapa } from "@/lib/etapas";
 
 const Body = z.object({
   state: z.enum(["FREE", "WASHING", "FAULT"]).optional(),
@@ -14,6 +15,9 @@ const Body = z.object({
    * Opcionais: firmware antigo continua funcionando sem eles. */
   x14: z.boolean().optional(),
   x15: z.boolean().optional(),
+  /* Processo em execução na máquina (id do firmware: 1 enxágue, 3 espuma, 5 cor mágica, 6 cera, 7 alta pressão, 8 secagem; 0 = nenhum).
+   * Alimenta o acompanhamento por etapas no app (lib/etapas.ts). Opcional: firmware antigo não manda. */
+  proc: z.number().int().min(0).max(20).optional(),
 });
 
 /**
@@ -70,6 +74,8 @@ export async function POST(req: NextRequest) {
       ...(nextStatus ? { status: nextStatus } : {}),
     },
   });
+
+  if (body.proc) await registrarEtapa(machine.id, body.proc).catch(() => {});   // nunca derruba o heartbeat
 
   const light = await computeLight(machine);
   const start = await pendingStart(machine);

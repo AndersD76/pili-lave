@@ -13,6 +13,7 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
+#include <esp_task_wdt.h>
 #include <Preferences.h>
 #include "lvgl_v8_port.h"
 #include "protocolo_teste.h"
@@ -65,6 +66,23 @@ static void on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int le
     }
 }
 
+// ---- VIGIA DO ENVIO POR RADIO (2026-11-01) — o display e o elo com a nuvem (camera) e com as ordens da W1; se o envio dele travar, o app
+// ve a maquina offline sem ninguem saber (visto na W1 em 31/10: o rastro era so tx_ok congelado). g_tx_pend = envios feitos desde a ultima
+// confirmacao do radio (ok OU falha); se passa de 4 e nenhuma chega por 3 s, travou: reinicializa so o ESP-NOW (5 em 5 s) e, se 3 tentativas nao
+// resolverem, reinicia o display (a W1 segue o ciclo sozinha; a fila de eventos esta na NVS). Todo esp_now_send do arquivo passa por aqui (macro abaixo).
+static volatile uint32_t g_tx_pend = 0, g_tx_cb_ms = 0;
+static bool              g_tx_travado = false;
+static inline esp_err_t tx_send(const uint8_t* mac, const uint8_t* dado, size_t n) {
+    if (g_tx_pend == 0) g_tx_cb_ms = millis();
+    g_tx_pend++;
+    return (esp_now_send)(mac, dado, n);
+}
+#define esp_now_send(mac, dado, n) tx_send(mac, dado, n)
+static void on_send_cb(const esp_now_send_info_t* info, esp_now_send_status_t st) {
+    (void)info; (void)st;
+    g_tx_pend = 0; g_tx_cb_ms = millis();                // o radio confirmou (ok ou falha): o envio NAO esta travado
+}
+
 // Sem confirmacao no ESP-NOW: comandos criticos (PARAR) saem repetidos.
 static void enviar(uint8_t acao, uint8_t repeticoes = 1, uint8_t arg = 0) {
     MsgTesteCmd m;
@@ -76,6 +94,12 @@ static void enviar(uint8_t acao, uint8_t repeticoes = 1, uint8_t arg = 0) {
         if (i + 1 < repeticoes) delay(25);
     }
 }
+
+// ---- SEQUENCIA DOS MODELOS -> NUVEM (2026-11-04): o app mostra a lista de tarefas da lavagem; ela tem de ser a MESMA que a W1 executa. Quando a
+// sequencia de um modelo e alterada aqui (ou ao ligar), o display confere o que a W1 realmente gravou e poe um evento tipo 5 na fila da nuvem
+// (NVS + ACK, como os eventos de lavagem): a camera faz POST /api/machine/sequencia {modelo, seq:"5.7"} ate receber 200.
+static uint32_t g_seq_sync_ms[4]  = {0, 0, 0, 0};   // quando conferir/enviar (0 = nada pendente)
+static uint32_t g_seq_pedido_ms[4] = {0, 0, 0, 0};  // quando pediu o dump a W1 (0 = nao esta aguardando)
 
 static void cfg_pedir(uint8_t tabela, uint8_t i1) {
     MsgTesteCfgReq r;
@@ -115,6 +139,7 @@ static void radio_init() {
     if (esp_now_init() != ESP_OK) { Serial.println("[ESP-NOW] init FALHOU"); return; }
     esp_now_set_pmk(ESPNOW_PMK);
     esp_now_register_recv_cb(on_recv);
+    esp_now_register_send_cb(on_send_cb);
     esp_now_peer_info_t p = {};
     p.channel = 0; p.ifidx = WIFI_IF_STA; p.encrypt = true;
     memcpy(p.lmk, ESPNOW_LMK, 16);
@@ -126,6 +151,48 @@ static void radio_init() {
     static const uint8_t BC_RADIO[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
     memcpy(pc.peer_addr, BC_RADIO, 6); esp_now_add_peer(&pc);
     Serial.printf("[TESTE] radio pronto (canal fixo %d)\n", ESPNOW_CANAL);
+}
+
+// Reinicializa SO o ESP-NOW (sem tocar no Wi-Fi nem no canal) quando o envio trava: mesma configuracao do radio_init (PMK, callbacks, pares).
+static void espnow_reiniciar() {
+    esp_now_deinit();
+    if (esp_now_init() != ESP_OK) { Serial.println("[TX] esp_now_init FALHOU na reinicializacao"); return; }
+    esp_now_set_pmk(ESPNOW_PMK);
+    esp_now_register_recv_cb(on_recv);
+    esp_now_register_send_cb(on_send_cb);
+    esp_now_peer_info_t p = {};
+    p.channel = 0; p.ifidx = WIFI_IF_STA; p.encrypt = true;
+    memcpy(p.lmk, ESPNOW_LMK, 16);
+    memcpy(p.peer_addr, MAC_WAVE1, 6); esp_now_add_peer(&p);
+    esp_now_peer_info_t pc = {};
+    pc.channel = 0; pc.ifidx = WIFI_IF_STA; pc.encrypt = false;
+    memcpy(pc.peer_addr, MAC_CAMERA, 6); esp_now_add_peer(&pc);
+    static const uint8_t BC_RADIO2[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+    memcpy(pc.peer_addr, BC_RADIO2, 6); esp_now_add_peer(&pc);
+    g_tx_pend = 0; g_tx_cb_ms = millis();
+}
+static uint8_t  g_tx_reinit_n = 0;
+static uint32_t g_tx_ult_reinit = 0, g_tx_primeiro = 0;
+static void tx_watchdog_tick() {
+    uint32_t agora = millis();
+    bool travado = (g_tx_pend >= 4) && (agora - g_tx_cb_ms) > 3000UL;
+    if (travado && !g_tx_travado) {
+        g_tx_travado = true; g_tx_primeiro = agora; g_tx_reinit_n = 0; g_tx_ult_reinit = 0;
+        Serial.printf("[TX] TRAVADO (pend=%lu sem confirmacao ha %lu ms)\n", (unsigned long)g_tx_pend, (unsigned long)(agora - g_tx_cb_ms));
+    } else if (!travado && g_tx_travado) {
+        g_tx_travado = false;
+        Serial.printf("[TX] normalizado apos ~%lu ms (%u reinicializacao(oes))\n", (unsigned long)(agora - g_tx_primeiro), (unsigned)g_tx_reinit_n);
+    }
+    if (!g_tx_travado) return;
+    if (g_tx_ult_reinit == 0 || (agora - g_tx_ult_reinit) >= 5000UL) {
+        if (g_tx_reinit_n >= 3 && agora > 60000UL) {      // 3 reinicializacoes + 5 s sem resolver: reinicia o display (uptime > 60 s evita laco de reinicios)
+            Serial.println("[TX] reinicializacoes nao resolveram -> reiniciando o display");
+            Serial.flush(); delay(100); esp_restart();
+        }
+        g_tx_ult_reinit = agora; g_tx_reinit_n++;
+        Serial.printf("[TX] reinicializando o ESP-NOW (tentativa %u)\n", (unsigned)g_tx_reinit_n);
+        espnow_reiniciar();
+    }
 }
 
 // ------------------------------------------------------------------ UI -----
@@ -247,7 +314,7 @@ static void cb_modelo(lv_event_t* e) { g_modelo_sel = (uint8_t)(intptr_t)lv_even
 static void cb_auto_iniciar(lv_event_t*)  { enviar(20, 1, g_modelo_sel); }
 static lv_obj_t* btn_a_pausa = nullptr;
 static void cb_auto_pausa(lv_event_t*)    {   // alterna pausar/continuar; armado esperando o carro (X14) o botao vira CANCELAR ESPERA
-    if (g_st_ok && g_st.estado_auto == 1) { enviar(23, 3); return; }
+    if (g_st_ok && g_st.estado_auto >= 1 && g_st.estado_auto <= 4) { enviar(23, 3); return; }   // 1..4 = ainda sem processo: o botao cancela
     enviar((g_st_ok && g_st.estado_auto == 8) ? 22 : 21, 2);
 }
 static void cb_auto_cancelar(lv_event_t*) { enviar(23, 3); }
@@ -331,6 +398,7 @@ static void cb_ed_ajusta(lv_event_t* e) {
     }
     g_cfg[g_ed_tab][m][i] = nv;
     cfg_set(g_ed_tab, (ED_COM_MODELO) ? m : i, (ED_COM_MODELO) ? i : 0, nv);
+    if (g_ed_tab == 4) g_seq_sync_ms[m] = (millis() + 4000UL) | 1UL;     // mexeu na SEQUENCIA do modelo: 4 s depois do ultimo toque confere com a W1 e atualiza a nuvem (seq_sync_tick)
     g_ed_refetch_ms = millis() + 500;     // confere com o que a W1 realmente gravou
 }
 
@@ -597,6 +665,7 @@ static void ui_evento_atualiza(bool contato, const MsgTesteStatus& s) {
     if (s.estado_auto >= 1 && s.estado_auto <= 5) { if (pop_ev) lv_obj_add_flag(pop_ev, LV_OBJ_FLAG_HIDDEN); }   // novo ciclo em andamento
     if (s.ev_seq == ev_visto) return;
     ev_visto = s.ev_seq;
+    if (s.ev_tipo == 0) return;   // a W1 reiniciou (seq e tipo voltam a 0): nao ha evento de ciclo — antes isso abria um "ERRO NO CICLO (modelo 0)" falso com OK
     char b[120];
     if (s.ev_tipo == 1) {   // concluido com sucesso: so um aviso curto na linha de mensagens (sem pop-up e sem OK)
         snprintf(g_aviso, sizeof(g_aviso), "Ciclo concluido (modelo %u)", (unsigned)s.ev_modelo); g_aviso_ms = millis();
@@ -800,6 +869,7 @@ static void ui_atualizar_auto(bool contato, const MsgTesteStatus& s) {
     if (g_aviso[0] && (millis() - g_aviso_ms) < 3500) { strncpy(msg, g_aviso, sizeof(msg) - 1); }
     else if (nd_lic_bloq())  { snprintf(msg, sizeof(msg), "MAQUINA BLOQUEADA (licenca): %u dias sem pagar - fale com a Pili", (unsigned)nd_lic_dias()); }
     else if (nd_lic_aviso()) { snprintf(msg, sizeof(msg), "AVISO de licenca: %u dias sem pagamento (bloqueia aos 50)", (unsigned)nd_lic_dias()); }
+    else if (!(s.bomba_on & 2) && !s.msg[0])          { snprintf(msg, sizeof(msg), "ATENCAO: modo A SECO (X10 simulado). O automatico forca CARRO REAL."); }
     else                                              { strncpy(msg, s.msg, sizeof(msg) - 1); }
     msg[sizeof(msg) - 1] = '\0';
     lv_label_set_text(lbl_a_msg, msg);
@@ -813,8 +883,9 @@ static void ui_atualizar_auto(bool contato, const MsgTesteStatus& s) {
              (s.w1_do >> 7) & 1, (s.w2_do_real >> 1) & 1);
     lv_label_set_text(lbl_a_sens, buf);
 
-    lv_label_set_text(lbl_a_pausa, s.estado_auto == 1 ? "CANCELAR ESPERA" : (s.estado_auto == 8 ? "CONTINUAR" : "PAUSAR"));
-    lv_obj_set_style_bg_color(btn_a_pausa, s.estado_auto == 1 ? COR_VERMELHO : COR_AMARELO, 0);
+    const bool pre_proc = s.estado_auto >= 1 && s.estado_auto <= 4;   // armado / carro entrando / esperando posicao / iniciando
+    lv_label_set_text(lbl_a_pausa, pre_proc ? "CANCELAR ESPERA" : (s.estado_auto == 8 ? "CONTINUAR" : "PAUSAR"));
+    lv_obj_set_style_bg_color(btn_a_pausa, pre_proc ? COR_VERMELHO : COR_AMARELO, 0);
 
     static const char* TP[4] = { "TIPO: PRESENCIAL", "TIPO: APLICATIVO", "TIPO: SOCIO", "TIPO: BONUS" };
     static const uint32_t TCOR[4] = { 0x444C56, 0x1E5FA8, 0xE08A00, 0x7B3FA0 };
@@ -856,17 +927,24 @@ static void ui_atualizar() {
 
     // TECNICO presente: enquanto estiver nas telas TECNICO, MANUAL ou WI-FI avisa a W1 (acao 70) para manter as luzes da maquina acesas.
     {
-        static uint32_t t_ping = 0; static lv_obj_t* tela_ant = nullptr;
+        static uint32_t t_ping = 0; static lv_obj_t* tela_ant = nullptr; static bool tec_ant = false;
         lv_obj_t* a = lv_scr_act();
         bool tec = (a == scr_principal || a == scr_manual || a == scr_wifi || a == scr_rede || a == scr_cad || a == scr_cad_nova);
         if (tec && (a != tela_ant || millis() - t_ping > 10000)) { t_ping = millis(); enviar(70, 1, 0); }
+        // Chegou no AUTOMATICO vindo da aba tecnica POR QUALQUER CAMINHO: assume COM X10 + BOMBA ON (ate aqui so os botoes diretos faziam isso;
+        // em 2026-10-30 um teste a seco ficou valendo no automatico, o carrinho ignorou o X10 e bateu no carro).
+        if (a == scr_auto && tela_ant && tela_ant != scr_auto && tec_ant) tecnico_sair_assume_operacao();
+        tec_ant = tec;
         tela_ant = a;
     }
 
     // Ciclo armado/iniciado de fora (painel fisico, controle remoto): mostra a tela AUTOMATICO e o modelo pedido.
     static uint8_t estado_ant = 0;
     if (contato) {
-        if (estado_ant == 0 && s.estado_auto >= 1 && s.estado_auto <= 5 && scr_auto && lv_scr_act() != scr_auto) lv_scr_load(scr_auto);
+        // NAO tira o tecnico da tela dele: INICIAR TESTE na aba TECNICO (ou ciclo que comece com ele nas telas tecnicas/MANUAL/WI-FI) fica onde esta.
+        lv_obj_t* aa = lv_scr_act();
+        bool em_tec = (aa == scr_principal || aa == scr_manual || aa == scr_wifi || aa == scr_rede || aa == scr_cad || aa == scr_cad_nova);
+        if (estado_ant == 0 && s.estado_auto >= 1 && s.estado_auto <= 5 && scr_auto && aa != scr_auto && !em_tec) lv_scr_load(scr_auto);
         estado_ant = s.estado_auto;
         if (((s.estado_auto >= 1 && s.estado_auto <= 5) || s.estado_auto == 8) && s.programa_sel >= 1 && s.programa_sel <= 4 && g_modelo_sel != s.programa_sel) {
             g_modelo_sel = s.programa_sel; marca_modelo();
@@ -1011,10 +1089,106 @@ void setup() {
     lvgl_port_lock(-1);
     ui_criar();
     lvgl_port_unlock();
+    // Watchdog de tarefa (2026-11-01): reinicia o display se o loop() travar por 20 s (o display nao tinha nenhum; a camera e a W1 ja tem).
+    esp_task_wdt_config_t twdt = { .timeout_ms = 20000, .idle_core_mask = 0, .trigger_panic = true };
+    if (esp_task_wdt_reconfigure(&twdt) != ESP_OK) esp_task_wdt_init(&twdt);
+    esp_task_wdt_add(NULL);
     Serial.println("[TESTE] display de testes pronto");
 }
 
+static uint32_t g_seq_idn = 0;
+static void seq_sync_tick() {
+    static bool boot_feito = false;
+    uint32_t agora = millis();
+    if (!boot_feito && g_st_ok && agora > 20000UL) {   // 1x ao ligar: a nuvem passa a ter as sequencias reais, mesmo sem ninguem editar
+        boot_feito = true;
+        for (int m = 0; m < 4; m++) if (!g_seq_sync_ms[m]) g_seq_sync_ms[m] = (agora + 2000UL * (uint32_t)(m + 1)) | 1UL;
+    }
+    for (int m = 0; m < 4; m++) {
+        if (g_seq_pedido_ms[m]) {
+            if (g_cfg_ok[4][m]) {   // chegou o dump da W1: o que esta na W1 e o que vai para a nuvem
+                g_seq_pedido_ms[m] = 0;
+                char ids[40] = ""; int n = 0;
+                for (int s = 0; s < 14; s++) {
+                    uint16_t v = g_cfg[4][m][s];
+                    if (v < 1 || v > 9) break;                    // 10 = fim da sequencia
+                    n += snprintf(ids + n, sizeof(ids) - n, n ? ".%u" : "%u", (unsigned)v);
+                }
+                if (n > 0) {
+                    // tira da fila uma versao anterior ainda nao enviada deste modelo (o evento mais novo vale; a cabeca pode estar em envio: o ACK dela nao casa e nao tira nada)
+                    for (int q = g_nd_evq_n - 1; q >= 0; q--) if (g_nd_evq[q].tipo == 5 && g_nd_evq[q].prog == m + 1) {
+                        memmove(&g_nd_evq[q], &g_nd_evq[q + 1], sizeof(EvtD) * (g_nd_evq_n - q - 1)); g_nd_evq_n--;
+                    }
+                    EvtD d = {}; d.id = 0; d.tipo = 5; d.prog = (uint8_t)(m + 1);
+                    snprintf(d.res, sizeof(d.res), "SQ%d-%lu", m + 1, (unsigned long)(++g_seq_idn ^ (agora & 0xFFFF)));
+                    strncpy(d.err, ids, sizeof(d.err) - 1);
+                    nd_fila_push(d);
+                }
+            } else if ((int32_t)(agora - g_seq_pedido_ms[m]) > 5000) { g_seq_pedido_ms[m] = 0; g_seq_sync_ms[m] = (agora + 1000UL) | 1UL; }   // W1 nao respondeu: tenta de novo
+        } else if (g_seq_sync_ms[m] && (int32_t)(agora - g_seq_sync_ms[m]) >= 0) {
+            if (g_st_ok && g_st.estado_auto == 0) {            // so com a maquina parada (o mesmo vale para editar a tabela)
+                g_cfg_ok[4][m] = false; cfg_pedir(4, (uint8_t)m);
+                g_seq_pedido_ms[m] = agora | 1UL; g_seq_sync_ms[m] = 0;
+            } else g_seq_sync_ms[m] = (agora + 5000UL) | 1UL;  // sem contato / em ciclo: espera
+        }
+    }
+}
+
+// ---- CONTADORES DE LAVAGEM -> NUVEM (2026-11-04) ----
+// O contador do display/W1 (por modelo: presencial, aplicativo, socios, bonus, desde o ultimo "acerto") e a REFERENCIA. A cada 15 min (1o: 60 s depois de
+// ligar; e ~25 s depois de cada ciclo concluido) o display le a tabela 5 da W1 e poe 2 eventos (tipo 4, texto "C;...") na fila da nuvem; a nuvem confere com o
+// banco e avisa o admin se diferir (lib/contadores.ts). So com a maquina parada e com TODAS as filas vazias (nada em transito que explique a diferenca).
+static uint32_t g_ct_prox_ms = 0, g_ct_pedido_ms = 0, g_ct_n = 0;
+static uint8_t  g_ct_evseq = 255;
+static void ct_fila_limpa_antigos() {   // um relatorio novo vale mais que os velhos ainda nao enviados (a cabeca pode estar em envio: o ACK dela nao casa e nao tira nada)
+    for (int q = g_nd_evq_n - 1; q >= 1; q--) if (g_nd_evq[q].tipo == 4 && g_nd_evq[q].res[0] == 'C' && g_nd_evq[q].res[1] == 'T') {
+        memmove(&g_nd_evq[q], &g_nd_evq[q + 1], sizeof(EvtD) * (g_nd_evq_n - q - 1)); g_nd_evq_n--;
+    }
+}
+static void ct_empurra(uint8_t parte, const char* corpo) {
+    EvtD d = {}; d.id = 0; d.tipo = 4; d.prog = 0;
+    snprintf(d.res, sizeof(d.res), "CT%u-%lu", (unsigned)parte, (unsigned long)(++g_ct_n * 7919UL + (millis() & 0xFFFFUL)));
+    strncpy(d.err, corpo, sizeof(d.err) - 1);
+    nd_fila_push(d);
+}
+static void ct_sync_tick() {
+    uint32_t agora = millis();
+    static uint32_t t_cab = 0;
+    if (g_nd_evq_n && g_nd_evq[0].tipo == 4 && g_nd_evq[0].res[0] == 'C' && g_nd_evq[0].res[1] == 'T') {   // trava de seguranca: relatorio na cabeca ha mais de 5 min sem ACK (camera sem suporte): descarta
+        if (!t_cab) t_cab = agora | 1UL; else if ((int32_t)(agora - t_cab) > 300000) { nd_fila_pop(); t_cab = 0; }
+    } else t_cab = 0;
+    if (!g_st_ok) return;
+    if (g_ct_evseq == 255) g_ct_evseq = g_st.ev_seq;                                   // 1a leitura: nao e ciclo novo
+    else if (g_st.ev_seq != g_ct_evseq) { g_ct_evseq = g_st.ev_seq; if (!g_ct_pedido_ms) g_ct_prox_ms = (agora + 25000UL) | 1UL; }   // terminou um ciclo
+    if (!g_ct_prox_ms && !g_ct_pedido_ms) g_ct_prox_ms = (agora + 60000UL) | 1UL;
+    if (g_ct_pedido_ms) {
+        if (g_cfg_ok[5][0] && g_cfg_ok[5][1]) {
+            g_ct_pedido_ms = 0; g_ct_prox_ms = (agora + 900000UL) | 1UL;
+            const uint16_t* a = g_cfg[5][0]; const uint16_t* b = g_cfg[5][1];
+            unsigned dia = a[12] & 0xFF, mes = (a[12] >> 8) & 0xFF, ano = (a[13] >= 2020 && a[13] < 2100) ? a[13] : 0;
+            if (!ano) { dia = 0; mes = 0; }
+            auto c = [](uint16_t v) -> unsigned { return v > 9999 ? 9999u : (unsigned)v; };
+            char t[64];
+            ct_fila_limpa_antigos();
+            snprintf(t, sizeof(t), "C;1;d=%u.%u.%u;p=%u.%u.%u.%u;a=%u.%u.%u.%u", dia, mes, ano, c(a[0]), c(a[1]), c(a[2]), c(a[3]), c(a[4]), c(a[5]), c(a[6]), c(a[7]));
+            ct_empurra(1, t);
+            snprintf(t, sizeof(t), "C;2;d=%u.%u.%u;s=%u.%u.%u.%u;b=%u.%u.%u.%u", dia, mes, ano, c(a[8]), c(a[9]), c(a[10]), c(a[11]), c(b[0]), c(b[1]), c(b[2]), c(b[3]));
+            ct_empurra(2, t);
+        } else if ((int32_t)(agora - g_ct_pedido_ms) > 6000) { g_ct_pedido_ms = 0; g_ct_prox_ms = (agora + 30000UL) | 1UL; }   // a W1 nao respondeu: tenta de novo daqui a pouco
+        return;
+    }
+    if ((int32_t)(agora - g_ct_prox_ms) >= 0) {
+        if (g_st.estado_auto == 0 && g_nd_evq_n == 0 && g_st.evq_n == 0) {
+            g_cfg_ok[5][0] = false; g_cfg_ok[5][1] = false;
+            cfg_pedir(5, 0); cfg_pedir(5, 1);
+            g_ct_pedido_ms = agora | 1UL;
+        } else g_ct_prox_ms = (agora + 20000UL) | 1UL;      // em ciclo ou com evento em transito: espera
+    }
+}
+
 void loop() {
+    esp_task_wdt_reset();
+    tx_watchdog_tick();  // envio de radio travado -> reinicializa o ESP-NOW (e reinicia o display se nao resolver)
     static uint32_t t = 0;
     if (millis() - t >= 200) {
         t = millis();
@@ -1026,5 +1200,7 @@ void loop() {
     wifi_tick();         // busca de redes / migracao de canal (maquina de estados, fora do LVGL)
     cad_tick();          // cadastro da maquina (busca de unidade, cadastro, identidade)
     nd_tick();           // nuvem: heartbeat/eventos com a camera e ordens para a W1
+    seq_sync_tick();     // sequencia dos modelos alterada -> evento para a nuvem
+    ct_sync_tick();      // contadores de lavagem (referencia) -> nuvem confere e avisa o admin
     delay(5);
 }

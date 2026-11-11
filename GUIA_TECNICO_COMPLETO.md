@@ -1,6 +1,6 @@
 # PILI CLEAN — Guia Técnico Completo
 
-> Documento de referência de tudo que existe no sistema até 2026-10-11 (atualizado pela última vez; escrito originalmente em 2026-09-19): firmware (display, Waveshares, câmera), backend, app mobile, PWA, painel admin e banco de dados. Escrito a partir da leitura completa do código-fonte — quando algo é uma limitação conhecida ou pendência, está marcado explicitamente.
+> Documento de referência de tudo que existe no sistema, **atualizado em 2026-11-03** (escrito originalmente em 2026-09-19; firmware reescrito neste dia para refletir o que está gravado na máquina: W1 controladora, W2 por cabo UART, display e câmera v7): firmware (display, Waveshares, câmera), backend, app mobile, PWA, painel admin e banco de dados. Escrito a partir da leitura completa do código-fonte — quando algo é uma limitação conhecida ou pendência, está marcado explicitamente.
 
 ---
 
@@ -9,9 +9,9 @@
 PILI CLEAN é um sistema de lavagem automática de carros **sem operador fixo no local**: o cliente reserva/paga pelo app, a câmera reconhece a placa do carro na chegada, a máquina libera sozinha e executa o ciclo de lavagem automaticamente.
 
 **Por máquina física instalada**, o hardware é:
-- 1 **display** touchscreen (ESP32-S3, tela LVGL 800×480) — executa o ciclo de lavagem e a interface do painel físico.
-- 2 **Waveshares** ESP32-S3-POE-ETH-8DI-8DO — expansores de I/O (8 entradas + 8 saídas cada), ligados via RS-485.
-- 1 **inversor de frequência** Delta MS300 — controla o motor (giro do braço / deslocamento do carrinho), também em RS-485.
+- 1 **display** touchscreen (ESP32-S3, tela LVGL 800×480) — interface do painel físico e **hub da nuvem** (fala com a câmera e manda ordens à W1).
+- 2 **Waveshares** ESP32-S3-POE-ETH-8DI-8DO (8 entradas + 8 saídas cada): a **W1 é a controladora** (executa o ciclo de lavagem) e a **W2 é só E/S** (sensores e saídas); ligadas entre si por **cabo UART**.
+- 1 **inversor de frequência** Delta MS300 — controla o motor (giro do braço / deslocamento do carrinho), em RS-485 com a W1. A bomba de alta pressão tem um segundo inversor (SAJ), fora do RS-485 (parte por terminal, frequência fixa).
 - 1 **câmera** ESP32-CAM (AI-Thinker) — tira fotos da placa e é o **único ponto de conexão com a internet** da máquina.
 - (opcional, por máquina) 1 **aspirador de pó**, ligado via relé (DO8 da Waveshare 2), controlado pelo app (ver seção 6.6c).
 
@@ -31,157 +31,186 @@ PILI CLEAN é um sistema de lavagem automática de carros **sem operador fixo no
 
 ## 2. Arquitetura de comunicação (o pulo do gato)
 
+**Arquitetura atual (gravada na máquina em 2026-11-02):**
+
 ```
-[Display] <--RS-485 Modbus--> [Waveshare 1] (I/O grupo 1)
-    |                          [Waveshare 2] (I/O grupo 2)
-    |                          [Inversor Delta MS300] (motor)
-    |
-    +----ESP-NOW (rádio local, sem internet)----> [Câmera]
-                                                       |
-                                                    HTTPS
-                                                       |
-                                                       v
-                                                  [Backend / Nuvem]
+                         cabo UART0 (GPIO43/44, 115200)
+[Waveshare 1 = W1] <==============================> [Waveshare 2 = W2]
+ controladora: máquina de estados,                    E/S "burra": sensores X10..X17,
+ ciclo, giro, HOME, protocolo com o Delta             saídas (bombas, solenoides, Y14, luzes, aspirador)
+    |         |
+    | RS-485  +----ESP-NOW (canal do roteador)----> [Display] <----ESP-NOW----> [Câmera]
+    v                                                (cliente fino + hub da nuvem)   |
+ [Delta MS300]  (SAJ da bomba fora do RS-485,                                      HTTPS
+  parte por terminal)                                                                |
+                                                                                     v
+                                                                            [Backend / Nuvem]
 ```
 
 Pontos importantes:
-- **O display NÃO tem Wi-Fi/internet** (não tem RAM suficiente pra TLS). Ele só fala ESP-NOW com a câmera.
-- **A câmera é o gateway de nuvem**: é ela quem conecta no Wi-Fi, é a "mestre de canal" (avisa display+Waveshares em qual canal do rádio ela está), e faz todo o HTTPS (heartbeat, envio de fotos LPR, eventos, provisionamento).
-- **ESP-NOW é rádio de curto alcance** (dezenas de metros) — isso é usado deliberadamente como trava de segurança na troca de peça (ver seção 3.9).
-- **Waveshares migraram de ESP-NOW pra RS-485 cabeado** (mudança que deu nome à pasta `lava_car_485`) — só a câmera continua em ESP-NOW com o display.
-- **Achado real em teste de bancada (09-19)**: quando a câmera muda de rede Wi-Fi (e portanto de canal) enquanto já está em operação, o display **não tinha como descobrir sozinho** o canal novo — os dois ficavam "surdos" um pro outro até um reset manual. Corrigido com o "modo caça" (ver 3.4).
+- **A W1 é a controladora e só opera**: um defeito na nuvem ou no display não pode derrubar o controle no meio de uma lavagem. Ela fala RS-485 só com o Delta, cabo UART com a W2, e ESP-NOW com o display (e recebe a hora da câmera).
+- **A W2 não tem rádio** no firmware atual (o link por cabo existe porque o ESP-NOW entre W1 e W2 deixava a W2 "muda" por 160–208 s em 29–31/10, e a W1 deixava de ver o X10). Se a W1 some, a W2 desliga as saídas sozinha em 2 s (menos as luzes).
+- **O display NÃO tem Wi-Fi/internet** (não tem RAM suficiente pra TLS). Ele fala ESP-NOW com a câmera e com a W1, e é o **hub da nuvem**: faz o heartbeat (a cada 5 s), guarda a fila de eventos (com ACK) e manda **ordens** à W1 a cada 2 s (lâmpada, licença, aspirador, iniciar reserva do app).
+- **A câmera é o gateway de nuvem**: conecta no Wi-Fi, é a "mestre de canal" (avisa display e W1 em qual canal do rádio ela está), e faz todo o HTTPS (heartbeat, fotos LPR, eventos, provisionamento, reinícios das placas). Também pega a **hora por NTP** e repassa à W1 (`MSG_HORA`).
+- Todos no **mesmo canal** (o do roteador). A migração de canal é orquestrada pelo display (câmera → W1 → credenciais), com rollback; a câmera pede **re-sync** ao display se o roteador mudar de canal.
+- **ESP-NOW é rádio de curto alcance** (dezenas de metros) — isso é usado deliberadamente como trava de segurança na troca de peça (ver seção A.9).
+- **Achado real em teste de bancada (09-19)**: quando a câmera muda de rede Wi-Fi (e portanto de canal) com tudo já em operação, o display **não tinha como descobrir sozinho** o canal novo. Corrigido com o "modo caça" (ver A.4) e, depois, com o re-sync (câmera v5+).
+
+**Histórico.** Até 2026-10 a produção era o firmware `lava_car_485/` (display como mestre, RS-485 para as duas Waveshares). Em 2026-10 a controladora passou para a W1 (`testes/`, ESP-NOW com a W2) e em 2026-11-02 o ESP-NOW W1↔W2 foi trocado pelo cabo. Tudo o que é antigo foi movido para `lixo/` (mapa em `lixo/LEIAME.md`); a descrição dele está nos Apêndices A e B.
 
 ---
 
-## 3. Firmware do Display — `lava_car_485/display/`
+## 3. Firmware atual da máquina — controladora (W1) e display (`testes/`)
 
-Projeto Arduino (`display.ino` + vários `.h`). Board: ESP32S3 Dev Module, Flash 16MB, PSRAM OPI 8MB, tela Waveshare ESP32-S3-Touch-LCD-7 (800×480, LVGL 8.4).
+### 3.1 Visão geral e onde está cada coisa
 
-FQBN validado (**importante — outras combinações já causaram tela branca**):
+| Peça | Placa / porta | Código | Como gravar |
+|---|---|---|---|
+| **W1** (controladora) | Waveshare ESP32-S3-POE-ETH-8DI-8DO, COM24 | `testes/w1_w2_por_rxtx/waveshare1/` | `arduino-cli upload`, FQBN `esp32:esp32:esp32s3:PSRAM=opi,CPUFreq=240,FlashMode=qio,FlashSize=16M,CDCOnBoot=cdc,UploadSpeed=230400` |
+| **W2** (E/S) | idem, COM10 | `testes/w1_w2_por_rxtx/waveshare2/` | mesmo FQBN |
+| **Display** | ESP32-S3-Touch-LCD-7, COM11 | `testes/display/` | FQBN `esp32:esp32:esp32s3:PartitionScheme=huge_app,PSRAM=opi,FlashSize=16M`; compilar leva 5–17 min; nunca dois compiles ao mesmo tempo; às vezes precisa BOOT+RESET |
+| **Câmera** | ESP32-CAM | `firmware_camera/` (PlatformIO) | OTA (seção 5.1) |
+
+Regras de operação ao mexer no firmware: **só gravar com o "grava" explícito do Giovani**; abrir a serial da W1 **reinicia** a W1 (e o log de boot às vezes não aparece: `DBG` só imprime com o host conectado); fechar qualquer script de captura da serial antes de gravar; a **câmera tem OTA** (sem cabo), o **display e as Waveshares exigem cabo USB**.
+
+Os firmwares antigos (ESP-NOW entre W1 e W2, `lava_car_485`, `wave1_mestre`, diagnósticos) estão em `lixo/`. A cópia ESP-NOW de produção (`lixo/testes/waveshare1|2`) continua compilando, mas **gravá-la quebra o cabo** (as duas placas precisam estar no mesmo modo).
+
+### 3.2 W1 — arquivos e responsabilidades (`testes/w1_w2_por_rxtx/waveshare1/`)
+
+| Arquivo | O que faz |
+|---|---|
+| `waveshare1.ino` | `setup()`/`loop()`, ordem de inicialização |
+| `tipos_w1.h` | tipos, estados, protocolo de teste (`g_estado_auto`, `g_pausa_x10`…) |
+| `maquina_estados.h` | **máquina de estados do ciclo automático** e todas as proteções (pausa por W2, X10, X15, duração máxima, recuperação de boot) |
+| `processos.h` | sub-máquinas de cada etapa (Pré-lavagem/Enxágue, Alta Pressão com giro triplo, Espuma A/B, Cor Mágica, Cera d'água, Secagem), **giro** (`giro_iniciar`, `giro_tick`, rebobinar), carrinho |
+| `controle.h` | E/S das duas placas (espelho de entradas/saídas da W2), HOME, manual com homem morto, painel físico/controle remoto (X1,X2,X5,X6 = modelos 1..4; X4 = pausar/continuar), status para o display |
+| `vfd_rs485_w1.h` | protocolo Modbus RTU com o Delta MS300 (só ele no RS-485) |
+| `saj_rs485_w1.h` | controle do SAJ (bomba) por RS-485 — **desligado** (`TESTE_SAJ_POR_RS485 0`); o SAJ parte por terminal, frequência fixa |
+| `nuvem_w1.h` | recebe as ordens do display (`MSG_NV_ORDEM`), inicia o ciclo do app, lâmpada, aspirador, manda eventos (`MSG_NV_EVT`) e guarda até 16 na NVS até o ACK |
+| `reset_log_w1.h` | registro permanente de reinícios (W1/W2), retrato da etapa, ocorrências O1..O6, envio à nuvem |
+| `link_cfg.h`, `link_frame.h`, `link_w2_uart.h` | transporte UART W1↔W2 (seção 4.2); `LINK_W1_W2_UART` 1 = cabo, 0 = ESP-NOW antigo |
+| `comm_espnow.h`, `nvs_manager.h`, `protocolo_teste.h` | ESP-NOW com display/câmera; NVS; mensagens (seção 3.8) |
+
+**Máquina de estados** (`maquina_estados.h`):
 ```
-esp32:esp32:esp32s3:CDCOnBoot=default,FlashMode=qio,FlashSize=16M,PartitionScheme=default_8MB,PSRAM=opi,CPUFreq=240
+IDLE -> AGUARDA_CARRO -> CARRO_ENTRANDO (X14) -> AGUARDA_POS (X15)
+     -> INICIANDO (6 s, luz vermelha) -> PROCESSO (sub-máquinas) -> CONCLUIDO -> IDLE
+                      \-> PAUSADO (8)   \-> ERRO (7)   \-> HOME / recuperação
 ```
+- A luz verde só acende quando a lavagem foi **liberada** (app ou controle remoto/botão INICIAR AUTOMATICO) — é a autorização para o carro entrar.
+- **Erro** = `auto_erro()`: para tudo, vermelho piscando, **sem HOME automático** (o HOME automático com carro dentro já bateu o braço no carro em 2026-10-25), manda `fault` à nuvem (o backend marca a reserva FAILED e **estorna na hora**). PARAR TUDO e CANCELAR do operador também mandam a falha quando o ciclo era do app.
+- **Pausar/continuar** (`auto_pausar`/`auto_retomar`): para o motor, desliga bombas/solenoides/compressor e guarda o movimento, a frequência e as saídas; ao continuar religa as saídas, espera **2 s de pressão** (`RETOMAR_PRESSAO_MS`), re-emite o movimento e desloca os cronômetros de etapa e os watchdogs do X0 (`processos_shift_timers`, que agora inclui `_cr_t_pulso` e `_cx_t_pulso`: sem isso, uma pausa > 4 s dava CARRO TRAVADO ao retomar).
+- **Giro** (`processos.h`): sub-máquina própria; 1→2 por tempo (sentido anti-horário, "A"), 2→1 até X16+X17 (HOME do braço). O giro triplo da Alta Pressão faz 1→2 (A), 2→1 (B), 1→2 (A); a volta repete a sequência. Tem rampa de desaceleração, debounce de sensores e "fine-home" por pulsos. O **HOME** do giro tem limite de **60 s** (`HOME_TIMEOUT_MS`; era 25 s e falhou com o braço longe do zero, andando devagar).
+- **Carrinho**: avança com Y14 até perder o X10, volta até o X12 com rampa de 350 ms (`CARR_RAMPA_MS`); trava mútua Y4↔Y14 e cooldown de 500 ms no contator.
+- **Painel físico / controle remoto**: o pedido de modelo só vale se o contato ficar ativo por **50 ms** (`PAINEL_PULSO_MIN_MS`; pulsos menores são ruído e saem como `[PAINEL] pulso curto descartado`); janela de 3 s depois de qualquer mudança de saída; ciclo armado só pelo painel expira em 3 min.
+- **Tipos de ciclo** (`g_tipo_ciclo`): presencial, aplicativo, sócio, bônus — o `wash-complete` leva `source` `remote`/`socio`/`bonus` (o app usa a reserva).
+- **Ao ligar a W1 sobe em COM X10 + BOMBA ON** (o display reassume isso ao sair do TECNICO). No modo **SECO** o X10 é simulado e as esperas não valem.
 
-### 3.1 `tipos.h`
-Definições compartilhadas: enums de processo (`Processo`) e estado automático (`EstadoAuto`), todo o **protocolo ESP-NOW** (tipos de mensagem `MSG_*` e as structs `Msg*` — precisam bater **byte a byte** com a câmera), mapeamento de saídas físicas (Y1–Y15), endereços Modbus, cores da interface.
+### 3.3 Proteções e watchdogs da W1 (todos gravados)
 
-Mapeamento de saídas (motor/solenoides):
-- Waveshare 1: Y1 (solenoide Cor Mágica), Y2 (Espuma A), Y3 (Espuma B), Y4 (giro do braço — trava mútua com Y14), Y5 (compressor secagem), Y6 (entrada pneumática), Y7 (bomba espuma), Y11 (lâmpada verde).
-- Waveshare 2: Y10 (bomba espuma baixo), Y12 (luz vermelha), Y13 (bomba alta pressão), Y14 (deslocamento — trava mútua com Y4), Y0 (junto com Cor Mágica).
+- **Pausa por falha da W2:** sem quadro da W2 por 1,5 s o ciclo **pausa** e retoma sozinho ao voltar; 10 min sem voltar = erro. A idade do último quadro é calculada com `hb2_idade_ms()` (diferença **com sinal**).
+- **Armadilha recorrente (3 vezes em 2026-11-02): subtração de tempo sem sinal** entre a tarefa de recepção (UART/ESP-NOW grava `g_hb2`, `g_t_app_armado`…) e o laço principal: se a tarefa grava um instante mais novo que o `millis()` já lido, `agora - t` dá ~4 bilhões. Sempre usar `(int32_t)(agora - t)`. Já corrigidos: HOME "falhou por comunicação", START do app cancelado na hora, `comm_perdida()` verdadeiro com o cabo perfeito.
+- **Recuperação de boot:** ao ligar fora do zero (HOME do giro e X12 não ok) **nada se move**; vermelho piscando e a tela pede o toque em **HOME** no display (HOME obrigatório pelo botão). Com carro no X15 pede para retirar o veículo. A recuperação reavalia o zero: X16+X12 estáveis por 1500 ms encerram a espera. 3 falhas seguidas do HOME = desiste e fica em ERRO.
+- **Duração máxima do ciclo:** 30 min em PROCESSO (pausa não conta) = para tudo, sem HOME (`CICLO_MAX_MS`).
+- **Prazo de 3 min** nos estados "carro entrando"/"aguardando posição": ciclo armado só pelo painel desarma e apaga o verde; ciclo do **app** que não chega ao X15 em 3 min é cancelado com `errorCode` `X15_POSICAO` (o backend devolve a reserva para a fila, sem estorno).
+- **O app prevalece** sobre um ciclo armado só pelo painel que ainda não começou o processo; reserva do app que some da nuvem desarma o ciclo (8 s, só com a nuvem online).
+- **X15 perdido por 3 s no processo** = para tudo e fica em erro, sem HOME.
+- **Delta mudo:** 20 leituras seguidas sem resposta com a máquina parada = mensagem na tela e contador na NVS (não bloqueia). **Leitura do código de falha do Delta/SAJ não existe** (endereço do registrador não confirmado).
+- **Monitor de memória** (a cada 10 s; < 40 KB registra, < 20 KB com a máquina parada reinicia; nunca no meio de ciclo) e **vigia do envio de rádio** (reinicia só o ESP-NOW; nunca reinicia a W1 no meio de ciclo).
+- **Caixa-preta na NVS** (`erro`, `w2`, `tx`, `mem`), impressa no boot como `[BOOT]`.
+- **Pulso de vida em IO1** (GPIO1, alterna a cada 3 s): para o futuro supervisor externo (`docs/SUPERVISOR_HARDWARE.md`); IO1 confirmado funcionando.
+- **Homem morto** no movimento manual: só enquanto o botão é segurado; sem sinal do display por 0,5 s o motor para; teto de 20 s.
 
-Botões físicos de início manual (presencial, pago em dinheiro): **X1=modelo1, X2=modelo2, X5=modelo3, X6=modelo4** (X3=manual/auto, X4=pause). Ver seção 6.6 pra como isso vira registro na nuvem.
+### 3.4 X10 (carro sob a mesa) e as regras de proteção do ciclo
 
-### 3.2 `maquina_estados.h` + `processos.h`
-A **máquina de estados do ciclo automático**:
-```
-IDLE -> AGUARDA_CARRO -> CARRO_ENTRANDO -> AGUARDA_POS
-     -> INICIANDO(6s) -> PROCESSO(sub-máquinas) -> CONCLUIDO -> IDLE
-```
-Qualquer erro leva a `AUTO_ERRO` (para tudo, acende vermelho piscando).
+Especificação completa: `docs/REGRAS_RETOMADA_CICLO.md` (G1–G15, tabela de pontos de interrupção, parâmetros). O que **está programado e gravado** (2026-11-02, commits `3532e38`…`b5d08b8`, função `x10_pausa_tick()` em `maquina_estados.h`):
 
-Processos implementados (cada um com sub-máquina própria, não-bloqueante): Pré-lavagem/Enxágue, Alta Pressão (giro triplo), Espuma A (com giro), Espuma B, Cor Mágica, Cera de Água, Secagem. O giro do braço tem lógica elaborada de rampa de desaceleração, debounce de sensores e "fine-homing" (busca fina por pulsos quando o giro para perto do home mas não exato).
+| Regra | Comportamento na máquina | Estado |
+|---|---|---|
+| **G3** X10 é pré-requisito | Antes de **cada etapa** o X10 tem que ler o carro; sem ele a etapa não começa (`g_x10_segura`) até o X10 ficar estável por 1500 ms. No início (AUTO_INICIANDO) a luz vermelha não conta e nada liga sem X10; 60 s sem X10 = erro. | início: validado; entre etapas: **não testado** |
+| **G4/G5** X10 sumiu sem deslocamento | "Ausente indevido" = X10 apagado **sem o carrinho ter andado 3 s** (Y14 ligado) desde a última vez que o viu parado. Por 500 ms → **PAUSA** (motor parado, bombas/solenoides desligados); X10 de volta e estável 1500 ms → **retoma sozinho**; 60 s sem X10 → ERRO ("Sem X10 (carro sob a mesa) por 60 s - lavagem cancelada"). Sair do X10 andando (≥ 3 s) é normal e não pausa. | giro: validado; demais etapas e retorno ao X12: **não testado** |
+| **G8** giro 1→2 interrompido | Ao voltar o X10, **rebobina** até X16+X17 (posição 1) a 5 Hz (`GIRO_REWIND_HZ10 50`, limite 30 s) no sentido oposto e **refaz** o giro. Giro 2→1 interrompido: retoma normalmente. | 1→2: validado |
+| Ocorrências O1..O6 | A Fase 0 **observa e registra** (retrato + diário) sem decidir nada (seção 3.7). | gravado |
 
-**Rampa de desaceleração do carrinho (Y14)**: tanto no avanço (ao perder o X10) quanto no retorno final (ao achar o X12), o carrinho desacelera suavemente em vez de parar seco — padronizado em **350ms** (`CARR_RAMPA_MS`, era 500ms) em `processos.h`, igual ao HOME (`HOME_X12_RAMPA_MS` em `modbus_waveshares.h`, que tem sua própria máquina de estados separada). Toda sub-máquina de retorno (Pré-Lavagem, Alta Pressão, e os processos simples via `_proc_simples` — Espuma A/B, Cor Mágica, Cera, Secagem) usa a mesma função compartilhada `carr_rev_x12_tick()`; só o jog manual (botão de segurar "carrinho" na tela manual) para instantaneamente, de propósito.
+Constantes: `X10_PERDIDO_MS 500`, `X10_VOLTA_MS 1500`, `X10_PAUSA_MAX_MS 60000`, `X10_ESPERA_MAX_MS 60000`. O X10 não vale no SECO nem nos testes técnicos.
 
-Pausas finais ajustadas por pedido do operador: Espuma A e Cor Mágica = 60s (eram 15s e 45s).
+**Ainda NÃO programado** (nada disto existe no firmware): G6 (X13 com X10 ausente), G7 (carrinho parado na frente após reinício), G8b (giro triplo da volta a 5 Hz sem repetir), **retomada no meio do movimento depois de reinício** (Fase 1/2, G9/G12/G15), 5 Hz também no giro 2→1 retomado, leitura da posição 2 sem X17 (P1). Hoje, depois de um reinício no meio do ciclo a W1 **não retoma**: registra, avisa e o backend cancela e estorna a lavagem do app.
 
-Sensores (nomes herdados do CLP original):
-- X0/X7 (Waveshare 1): indutivo de deslocamento / giro braço posição intermediária.
-- X10–X17 (Waveshare 2): carro sob a mesa, giro intermediário, fins de curso, **X14 (carro entrando)**, **X15 (carro na posição de lavagem)**, HOME do braço.
+### 3.5 Display (`testes/display/`)
 
-**Recuperação no boot**: se a máquina perder energia no meio de um ciclo, ao religar ela detecta se está "fora do zero" e faz um HOME automático (com luz piscando avisando), sem intervenção manual — a menos que tenha um carro em cima (aí só pisca vermelho até tirarem).
+Cliente fino em LVGL 8.4, 800×480, abre no **AUTOMATICO**. Arquivos: `display.ino` (telas, estado), `nuvem_display.h` (hub da nuvem), `wifi_tecnico.h` (Wi-Fi/rede do técnico), `cadastro_tecnico.h` (cadastro da máquina), `protocolo_teste.h` (**idêntico** ao da W1; conferir com `cmp`), `logo_pili.h`, porting LVGL.
+- **AUTOMATICO:** PARAR TUDO, HOME, CONFIG (senha 1111), MANUAL; 4 modelos, INICIAR AUTOMATICO, PAUSAR (vira **CANCELAR ESPERA** quando a W1 espera o carro); **TECNICO** (senha 2828); tipo do próximo ciclo (presencial > aplicativo > sócio > bônus; volta a presencial a cada ciclo); planilha de lavagens por modelo e tipo e **PAGAMENTO EFETUADO** (senha 3462 → acerto).
+- **MANUAL:** HOME, giro e carrinho (segurando), válvulas, espumas, cor mágica, secagem, cera (só parado, desligam sozinhas em 60 s). Y13 só no TECNICO.
+- **TECNICO:** BOMBA ON/OFF, HOME, INICIAR TESTE, PARAR, CARRO SECO/REAL, Wi-Fi/rede (rede e senha guardadas, painel `Canal N W1: ok W2: ok / Câmera: vista Nuvem: ONLINE`, rede da câmera), cadastro da máquina (nova / trocou display / trocou câmera: ainda **não testado** na base nova).
+- **CONFIG:** velocidades e pressões por modelo, esperas por etapa, atrasos em carro real, tempo do giro 1→2 por processo, sequência dos modelos, alterar senhas (ficam na memória do display).
+- Avisos de fim de ciclo (erro = pop-up com OK; sucesso = aviso curto); "SEM CONTATO COM A MAQUINA" quando perde a W1 por > 5 s (e avisa a câmera "ocupada").
+- **Watchdog de tarefa (20 s)** e vigia do envio de rádio (reinicializa só o ESP-NOW; 3 tentativas sem resolver reinicia o display); envia `FAULT` no heartbeat quando a W1 está em ERRO.
+- Displays novos sem flat do toque (GT911): `docs/TROCA_DE_DISPLAY.md`. Em caso de tela branca, ver a seção do FQBN em 3.1.
 
-Ao concluir um ciclo (`AUTO_CONCLUIDO`), o firmware já sabe se a lavagem foi iniciada pelo app (tem `reservationId` salvo) ou pelos botões físicos (X1-X6, sem reserva) — manda `backend_evt_wash_complete()` com `source="remote"` no segundo caso, e incrementa contadores locais separados por origem (NVS `p1_pres`/`p1_app` etc, só pra exibição na tela — ver 6.6 pra como isso também alimenta a nuvem).
+### 3.6 Nuvem e fluxo do app na base atual
 
-### 3.3 `modbus_waveshares.h` + `vfd_rs485.h`
-Comunicação RS-485 Modbus RTU com as 2 Waveshares + o inversor, num barramento único e compartilhado (mutex serializa tudo). Leitura de sensores é feita com **latch por interrupção + read-and-clear** (a Waveshare captura o pulso no hardware, o display consome e zera) — resolve o problema antigo de pulsos curtos se perderem entre leituras.
+O display conversa com a câmera (`nuvem_display.h`: heartbeat a cada 5 s; fila de eventos na NVS com ACK; licença 40/50 dias + 15 dias ligada sem comunicação) e manda ordens à W1 a cada 2 s (`MSG_NV_ORDEM`: lâmpada, licença, aspirador, reserva do app). Sem ordens por 60 s a W1 age em modo seguro. A W1 manda eventos (`MSG_NV_EVT`, confirmados por `MSG_NV_EVT_ACK`) e guarda até 16 na NVS.
 
-Task de polling roda no **core 0** (separado da UI, que fica no core 1) pra não competir com o LVGL.
+**Fluxo com o app (validado de ponta a ponta em 2026-10-25 e de novo em 2026-11-02):** reserva paga (HELD) → a câmera lê a placa ou o cliente toca "Já estou na máquina" (ACTIVE: luz verde, o heartbeat devolve `start`) → o display repassa à W1, que arma o ciclo e espera o X14 → `car_entered` (ENTERED) → ciclo → `wash_completed` (COMPLETED). Em erro ou cancelamento a W1 manda `fault` e o backend estorna.
+O START do app tinha um defeito de subtração sem sinal que o cancelava na hora (`carro nao chegou na posicao em 3 min`); corrigido em `nuvem_w1.h`.
+Lâmpada: a W1 ociosa segue a lâmpada do backend; acesa (DO7 da W2) durante o ciclo, fica mais 10 min e apaga. Aspirador = DO8 da W2.
 
-### 3.4 `comm_espnow.h`
-ESP-NOW só com a câmera agora (não fala mais com as Waveshares). Roteia as mensagens recebidas pros handlers certos (Wi-Fi config, heartbeat, eventos, scan de redes, provisionamento, busca de unidade, troca de câmera — ver 3.9).
+### 3.7 Registro de reinícios, relógio e ocorrências (Fase 0)
 
-**"Modo caça" (adicionado 09-19)**: quando o técnico aperta Buscar/Enviar numa das telas de cadastro e não há contato recente com a câmera (`espnow_camera_perdida()`, >3s sem ouvir nada dela), o display varre os 13 canais em **background, sem travar o toque/LVGL** (`espnow_cacar_tick()`, chamado todo `loop()`), ficando 1,3s em cada um (tem que ser maior que o intervalo de anúncio da câmera, que é 1s) e repetindo as voltas até achar ou o técnico cancelar saindo da tela. Substitui a lógica antiga de "isolado → estaciona no canal 1", que era passiva e só funcionava se o display por acaso já estivesse parado no canal certo no momento exato do anúncio da câmera.
+- **Reinícios:** a W1 guarda cada reinício (W1 e W2) na NVS (motivo, estado antes do reset, tempo ligada, total, se estava em ciclo) e manda à nuvem como evento **tipo 4** (display → câmera → `POST /api/machine/reset-log`). Só envia **depois de receber `MSG_HORA`** da câmera nova (senão uma câmera antiga prenderia a fila de eventos de lavagem). O texto leva `;t=<epoch>`.
+- **Relógio:** a câmera pega NTP e manda `MSG_HORA` (41) a cada 30 s; a W1 mantém o relógio na RAM (some em corte total de energia).
+- **Retrato da etapa** (`J;…`): processo, sub-estado, giro, modelo, entradas/saídas das duas placas, frequência; checkpoint na NVS a cada troca de etapa/giro. **Ocorrências** (`O;…`): O1 X10 apagou sem 3 s de Y14, O2 X13 com X10, O3 X12 com X13, O4 X15 sem carro, O5 X10 apagou durante o giro, O6 HOME falhou por comunicação com a W2. Só registro e aviso, 1 por tipo a cada 5 min.
+- **Diário X14/X15** na W2 (`MSG_W2_DIARIO` 42 → `LT_DIARIO` pelo cabo): bordas enquanto a W1 estava fora.
+- **Regra do backend:** a W1 reiniciou em ciclo → reservas do app ACTIVE/ENTERED que começaram **antes** do reset são canceladas e estornadas na hora (só com a hora do reset conhecida). Reinício da W2 não cancela (a W1 pausa e retoma). Queda **total** de energia aparece como "energia ligada" sem estado anterior e não cancela sozinha; o cron de expiração é a rede de segurança. Ver 6.12.
 
-Alarme de "câmera sem contato" continua em 60s (só informativo, mostra na tela).
+### 3.8 Protocolo ESP-NOW (`protocolo_teste.h`)
 
-### 3.5 `backend_client.h` + `licenca.h`
-Como o display não tem internet, ele manda seu estado (`FREE`/`WASHING`) pra câmera a cada 5s (`HB_INTERVAL_MS`, reduzido de 10s pra isso — era o mesmo intervalo da câmera, agora o display avisa com o dobro de frequência), e ela relay o POST `/api/machine/heartbeat` de verdade, devolvendo a resposta (`MSG_HB_RESP`) com: estado da lâmpada, dados de licença, comando de início (`start`) quando há uma reserva paga esperando, e comando do **aspirador** (`vacuum_seg` — segundos restantes, -1 = inativo).
+Idêntico em `testes/display/` e `testes/w1_w2_por_rxtx/waveshare1/`. 4–22 compatíveis com a câmera; 30–42 da base atual:
 
-**Aspirador (DO8)**: `_backend_processar_vacuum()`, chamada a cada ciclo de heartbeat, liga/desliga o relé do aspirador (`SET_ASPIRADOR`, `maquina_estados.h`) só conforme o campo `vacuum_seg` da resposta — nunca olha `g_estado_auto`, então não interfere numa lavagem em andamento. O backend é a fonte da verdade do tempo restante (ver 6.6c); o firmware só reflete ligado/desligado.
+| Mensagens | Uso |
+|---|---|
+| 4–6, 11–12, 21 | canal, Wi-Fi (`MSG_WIFI_REQ/CFG`), scan de redes, re-sync |
+| 7–10 | heartbeat (`MSG_HB_STATE/RESP`) e eventos (`MSG_EVT/ACK`) display↔câmera |
+| 13–20 | cadastro: provisionar, identidade, busca de unidades, troca de câmera |
+| 22 | `MSG_REDE_INFO`: rede Wi-Fi da câmera mostrada no display |
+| 30–35 | teste/config: comando e status do display↔W1, tabelas de configuração (NVS da W1), data |
+| 36–38 | `MSG_NV_EVT`, `MSG_NV_EVT_ACK`, `MSG_NV_ORDEM` (W1↔display) |
+| 40–42 | `MSG_W2_BOOT`, `MSG_HORA` (câmera→W1), `MSG_W2_DIARIO` (os de W2 viajam pelo cabo como `LT_*`) |
 
-**Duas travas de licença independentes:**
-- Pagamento: aviso aos 40 dias sem pagar, bloqueio aos 50 dias (ou `blocked=true` do backend).
-- Comunicação: 15 dias sem nenhum heartbeat 200 OK também bloqueia.
+### 3.9 Validado na máquina x pendente (resumo em 2026-11-03)
 
-Fila de eventos (car-entered / wash-complete / fault) fica em **ring buffer na NVS** — só sai da fila quando a câmera confirma que o backend aceitou (ACK), garantindo que o débito da lavagem nunca se perde mesmo com internet instável.
-
-### 3.6 `lampada_app.h`
-Controla a lâmpada bicolor (Y11 verde / Y12 vermelho) segundo o `lightState` que vem do backend, com prioridade: recuperação de boot > bloqueio de licença > erro local (sempre pisca vermelho) > estado do app > processo de lavagem em andamento.
-
-### 3.7 `wifi_manager.h`
-O display **não conecta no Wi-Fi** — só guarda as credenciais (SSID/senha/URL/device-key) e manda pra câmera por ESP-NOW quando ela pede (`MSG_WIFI_REQ`/`MSG_WIFI_CFG`), ou quando alguém salva pela tela de configuração. `enviar_cfg_camera()` varre os 13 canais pra ENVIAR a config nova (garante que a câmera receba onde quer que esteja) e se estaciona no canal 1 esperando ela confirmar o canal novo.
-
-### 3.8 Telas (LVGL)
-- `tela_manual.h`: tela padrão — controles manuais, contadores, status do inversor, diagnóstico dos 16 sensores. Botão "Técnico" leva pro menu de recadastro (`scr_boot_tipo`).
-- `tela_auto.h`: seleção de programa automático + painel temporário de ajuste fino do giro (tuning ao vivo).
-- `tela_config.h` / `tela_velocidades.h` / `tela_modelos.h`: parâmetros do sistema, velocidades por etapa, sequência de processos por modelo.
-- `tela_senha.h`: teclado numérico genérico — 3 modos: `PAG` (senha de pagamento/acerto, padrão 3462), `CFG` (senha de config, padrão 1111), `TEC` (acesso técnico, padrão **2828** — ver 3.9).
-- `tela_senhas_cfg.h`: alterar as senhas acima.
-- `tela_wifi.h`: configuração Wi-Fi — a câmera é quem escaneia redes (o display nunca mexe no próprio rádio pra isso). Acessível direto da tela inicial de cadastro (botão "Configurar Wi-Fi", 09-19) pra locais onde a rede padrão do firmware não existe. Tem também um campo de **SSID digitado manualmente** (alternativa ao dropdown do scan), útil se o scan falhar ou se o touch não alcançar o dropdown naquela área da tela.
-
-### 3.9 `tela_boot.h` — Cadastro da máquina (testado em bancada 09-19)
-
-Na **primeira ligada** (NVS ainda sem `provisionado=true`), o display entra direto nessa tela em vez da tela normal. O botão **"ACESSO TÉCNICO"** foi corrigido em 09-19: antes levava pro mesmo formulário que "CADASTRAR MÁQUINA" já abria sem senha nenhuma (tornando a senha inútil ali); agora leva pra tela de **operação normal** (de onde já dá pra entrar em Configurar Wi-Fi).
-
-```
-[CADASTRAR MÁQUINA] -> [NOVA] ou [TROCOU O DISPLAY] ou [TROCOU A CÂMERA]
-[ACESSO TÉCNICO]     -> pede senha (padrão 2828) -> tela de OPERAÇÃO normal
-[CONFIGURAR WI-FI]   -> direto, sem senha
-```
-
-- **NOVA**: primeiro passo é uma **busca de unidades já cadastradas** por cidade (`MSG_UNI_REQ`/`MSG_UNI_RESP`, câmera consulta `GET /api/machine/unidades`) — evita duplicar unidade quando o endereço é digitado diferente da vez anterior (achado real: "Joao Carlon" x "Rua João Carlon" viraram duas unidades antes desse fix). Se encontrar, o técnico escolhe da lista e o **número da máquina já vem pré-preenchido** com o próximo livre daquela unidade (`proximoNumero`, calculado no backend). Se não encontrar (ou "Nenhuma dessas"), cai no formulário livre de sempre (cidade+rua+número). Em qualquer um dos dois casos, o display **gera sua própria identidade** (deviceKey = `ESP.getEfuseMac()`, nunca escolhido por ninguém) e manda pra câmera por ESP-NOW (`MSG_PROV_REQ`); a câmera faz o POST `/api/machine/provisionar` (protegido por `PILI_PROVISION_SECRET`).
-- **TROCOU O DISPLAY** (só o display quebrou, a câmera continua a mesma): o display **não consulta a nuvem**. Ele pergunta pra câmera local "quem é você?" (`MSG_IDENT_REQ`) — como o ESP-NOW é rádio de curto alcance, só existe resposta se a câmera estiver **fisicamente por perto**. É essa distância física que impede pegar a máquina errada, não uma senha ou lista escolhida na tela.
-- **TROCOU A CÂMERA** (novidade 09-19, só a câmera quebrou, o display continua o mesmo): o display **já sabe sua própria identidade** (salva desde o cadastro original) e empurra ela pra câmera nova por ESP-NOW (`MSG_IDPUSH_REQ`/`MSG_IDPUSH_RESP`) — sem tocar na nuvem, o registro da máquina não muda, só a câmera física aprende quem ela é. Se o display não tiver identidade salva (NVS em branco também), avisa pra usar "NOVA" primeiro.
-
-Depois de cadastrada, a tela nunca mais aparece sozinha — a máquina liga direto na operação normal.
-
-### 3.10 `hard_reset.h`
-Reinicia o chip inteiro **uma vez** ao energizar (não em loop) — a ESP32-S3 é conhecida por subir com o painel/PSRAM em estado inconsistente no boot frio. Tem uma flag `HARD_RESET_APAGA_NVS` (normalmente 0) que, se ligada, também zera toda a NVS (reset de fábrica) — só pra usar propositalmente numa bancada.
-
-### 3.11 `lvgl_v8_port.*` e `esp_panel_board_custom_conf.h`
-Código de porting oficial da Espressif (não é nosso, CC0/Apache) — ponte entre o driver do painel e o LVGL, e configuração de pinos do hardware (barramento RGB, touch I2C GT911, backlight, etc.).
+- **Validado em 2026-11-02:** loopback do cabo nas duas placas; 10 min parado e ~13.000 quadros em produção com tudo zero (um único quadro com CRC ruim no dia); HOME (depois das correções); ciclo a seco; ciclo com bomba; lavagem completa pelo app; pulso de vida IO1; X10 no início, X10 no giro (pausa, rebobina, refaz).
+- **Pendente de teste na máquina** (o Giovani testa em outro dia): X10 removido no retorno ao X12; X10 removido entre etapas (espera G3); retomada com os watchdogs do X0; uma lavagem real completa com todas as proteções.
+- **Aberto:** pulsos fantasmas nas entradas do painel (~44 por ciclo de 80 s, não vêm do RS-485; o filtro de 50 ms os descarta); X15 instável (ajuste mecânico/cabo/blindagem); Y7 bloqueado na Cor Mágica (`io1_set_do` só aceita Y2/Y3/Y10: o Giovani mandou não mudar por enquanto); câmera: conferir que o OTA para a v7 aconteceu (`flags=4`); validar no admin os reinícios e ocorrências quando a câmera nova enviar; filtro do RS-485 e recolocar o SAJ no barramento (teste à parte); supervisor externo de hardware (`docs/SUPERVISOR_HARDWARE.md`); Delta parar na perda de comunicação Modbus.
+- Lista viva e completa: `testes/PENDENCIAS_NA_MAQUINA.md` (seções H–O) e `docs/ESTADO_ATUAL.md`.
 
 ---
 
-### 3.13 Base de testes `testes/` (em reconstrução; NÃO é a produção)
-Projeto paralelo em `testes/` onde o firmware está sendo refeito passo a passo com validação em bancada: W1 como controlador
-(máquina de estados + RS-485 só do Delta + ESP-NOW com a W2) e display como cliente fino (ESP-NOW, `protocolo_teste.h`). A produção
-(`lava_car_485/`) continua intacta. Estado, telas, protocolo e pendências: `testes/LEIAME.md` e `testes/PENDENCIAS_NA_MAQUINA.md`.
-Displays novos sem flat do toque (GT911): `docs/TROCA_DE_DISPLAY.md`.
-**Nuvem na base nova (2026-10-24):** a W1 fica só com a operação; o **display** conversa com a câmera (`testes/display/nuvem_display.h`:
-heartbeat a cada 5 s, fila de eventos na NVS com ACK, licença 40/50 dias + 15 dias ligada sem comunicação) e manda ordens à W1 a cada 2 s
-(`MSG_NV_ORDEM` 38: lâmpada, licença, aspirador, reserva do app). A W1 (`testes/waveshare1/nuvem_w1.h`) manda eventos (`MSG_NV_EVT` 36, confirmados por `MSG_NV_EVT_ACK` 37),
-guarda até 16 na NVS e executa as ordens (início pelo app, lâmpada, aspirador). Sem ordens por 60 s a W1 age em modo seguro. **Gravado e validado na máquina em 2026-10-25** (teste com o app de ponta a ponta). Estado atual, decisões e o que mudou desde então: **`docs/ESTADO_ATUAL.md`**.
+## 4. Firmware atual da W2 e o link W1↔W2 por cabo
 
-**Resumo do que a máquina faz com o app (2026-10-25):** reserva paga no app (HELD) → a câmera lê a placa ou o cliente toca em "Já estou na máquina" (ACTIVE: luz verde, o heartbeat devolve `start`) → o display repassa à W1 (`MSG_NV_ORDEM`), que arma o ciclo e espera o X14 → `car_entered` (ENTERED) → ciclo → `wash_completed` (COMPLETED). Em erro (AUTO_ERRO) ou PARAR TUDO/cancelar do operador a W1 manda `fault` e o backend marca a reserva FAILED e **estorna na hora** (`/api/machine/fault`). A W1 desarma sozinha o ciclo armado se a reserva sumir do backend (8 s, nuvem ONLINE). O display avisa "ocupada" à câmera se perder a W1. **X15 perdido no processo para tudo e fica em erro, sem HOME automático** (o antigo fazia HOME e o braço bateu no carro).
+### 4.1 W2 — entradas e saídas "burras" (`testes/w1_w2_por_rxtx/waveshare2/waveshare2.ino`)
 
-**Câmera v6** (`MSG_REDE_INFO` 22, rede Wi-Fi mostrada na tela do display) e a regra de publicação por OTA: `firmware_camera/release/LEIAME.md`. **Lacunas conhecidas do backend/PWA** (botão de cancelar só em HELD, leitura de placa com carro parado, cron de expiração, `remainingSec` sempre 0, `/admin/lavagens` lista vouchers): `testes/PENDENCIAS_NA_MAQUINA.md` seções H e I.
+Um único arquivo. Sem rádio, sem lógica de ciclo: lê as 8 entradas (X10–X17, lógica NPN ativa em nível baixo, **latch por interrupção** com debounce de 800 µs) e manda para a W1; recebe ordens de saída e as aplica via expansor I2C PCA9554.
+- Saídas: Y10 (bomba espuma baixo), Y12 (luz vermelha), **Y13 (bomba alta pressão, canal 3)**, **Y14 (contator do deslocamento; cooldown de 500 ms antes de religar)**, luzes da máquina no **DO7**, aspirador no **DO8**; o canal **Y15/DO5 é bloqueado** por segurança e nunca aciona.
+- **Fail-safe:** sem nenhum quadro da W1 por **2 s**, desliga todas as saídas (bombas, solenoides, contator do carrinho, aspirador), **menos as luzes (DO7)**; quando a W1 volta, o reconciliador dela reenvia o que quer ligado.
+- **Watchdog de tarefa de 8 s** (reinicia a W2 se o laço travar; no boot as saídas ficam desligadas). Avisa a W1 do reinício (uptime no `LT_HB`; `MSG_W2_BOOT` no ESP-NOW antigo).
+- Diagnóstico: `[WAVE2LINK]` a cada 30 s e `[WAVE2] FAIL-SAFE…` no serial.
 
-## 4. Firmware das Waveshares — `lava_car_485/waveshare1/` e `waveshare2/`
+### 4.2 Link por cabo UART0 (`docs/LINK_W1_W2_UART.md`)
 
-Dois firmwares quase idênticos (endereço Modbus 1 e 2), rodando na placa Waveshare ESP32-S3-POE-ETH-8DI-8DO. Cada uma:
-- Lê 8 entradas digitais (lógica NPN, ativo em nível baixo) com **latch por interrupção** (`attachInterruptArg` na borda de descida) — captura o pulso no instante exato, mesmo que dure só 1ms, e guarda até o display ler (leitura destrutiva/read-and-clear).
-- Escreve 8 saídas via expansor I2C PCA9554.
-- Fala Modbus RTU sobre RS-485 (FC02 leitura de entradas — endereço 0-7 = nível ao vivo, 8-15 = latch; FC05 escrita de saída única).
-- Trava de segurança: o canal do contator (giro na Waveshare 1 / deslocamento na Waveshare 2) tem um tempo mínimo de 500ms desligado antes de religar (protege contra reversão brusca do motor).
-- Waveshare 2 tem um canal **bloqueado por hardware** (Y15/DO5) que nunca aciona, de propósito.
+- **Fiação:** TXD (GPIO43) de uma → RXD (GPIO44) da outra, cruzado, com **100–330 Ω em série em cada linha**, GND comum, fio trançado de 10–15 cm longe da força. 3,3 V direto no chip, **sem isolação — nunca ligar 24 V nesses bornes**. O GPIO43 emite o texto de boot do ROM por instantes depois de cada reset (o protocolo descarta lixo e ressincroniza).
+- **Quadro:** `A5 5A | tipo | seq (2 B LE) | len | payload | CRC16-CCITT (2 B LE)`, 115200 8N1, payload ≤ 128.
+- **Tipos de produção:** `LT_HB` 0x10 (W2→W1, a cada 200 ms: entradas vivas, saídas, motivo do reset, uptime), `LT_EVT` 0x11 (W2→W1, a cada borda de entrada), `LT_CMD` 0x12 (W1→W2, ordem de saída; limite de 200 ms por canal, reconciliador de 400 ms, "desligar tudo" no boot), `LT_KEEP` 0x13 (W1→W2, sinal de vida a cada 200 ms), mais o diário X14/X15. Sem confirmação por quadro; a recepção na W1 roda no **callback da UART**, não no laço.
+- **Diagnóstico:** `[W2LINK]` na W1 a cada 5 s (quadros ok, CRC ruim, truncados, espúrios, erros da UART, maior intervalo, motivo do último reset e uptime da W2, reinícios detectados).
+- **Chave de reversão:** `LINK_W1_W2_UART` em `link_cfg.h` (1 = cabo, 0 = ESP-NOW antigo, código preservado); trocar nas **duas** pastas, recompilar e regravar as duas placas. Outras vias de volta: backup das placas (`testes/w1_w2_por_rxtx/backup_atual/`, cópias completas fora do git em `Documentos\pili_backups_flash_2026-11-02`) e a tag `backup-antes-link-uart-2026-11-01`.
+- **Migração de canal:** a W2 saiu da conversa; a W1 confirma o canal novo ouvindo o display (12 s) em vez de ver a W2.
+- **Resultado medido:** loopback OK nas duas placas; 10 min parado e ~13.000 quadros em produção com tudo zero, silêncio máximo 200 ms.
 
 ---
 
 ## 5. Firmware da Câmera — `firmware_camera/`
 
-Roda num ESP32-CAM (AI-Thinker, sensor OV2640). Arquivo único `src/main.cpp` + `src/pili_cam_config.h`.
+Roda num ESP32-CAM (AI-Thinker, sensor OV2640). Arquivo único `src/main.cpp` + `src/pili_cam_config.h`. **Versão atual: v8** (`PILI_FW_VERSION`; v8 = diagnóstico da câmera para a nuvem e etapa da lavagem no heartbeat): v5 = comando de canal do display e re-sync automático; v6 = informa ao display a rede Wi-Fi conectada (`MSG_REDE_INFO`); v7 = evento tipo 4 (reinícios, retrato e ocorrências das placas) com `POST /api/machine/reset-log` e **hora por NTP** repassada à W1 (`MSG_HORA`). Regra de publicação por OTA: `firmware_camera/release/LEIAME.md`.
 
 **Papel: gateway de nuvem "burro de propósito".** Não tem sensor de presença, não decide nada — manda uma foto crua pro backend a cada 8s (`PILI_ENVIO_INTERVALO_MS`), sempre, tenha carro ou não. Toda a inteligência (ler a placa, decidir se tem carro, liberar a máquina) roda na **nuvem** via IA.
 
@@ -199,6 +228,10 @@ Funções principais:
 - **Identidade** (`MSG_IDENT_REQ`, troca de display): responde com o que já tem salvo, sem tocar na nuvem.
 - **Busca de unidades** (`MSG_UNI_REQ`, 09-19): faz `GET /api/machine/unidades?cidade=X` e devolve a lista paginada por ESP-NOW.
 - **Recebe identidade** (`MSG_IDPUSH_REQ`, troca de câmera, 09-19): aplica localmente o que o display mandou (`aplicarIdPush()`), sem chamada nenhuma pra nuvem.
+- **Reinícios e ocorrências das placas (v7):** recebe do display o evento tipo 4 (texto compacto `W1;m=..;e=..` / `J;…` / `O;…`) e faz `POST /api/machine/reset-log` com `{key, info}`; só confirma (`MSG_EVT_ACK`) com resposta 200.
+- **Hora (v7):** NTP (`pool.ntp.org`/`time.google.com`); manda `MSG_HORA` (epoch UTC) à W1 a cada 30 s, só com a hora válida.
+- **Etapa da lavagem (v8):** o display acrescentou `proc` e `modelo` ao `MsgHbState` (só durante o ciclo: PROCESSO/PAUSADO); a câmera os leva no heartbeat como `"proc"` (aceita o `MsgHbState` antigo, sem os 2 bytes). A nuvem usa isso para o app listar as tarefas e marcar a atual (seção 6.13).
+- **Diagnóstico (v8):** a cada 5 min (e se 3+ fotos seguidas falham, no máx. 1/min) faz `POST /api/machine/camera-diag` com Wi-Fi (RSSI mín/méd/máx, canal, quedas, maior tempo desconectada, buscas de rede), memória (heap e maior bloco livre, mínimos da janela), fotos/heartbeats ok e falha + último código de erro, motivo do último reinício (inclui o motivo do boot frio, antes do hard reset) e tempo ligada. Se o POST não sai, os contadores seguem acumulando. Só observa: não muda canal, conexão nem envio.
 - **Comando serial de emergência** (`atenderComandoSerial()`, novo 10-06): aceita `WIFI:<ssid>:<senha>` via USB — grava direto na NVS sem precisar da tela do display, útil quando o touch não alcança o botão Salvar.
 
 ### 5.1 OTA (atualização por Wi-Fi) — novo 10-06
@@ -330,7 +363,7 @@ Serviço opcional por máquina, independente da lavagem — pago pela carteira (
 1. `POST /api/vacuum/buy` — debita o crédito na hora (mesma guarda atômica de saldo do `/api/orders`), cria `VacuumUse` em `PAID`. Pode ser chamado solto (tela da unidade, botão "X min de aspirador de pó") ou como add-on oferecido depois de pagar uma lavagem.
 2. `POST /api/vacuum/start` — o cliente aperta "Começar agora" quando estiver pronto pra usar; só então o uso vira `ACTIVE` com `startedAt = now()`. Comprar não liga nada sozinho.
 3. A cada heartbeat (`POST /api/machine/heartbeat`), se há um `VacuumUse` `ACTIVE` na máquina, o backend calcula `segundosRestantes` (= `durationSec` − tempo desde `startedAt`) e devolve no campo `vacuum` da resposta. Quando chega a 0, marca `COMPLETED` e para de mandar o comando.
-4. O display liga/desliga o relé (DO8) só com base nesse campo — ver 3.5. **Isolado do `g_estado_auto`**: nunca interfere numa lavagem em andamento, mesmo que aconteçam ao mesmo tempo.
+4. O display liga/desliga o relé (DO8) só com base nesse campo — ver A.5. **Isolado do `g_estado_auto`**: nunca interfere numa lavagem em andamento, mesmo que aconteçam ao mesmo tempo.
 5. **Fechamento preguiçoso** (`finalizarAspiradoresVencidos`, `server/lib/vacuum.ts`): como o passo 3 depende do heartbeat físico da máquina pra fechar o uso, e isso pode não acontecer (câmera off, teste sem hardware), os relatórios (painel do lavador/parceiro) também fecham usos vencidos por conta própria ao serem consultados — garante que o faturamento não fica "preso" em `ACTIVE` pra sempre.
 
 **App**: tela dedicada (`aspirador.tsx` no mobile, `/app/aspirador` na PWA) cobre comprar → "Começar agora" → contagem regressiva local (só visual — o tempo real é controlado pelo backend/display). Acessível de duas formas: standalone (botão na tela da unidade) ou como add-on oferecido num `Alert`/`confirm` depois de pagar uma lavagem na mesma unidade (decisão de produto: só lavagem oferece add-on de aspirador, o inverso não).
@@ -363,10 +396,12 @@ Cada unidade cobra o que quiser pelos 4 tipos de lavagem — não existe mais um
 /api/lpr/ao-vivo        câmera ao vivo (metadados + imagem), só com lavagem em andamento
 /api/vacuum/buy         compra do aspirador (debita credito, cria VacuumUse em PAID)
 /api/vacuum/start       "começar agora" — vira ACTIVE, começa a contar o tempo
-/api/machine/           heartbeat, car-entered, wash-complete (app + presencial), fault,
-                        provisionar, unidades (busca por cidade)
+/api/machine/           heartbeat, car-entered, wash-complete (app + presencial + sócio/bônus), fault
+                        (errorCode X15_POSICAO = volta para a fila, sem estorno), ack, next,
+                        provisionar, unidades (busca por cidade), reset-log (reinícios/ocorrências)
 /api/admin/machine/payment   marcar pagamento em dia (legado, ver /admin/maquinas)
 /api/cron/expire-reservations   cron do Railway (a cada 5 min) — expira reservas, estorna, checa saúde
+                        (agendado no serviço `cron-pili` do Railway, ver "Cron de expiração" abaixo)
 /api/saude              diagnóstico de saúde da operação (usado pelo app antes de deixar comprar)
 ```
 
@@ -514,6 +549,7 @@ Desde que ficou claro que o PWA é a única forma real de uso (ver nota no item 
 - **Lavagens** (`/admin/lavagens`): últimas 200, com status/voucher/quem resgatou.
 - **Usuários** (`/admin/usuarios`): lista completa, com a seção **"Cadastros a aprovar"** no topo (solicitações pendentes de `SolicitacaoParceiro`, Aprovar/Rejeitar uma a uma) e um badge de contagem no menu. Abas de filtro por tipo de cadastro (Todos/Cliente/Lavador/Comissão 1/Comissão 2/Aluguel/Admin, via `?filtro=`). Promove/rebaixa direto pelo dropdown (Cliente/Lavador/Parceiro — escolhendo o tipo específico quando é Parceiro).
 - **Preços** (`/admin/precos`, nova 09-19): só edita o **nome** dos 4 tipos de lavagem — o preço em R$ fica dentro de cada unidade (ver abaixo e 6.7).
+- **Alertas** (`/admin/alertas`, 2026-11): histórico de alertas de saúde por máquina (abertos agora, filtros de período/tipo, páginas). A **Visão geral** mostra as máquinas em abas com status e histórico de alertas; horários em Brasília.
 - **Máquinas** (`/admin/maquinas`, redesenhado 09-19): cards de estatística no topo (total, offline, em manutenção, licença bloqueada) + **abas por unidade** — unidade com mais de uma máquina abre sub-abas (Máquina 1, 2, 3...) ao clicar. Uma aba **"Resumo geral / TOTAIS"** separada soma tudo (todas as máquinas) por tipo de lavagem. Dentro de cada unidade: preço dos 4 tipos (editável ali mesmo), status/licença/sensores da máquina selecionada, valor acumulado desde o último fechamento, a seção **"Aspirador de pó"** (habilitar + preço + duração, novo 10-06, ver 6.6c), histórico de lavagens, **duas** tabelas de participação — **"Participação na máquina — Lavagens"** e **"— Aspirador de pó"** (cadastro/edição dos 4 tipos de participante com percentual, regra dos 100% **por escopo**, independente entre os dois) — e **duas** tabelas de "Divisão entre participantes" (uma por escopo) com a tabela completa por participante (incluindo o admin calculado), por origem, mais o saldo líquido de cada um.
 
 ---
@@ -530,7 +566,7 @@ Desde que ficou claro que o PWA é a única forma real de uso (ver nota no item 
 | `ASAAS_*` | pagamento (recarga de saldo) |
 | `DEVICE_KEY` | chave genérica legada de dispositivo |
 | `MACHINE_DEVICE_KEY` | seed da máquina padrão |
-| `CRON_SECRET` | protege o cron de expiração |
+| `CRON_SECRET` | protege o cron de expiração (`x-cron-secret`). Criada no Railway em 2026-11-01 com `${{ secret(48) }}`; sem ela a rota ficaria aberta |
 | `PROVISION_SECRET` | senha de fábrica do auto-cadastro de máquina (também protege `/api/machine/unidades`) |
 | `PLATE_RECOGNIZER_TOKEN` | fallback de LPR |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | push notifications |
@@ -552,6 +588,9 @@ Firmware da câmera tem seu próprio `PILI_PROVISION_SECRET` (deve bater com o `
 - **Espuma manual**: ainda não existe uma opção de espuma manual na tela/fluxo manual do display — hoje só existe via os processos automáticos (Espuma A/B, Cor Mágica).
 - **PROVISION_SECRET e ADMIN_PASSWORD**: confirme que estão configurados em produção (Railway) antes de considerar o sistema fechado para acesso externo — o padrão do projeto é "sem a variável, fica aberto (fase de teste)".
 - **Migrações não rodam sozinhas no deploy do Railway** — precisa aplicar manualmente (`npx prisma migrate deploy` com o `.env` apontando pra produção, revertendo logo em seguida) toda vez que o schema muda.
+- **Retomada do ciclo depois de reinício:** ainda não existe. Hoje a W1 que reinicia em ciclo cancela e estorna a lavagem do app; as regras G6/G7/G8b/Fase 1/Fase 2 estão especificadas (`docs/REGRAS_RETOMADA_CICLO.md`) e **não programadas** (seção 3.4).
+- **Regras do X10 em todas as etapas** gravadas em 2026-11-02, validadas só no início e no giro; falta testar no retorno ao X12 e entre etapas (seção 3.9).
+- **Cópia ESP-NOW de produção** (`lixo/testes/waveshare1|2`) compilada e **não gravada**; gravá-la quebra o cabo. Branch `link-uart-w1-w2` ainda não foi para a `main` (merge só com "pode subir").
 - **Substituição de câmera testada só parcialmente em bancada** — o fluxo ESP-NOW (`MSG_IDPUSH_*`) foi validado, mas ainda não numa instalação real trocando a peça física de verdade.
 
 ---
@@ -570,14 +609,143 @@ Firmware da câmera tem seu próprio `PILI_PROVISION_SECRET` (deve bater com o `
 | Como a fila/reserva funciona | `server/lib/reservations.ts` |
 | Como a placa é lida | `server/lib/lpr.ts`, `server/lib/vision-claude.ts` |
 | Login/cadastro do cliente | `server/app/api/auth/*`, `mobile/src/app/{login,cadastro}.tsx` |
-| Ciclo físico de lavagem (giro, carrinho, processos) | `lava_car_485/display/maquina_estados.h`, `processos.h` |
-| Telas do display | `lava_car_485/display/tela_*.h` |
+| Ciclo físico de lavagem (giro, carrinho, processos) | `testes/w1_w2_por_rxtx/waveshare1/maquina_estados.h`, `processos.h` |
+| Regras do X10 / pausa e retomada | `maquina_estados.h` (`x10_pausa_tick`), `processos.h` (`giro_rewind_tick`) |
+| Entradas/saídas, HOME, painel físico | `waveshare1/controle.h` |
+| Link W1↔W2 por cabo | `waveshare1/link_w2_uart.h`, `link_frame.h`, `link_cfg.h`, `waveshare2/waveshare2.ino` |
+| Telas do display | `testes/display/display.ino`, `nuvem_display.h` |
+| Firmware antigo (consulta) | `lixo/` (mapa em `lixo/LEIAME.md`) |
 | O que a câmera manda/recebe da nuvem | `firmware_camera/src/main.cpp` |
 | Painel do admin | `server/app/admin/*` |
 | App do lavador | `mobile/src/app/(tabs)/minha-maquina.tsx`, `server/app/api/lavador/*` |
 | Notificações push | `server/lib/push.ts` |
 | Ambiente de teste local | `server/.env` (local) vs `server/.env.production` (real) |
 
+## Apêndice A — Firmware ANTIGO do display (`lixo/lava_car_485/display/`) — só referência
+
+> **Histórico.** Este é o firmware de produção até 2026-10 (display como mestre, RS-485 para as Waveshares). Foi movido para `lixo/` em 2026-11-03 e **não roda mais na máquina**; a descrição fica aqui porque a lógica de processos, os sensores e o fluxo de cadastro/licença foram a base do firmware atual (seção 3) e porque é o plano B documentado. Os caminhos citados neste apêndice estão em `lixo/lava_car_485/`.
+
+Projeto Arduino (`display.ino` + vários `.h`). Board: ESP32S3 Dev Module, Flash 16MB, PSRAM OPI 8MB, tela Waveshare ESP32-S3-Touch-LCD-7 (800×480, LVGL 8.4).
+
+FQBN validado (**importante — outras combinações já causaram tela branca**):
+```
+esp32:esp32:esp32s3:CDCOnBoot=default,FlashMode=qio,FlashSize=16M,PartitionScheme=default_8MB,PSRAM=opi,CPUFreq=240
+```
+
+### A.1 `tipos.h`
+Definições compartilhadas: enums de processo (`Processo`) e estado automático (`EstadoAuto`), todo o **protocolo ESP-NOW** (tipos de mensagem `MSG_*` e as structs `Msg*` — precisam bater **byte a byte** com a câmera), mapeamento de saídas físicas (Y1–Y15), endereços Modbus, cores da interface.
+
+Mapeamento de saídas (motor/solenoides):
+- Waveshare 1: Y1 (solenoide Cor Mágica), Y2 (Espuma A), Y3 (Espuma B), Y4 (giro do braço — trava mútua com Y14), Y5 (compressor secagem), Y6 (entrada pneumática), Y7 (bomba espuma), Y11 (lâmpada verde).
+- Waveshare 2: Y10 (bomba espuma baixo), Y12 (luz vermelha), Y13 (bomba alta pressão), Y14 (deslocamento — trava mútua com Y4), Y0 (junto com Cor Mágica).
+
+Botões físicos de início manual (presencial, pago em dinheiro): **X1=modelo1, X2=modelo2, X5=modelo3, X6=modelo4** (X3=manual/auto, X4=pause). Ver seção 6.6 pra como isso vira registro na nuvem.
+
+### A.2 `maquina_estados.h` + `processos.h`
+A **máquina de estados do ciclo automático**:
+```
+IDLE -> AGUARDA_CARRO -> CARRO_ENTRANDO -> AGUARDA_POS
+     -> INICIANDO(6s) -> PROCESSO(sub-máquinas) -> CONCLUIDO -> IDLE
+```
+Qualquer erro leva a `AUTO_ERRO` (para tudo, acende vermelho piscando).
+
+Processos implementados (cada um com sub-máquina própria, não-bloqueante): Pré-lavagem/Enxágue, Alta Pressão (giro triplo), Espuma A (com giro), Espuma B, Cor Mágica, Cera de Água, Secagem. O giro do braço tem lógica elaborada de rampa de desaceleração, debounce de sensores e "fine-homing" (busca fina por pulsos quando o giro para perto do home mas não exato).
+
+**Rampa de desaceleração do carrinho (Y14)**: tanto no avanço (ao perder o X10) quanto no retorno final (ao achar o X12), o carrinho desacelera suavemente em vez de parar seco — padronizado em **350ms** (`CARR_RAMPA_MS`, era 500ms) em `processos.h`, igual ao HOME (`HOME_X12_RAMPA_MS` em `modbus_waveshares.h`, que tem sua própria máquina de estados separada). Toda sub-máquina de retorno (Pré-Lavagem, Alta Pressão, e os processos simples via `_proc_simples` — Espuma A/B, Cor Mágica, Cera, Secagem) usa a mesma função compartilhada `carr_rev_x12_tick()`; só o jog manual (botão de segurar "carrinho" na tela manual) para instantaneamente, de propósito.
+
+Pausas finais ajustadas por pedido do operador: Espuma A e Cor Mágica = 60s (eram 15s e 45s).
+
+Sensores (nomes herdados do CLP original):
+- X0/X7 (Waveshare 1): indutivo de deslocamento / giro braço posição intermediária.
+- X10–X17 (Waveshare 2): carro sob a mesa, giro intermediário, fins de curso, **X14 (carro entrando)**, **X15 (carro na posição de lavagem)**, HOME do braço.
+
+**Recuperação no boot**: se a máquina perder energia no meio de um ciclo, ao religar ela detecta se está "fora do zero" e faz um HOME automático (com luz piscando avisando), sem intervenção manual — a menos que tenha um carro em cima (aí só pisca vermelho até tirarem).
+
+Ao concluir um ciclo (`AUTO_CONCLUIDO`), o firmware já sabe se a lavagem foi iniciada pelo app (tem `reservationId` salvo) ou pelos botões físicos (X1-X6, sem reserva) — manda `backend_evt_wash_complete()` com `source="remote"` no segundo caso, e incrementa contadores locais separados por origem (NVS `p1_pres`/`p1_app` etc, só pra exibição na tela — ver 6.6 pra como isso também alimenta a nuvem).
+
+### A.3 `modbus_waveshares.h` + `vfd_rs485.h`
+Comunicação RS-485 Modbus RTU com as 2 Waveshares + o inversor, num barramento único e compartilhado (mutex serializa tudo). Leitura de sensores é feita com **latch por interrupção + read-and-clear** (a Waveshare captura o pulso no hardware, o display consome e zera) — resolve o problema antigo de pulsos curtos se perderem entre leituras.
+
+Task de polling roda no **core 0** (separado da UI, que fica no core 1) pra não competir com o LVGL.
+
+### A.4 `comm_espnow.h`
+ESP-NOW só com a câmera agora (não fala mais com as Waveshares). Roteia as mensagens recebidas pros handlers certos (Wi-Fi config, heartbeat, eventos, scan de redes, provisionamento, busca de unidade, troca de câmera — ver A.9).
+
+**"Modo caça" (adicionado 09-19)**: quando o técnico aperta Buscar/Enviar numa das telas de cadastro e não há contato recente com a câmera (`espnow_camera_perdida()`, >3s sem ouvir nada dela), o display varre os 13 canais em **background, sem travar o toque/LVGL** (`espnow_cacar_tick()`, chamado todo `loop()`), ficando 1,3s em cada um (tem que ser maior que o intervalo de anúncio da câmera, que é 1s) e repetindo as voltas até achar ou o técnico cancelar saindo da tela. Substitui a lógica antiga de "isolado → estaciona no canal 1", que era passiva e só funcionava se o display por acaso já estivesse parado no canal certo no momento exato do anúncio da câmera.
+
+Alarme de "câmera sem contato" continua em 60s (só informativo, mostra na tela).
+
+### A.5 `backend_client.h` + `licenca.h`
+Como o display não tem internet, ele manda seu estado (`FREE`/`WASHING`) pra câmera a cada 5s (`HB_INTERVAL_MS`, reduzido de 10s pra isso — era o mesmo intervalo da câmera, agora o display avisa com o dobro de frequência), e ela relay o POST `/api/machine/heartbeat` de verdade, devolvendo a resposta (`MSG_HB_RESP`) com: estado da lâmpada, dados de licença, comando de início (`start`) quando há uma reserva paga esperando, e comando do **aspirador** (`vacuum_seg` — segundos restantes, -1 = inativo).
+
+**Aspirador (DO8)**: `_backend_processar_vacuum()`, chamada a cada ciclo de heartbeat, liga/desliga o relé do aspirador (`SET_ASPIRADOR`, `maquina_estados.h`) só conforme o campo `vacuum_seg` da resposta — nunca olha `g_estado_auto`, então não interfere numa lavagem em andamento. O backend é a fonte da verdade do tempo restante (ver 6.6c); o firmware só reflete ligado/desligado.
+
+**Duas travas de licença independentes:**
+- Pagamento: aviso aos 40 dias sem pagar, bloqueio aos 50 dias (ou `blocked=true` do backend).
+- Comunicação: 15 dias sem nenhum heartbeat 200 OK também bloqueia.
+
+Fila de eventos (car-entered / wash-complete / fault) fica em **ring buffer na NVS** — só sai da fila quando a câmera confirma que o backend aceitou (ACK), garantindo que o débito da lavagem nunca se perde mesmo com internet instável.
+
+### A.6 `lampada_app.h`
+Controla a lâmpada bicolor (Y11 verde / Y12 vermelho) segundo o `lightState` que vem do backend, com prioridade: recuperação de boot > bloqueio de licença > erro local (sempre pisca vermelho) > estado do app > processo de lavagem em andamento.
+
+### A.7 `wifi_manager.h`
+O display **não conecta no Wi-Fi** — só guarda as credenciais (SSID/senha/URL/device-key) e manda pra câmera por ESP-NOW quando ela pede (`MSG_WIFI_REQ`/`MSG_WIFI_CFG`), ou quando alguém salva pela tela de configuração. `enviar_cfg_camera()` varre os 13 canais pra ENVIAR a config nova (garante que a câmera receba onde quer que esteja) e se estaciona no canal 1 esperando ela confirmar o canal novo.
+
+### A.8 Telas (LVGL)
+- `tela_manual.h`: tela padrão — controles manuais, contadores, status do inversor, diagnóstico dos 16 sensores. Botão "Técnico" leva pro menu de recadastro (`scr_boot_tipo`).
+- `tela_auto.h`: seleção de programa automático + painel temporário de ajuste fino do giro (tuning ao vivo).
+- `tela_config.h` / `tela_velocidades.h` / `tela_modelos.h`: parâmetros do sistema, velocidades por etapa, sequência de processos por modelo.
+- `tela_senha.h`: teclado numérico genérico — 3 modos: `PAG` (senha de pagamento/acerto, padrão 3462), `CFG` (senha de config, padrão 1111), `TEC` (acesso técnico, padrão **2828** — ver A.9).
+- `tela_senhas_cfg.h`: alterar as senhas acima.
+- `tela_wifi.h`: configuração Wi-Fi — a câmera é quem escaneia redes (o display nunca mexe no próprio rádio pra isso). Acessível direto da tela inicial de cadastro (botão "Configurar Wi-Fi", 09-19) pra locais onde a rede padrão do firmware não existe. Tem também um campo de **SSID digitado manualmente** (alternativa ao dropdown do scan), útil se o scan falhar ou se o touch não alcançar o dropdown naquela área da tela.
+
+### A.9 `tela_boot.h` — Cadastro da máquina (testado em bancada 09-19)
+
+Na **primeira ligada** (NVS ainda sem `provisionado=true`), o display entra direto nessa tela em vez da tela normal. O botão **"ACESSO TÉCNICO"** foi corrigido em 09-19: antes levava pro mesmo formulário que "CADASTRAR MÁQUINA" já abria sem senha nenhuma (tornando a senha inútil ali); agora leva pra tela de **operação normal** (de onde já dá pra entrar em Configurar Wi-Fi).
+
+```
+[CADASTRAR MÁQUINA] -> [NOVA] ou [TROCOU O DISPLAY] ou [TROCOU A CÂMERA]
+[ACESSO TÉCNICO]     -> pede senha (padrão 2828) -> tela de OPERAÇÃO normal
+[CONFIGURAR WI-FI]   -> direto, sem senha
+```
+
+- **NOVA**: primeiro passo é uma **busca de unidades já cadastradas** por cidade (`MSG_UNI_REQ`/`MSG_UNI_RESP`, câmera consulta `GET /api/machine/unidades`) — evita duplicar unidade quando o endereço é digitado diferente da vez anterior (achado real: "Joao Carlon" x "Rua João Carlon" viraram duas unidades antes desse fix). Se encontrar, o técnico escolhe da lista e o **número da máquina já vem pré-preenchido** com o próximo livre daquela unidade (`proximoNumero`, calculado no backend). Se não encontrar (ou "Nenhuma dessas"), cai no formulário livre de sempre (cidade+rua+número). Em qualquer um dos dois casos, o display **gera sua própria identidade** (deviceKey = `ESP.getEfuseMac()`, nunca escolhido por ninguém) e manda pra câmera por ESP-NOW (`MSG_PROV_REQ`); a câmera faz o POST `/api/machine/provisionar` (protegido por `PILI_PROVISION_SECRET`).
+- **TROCOU O DISPLAY** (só o display quebrou, a câmera continua a mesma): o display **não consulta a nuvem**. Ele pergunta pra câmera local "quem é você?" (`MSG_IDENT_REQ`) — como o ESP-NOW é rádio de curto alcance, só existe resposta se a câmera estiver **fisicamente por perto**. É essa distância física que impede pegar a máquina errada, não uma senha ou lista escolhida na tela.
+- **TROCOU A CÂMERA** (novidade 09-19, só a câmera quebrou, o display continua o mesmo): o display **já sabe sua própria identidade** (salva desde o cadastro original) e empurra ela pra câmera nova por ESP-NOW (`MSG_IDPUSH_REQ`/`MSG_IDPUSH_RESP`) — sem tocar na nuvem, o registro da máquina não muda, só a câmera física aprende quem ela é. Se o display não tiver identidade salva (NVS em branco também), avisa pra usar "NOVA" primeiro.
+
+Depois de cadastrada, a tela nunca mais aparece sozinha — a máquina liga direto na operação normal.
+
+### A.10 `hard_reset.h`
+Reinicia o chip inteiro **uma vez** ao energizar (não em loop) — a ESP32-S3 é conhecida por subir com o painel/PSRAM em estado inconsistente no boot frio. Tem uma flag `HARD_RESET_APAGA_NVS` (normalmente 0) que, se ligada, também zera toda a NVS (reset de fábrica) — só pra usar propositalmente numa bancada.
+
+### A.11 `lvgl_v8_port.*` e `esp_panel_board_custom_conf.h`
+Código de porting oficial da Espressif (não é nosso, CC0/Apache) — ponte entre o driver do painel e o LVGL, e configuração de pinos do hardware (barramento RGB, touch I2C GT911, backlight, etc.).
+
 ---
 
-*Documento gerado por revisão completa do código-fonte em 2026-09-18, atualizado em 2026-09-19 e 2026-10-11 (aspirador de pó, OTA da câmera, câmera ao vivo, comissão por escopo, watchdog/recuperação da câmera, ajustes de rampa). Atualize conforme o sistema evoluir — este arquivo não se atualiza sozinho.*
+---
+
+## Apêndice B — Firmware ANTIGO das Waveshares (`lixo/lava_car_485/waveshare1/` e `waveshare2/`) — só referência
+
+Firmware antigo (escravos Modbus do display, hoje substituídos pela W1 controladora e pela W2 por cabo — seções 3 e 4). Eram dois firmwares quase idênticos (endereço Modbus 1 e 2), rodando na placa Waveshare ESP32-S3-POE-ETH-8DI-8DO. Cada uma:
+- Lê 8 entradas digitais (lógica NPN, ativo em nível baixo) com **latch por interrupção** (`attachInterruptArg` na borda de descida) — captura o pulso no instante exato, mesmo que dure só 1ms, e guarda até o display ler (leitura destrutiva/read-and-clear).
+- Escreve 8 saídas via expansor I2C PCA9554.
+- Fala Modbus RTU sobre RS-485 (FC02 leitura de entradas — endereço 0-7 = nível ao vivo, 8-15 = latch; FC05 escrita de saída única).
+- Trava de segurança: o canal do contator (giro na Waveshare 1 / deslocamento na Waveshare 2) tem um tempo mínimo de 500ms desligado antes de religar (protege contra reversão brusca do motor).
+- Waveshare 2 tem um canal **bloqueado por hardware** (Y15/DO5) que nunca aciona, de propósito.
+
+---
+
+---
+
+*Documento gerado por revisão completa do código-fonte em 2026-09-18, atualizado em 2026-09-19, 2026-10-11 (aspirador de pó, OTA da câmera, câmera ao vivo, comissão por escopo, watchdog/recuperação da câmera, ajustes de rampa) e **2026-11-03** (firmware reescrito: W1 controladora, W2 e cabo UART, regras do X10, reinícios/ocorrências, câmera v7; firmware antigo nos Apêndices A e B). Atualize conforme o sistema evoluir — este arquivo não se atualiza sozinho.*
+
+## Cron de expiração (Railway) — configurado em 2026-11-01
+O cron do Railway não chama URL: ele executa um serviço no horário e espera que termine. Por isso existe um **serviço separado `cron-pili`** no mesmo projeto/ambiente (Pili Lave / produção), e **nunca** se usa o campo "Cron Schedule" do serviço `pili-lave` (ele derrubaria o app).
+- Imagem `node:20-alpine`; Cron Schedule `*/5 * * * *` (UTC); Restart Policy Never; sem domínio.
+- Start Command: `node -e "fetch(process.env.CRON_URL,{method:'POST',headers:{'x-cron-secret':process.env.CRON_SECRET}}).then(async r=>{console.log(r.status,await r.text());process.exit(r.ok?0:1)}).catch(e=>{console.error(e);process.exit(1)})"`
+- Variáveis do `cron-pili`: `CRON_SECRET=${{pili-lave.CRON_SECRET}}` (referência, o valor mora só no app) e `CRON_URL=https://pili-lave-production.up.railway.app/api/cron/expire-reservations`.
+- Conferir: aba **Cron Runs** do `cron-pili` (execução verde, log `200 {"ok":true,"expired":N,"requeued":N,"offline":N,"saude":{...}}`). `401` = segredo diferente do app.
+- A rota roda `expireStale()` e `verificarEAlertar()`: reservas vencidas, máquina offline e alertas de saúde ao admin sem precisar do painel aberto.
+- Deploy do app: o Railway segue a branch `main` (deploy automático, espera o CI do GitHub). Ao subir só uma correção, usar commit isolado sobre `origin/main`; não dar merge de branch inteira sem avaliar migrations.

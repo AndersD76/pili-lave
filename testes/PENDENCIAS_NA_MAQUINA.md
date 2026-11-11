@@ -36,7 +36,7 @@ reinicia em **COM X10 + BOMBA ON**, então não precisa reconfigurar a tela).
 
 ## C. Hardware / medições
 - [ ] **Instalar o filtro do RS-485** e repetir os testes de ruído (procedimento em
-  `testes_ruido_rs485/PROCEDIMENTO.md`, cenário B com o SAJ de volta no barramento).
+  `lixo/testes_ruido_rs485/PROCEDIMENTO.md`, cenário B com o SAJ de volta no barramento).
 - [ ] Confirmar **F0.10 do SAJ** (o firmware assume 55 Hz = 100% ; o relatório dos inversores diz 50 Hz).
 - [ ] Confirmar terminador de 120 Ω do lado do Delta.
 - [ ] **Display novo SEM flat de toque** (causa confirmada em `docs/TROCA_DE_DISPLAY.md` 5b): pedir ao vendedor a versão com toque. Antes: reencaixar o flat
@@ -47,7 +47,7 @@ reinicia em **COM X10 + BOMBA ON**, então não precisa reconfigurar a tela).
 ## D. Não precisa de máquina (andamento offline)
 - Telas de configuração (velocidades, tempos de giro, esperas dos modelos) com NVS.
 - Itens display↔W1: toque curto do painel, propagação do canal, evento de fim de ciclo.
-- Nuvem, e depois avaliar promover `testes/` no lugar de `lava_car_485/`.
+- Nuvem, e depois avaliar promover `testes/` no lugar de `lixo/lava_car_485/`.
 
 ## E. Câmera / app / backend (adiado de propósito — fazer quando formos mexer na câmera)
 - [ ] **Wi-Fi do display (aba TECNICO > WI-FI) e migração de canal — compilado, NÃO testado com a câmera.** Display: busca de redes pela
@@ -84,7 +84,7 @@ reinicia em **COM X10 + BOMBA ON**, então não precisa reconfigurar a tela).
 ## G. Mudanças de processo — estado em 2026-10-24
 - [ ] **NUVEM pelo DISPLAY (decisão de 2026-10-24, revisada: a W1 fica só com a operação) — W1, W2, câmera v5 e display COMPILADOS, NADA GRAVADO.** `testes/display/nuvem_display.h`: heartbeat para a câmera a cada 5 s,
   **eventos** (a W1 manda `MSG_NV_EVT`; o display guarda na SUA fila na NVS, confirma a W1 e entrega à câmera até o ACK do backend), **licença** (pagamento 40/50 dias; 15 dias LIGADA sem comunicação) e as
-  **ordens para a W1 a cada 2 s** (`MSG_NV_ORDEM`: lâmpada, licença, aspirador, iniciar reserva do app). `testes/waveshare1/nuvem_w1.h`: só executa as ordens (início pelo app com dedup, **lâmpada** + **vermelho piscando em erro**,
+  **ordens para a W1 a cada 2 s** (`MSG_NV_ORDEM`: lâmpada, licença, aspirador, iniciar reserva do app). `lixo/testes/waveshare1/nuvem_w1.h`: só executa as ordens (início pelo app com dedup, **lâmpada** + **vermelho piscando em erro**,
   **aspirador DO8**) e guarda até 16 eventos na NVS até o display confirmar. Sem ordens por 60 s: lâmpada apagada, aspirador off, não inicia pelo app. Câmera: `firmware_camera/release/camera_v5.bin` (obedece "vai para o canal N",
   sobe no canal combinado, pede **re-sync** ao display quando o roteador muda de canal). Display: aceita o re-sync da câmera e migra sem senha com a máquina parada. **Depende do display ligado** para app/eventos (painel e controle remoto seguem sem ele).
   **Ordem para gravar (com o Giovani na máquina):** (1) backup exato das placas (`docs/BACKUP_E_RESTAURACAO.md`); (2) W1 + display + W2; (3) câmera v5 pelo OTA (ver `firmware_camera/release/LEIAME.md`; é deploy de PRODUÇÃO).
@@ -120,7 +120,6 @@ a tela Wi-Fi mostra a rede da câmera, a senha digitada fica guardada, a máquin
 - [ ] **PWA: sem botão de cancelar no estado "carro reconhecido" (reserva ACTIVE).** `server/app/(pwa)/app/page.tsx` só mostra "Cancelar lavagem e receber de volta"
   quando a reserva é HELD, mas a rota `/api/reservations/[id]/cancel` já aceita HELD e ACTIVE. Deploy de produção só na `main` (a tela na `main` pode ser diferente da
   branch `loja-conveniencia`, que tem a "Loja conveniência"). Aguardando o "pode publicar" do Giovani.
-  **2026-11-10: botão acrescentado na branch `loja-conveniencia`** (cartão "Máquina liberada — pode entrar" com "Cancelar lavagem e receber de volta" quando a reserva está ACTIVE). Só compilado, não testado com reserva real e **não publicado** (a `main` continua sem ele).
 - [ ] **Verde preso depois de "cancelar":** a lâmpada da W1 (ociosa) segue o `lightState` do heartbeat; reserva ACTIVE = verde fixo. A reserva só volta a HELD
   depois de 5 min (`ACTIVE_TTL_MIN`) **quando `expireStale()` roda** (cron `/api/cron/expire-reservations`, ou chamadas a `/api/reservations` e à leitura de placa).
   Conferir se o cron está agendado no Railway; se não, a reserva fica ACTIVE para sempre. Voucher do teste: RQMF7HS5GT (reserva `cmvo5xphv005…`).
@@ -145,8 +144,122 @@ a tela Wi-Fi mostra a rede da câmera, a senha digitada fica guardada, a máquin
   Confirmar na máquina se a bomba Y7 deve ligar na Cor Mágica.
 - [ ] **Ruído elétrico** nas transições do inversor: pulsos fantasmas no painel (X1/X2/X5/X6 → "modelo N ignorado"), X11 oscilando, erros de CRC no RS-485 e falhas no link com a W2.
   Com a máquina parada um pulso fantasma ARMA um ciclo e acende o verde. Avaliar filtro/debounce no firmware e blindagem/aterramento.
+  **Atualização 2026-10-29:** o RS-485 está **resolvido** (cabo novo ~1,2 m direto pela frente da W1 e do Delta, longe do trajeto antigo que dava a volta no painel, e malha ligando SGND do Delta ao ⏚ da W1): 5 ciclos de 80 s com bomba ON, 0 erros. Ver `LEIAME.md` (rodada de 29/10).
+  **Continua aberto:** os pulsos fantasmas do painel (~44 `modelo N ignorado` por ciclo, quase 1 a cada 2 s, sempre nos modelos 1/2/4) **não são do RS-485** (aparecem com o barramento limpo). Investigar entradas X do painel (cabeamento, aterramento, botão) e `loop_max` de ~1,1 s a cada início de giro.
+  Falta: repetir com um ciclo de **lavagem real** (modelos completos, com carro/app); instalar o filtro de RS-485 só se o problema voltar; recolocar o SAJ no barramento é teste à parte (antes, com o cabo antigo, foi o pior caso).
 - [ ] **Queda de energia** de ~3 min (17:11–17:14, provavelmente a parada de emergência): a W2 e a câmera voltam sozinhas.
 - [ ] **Leitura da placa com o carro parado** pode levar até 1 min (filtro "cena parada" do servidor compara com a foto anterior). Correção proposta no servidor, aguardando "pode publicar".
 - [ ] `remainingSec` sempre 0 no servidor (o app não mostra contagem regressiva). O estado FREE/WASHING oscilou por alguns segundos durante o ciclo: revisar `nd_estado_str`.
 - [ ] Banco de produção sem a coluna `User.codigoCliente` (migrations da loja não aplicadas): atenção ao unir `loja-conveniencia` com a `main`.
 - [ ] A serial da W1 parou de imprimir às 17:46 durante o ciclo (a máquina seguiu e terminou): ver se é limite do monitor USB ou da W1.
+
+## J. Watchdogs e travas de segurança — estado em 2026-11-01 (decididos com o Giovani)
+Contexto: em 29–31/10 a W2 sumiu por 160–208 s (duas vezes), o envio de rádio da W1 travou (`tx_ok` congelado) e um ciclo armado por pulso falso ficou preso. Ver `docs/ESTADO_ATUAL.md` e `docs/LINK_W1_W2_UART.md`.
+
+**Já GRAVADO na máquina (W1 e display de 31/10):** pausa por falha da W2 (1,5 s; retoma sozinha; 10 min → erro); vigia do envio de rádio da W1; limite de taxa dos comandos à W2; caixa-preta na NVS (`erro`, `w2`, `tx`; impressa no boot como `[BOOT]`); janela de 3 s do painel após qualquer mudança de saída; ciclo armado só pelo painel expira em 3 min; cancelar apaga a memória; automático força COM X10 + BOMBA ON; botão CANCELAR ESPERA nos estados 1 a 4; INICIAR TESTE na aba TÉCNICO não troca de tela; X15 perdido por 3 s (era 1 s).
+
+**IMPLEMENTADO E COMPILADO em 2026-11-01, AINDA NÃO GRAVADO** (W1 e display; decisões do Giovani: 3 tentativas, 3 min, fail-safe 2 s):
+- [ ] **Recuperação de boot com limite:** depois de **3 falhas seguidas** do HOME ela desiste, para de comandar a máquina e fica em ERRO (`Recuperacao falhou 3x: faca o HOME pelo painel`, vermelho piscando, evento para a nuvem). PARAR TUDO limpa e libera HOME/MANUAL. (Antes repetia para sempre: 29+ falhas em 31/10.)
+- [ ] **Prazo de 3 min nos estados "carro entrando" e "aguardando posição"** para ciclo armado SÓ por pulso do painel (sem reserva): desarma e apaga o verde. Ciclos do app e do display não entram nessa regra.
+- [ ] **O app prevalece** sobre um ciclo armado só pelo painel que ainda não começou o processo (estados 1 a 3): `[NUVEM] reserva do app prevalece sobre o ciclo armado pelo painel`. Estado ≥ 4, ciclo do display e reserva já em andamento não são passados por cima.
+- [ ] **Reserva do app que some da nuvem** (cancelada/expirada) desarma o ciclo também nos estados 2 e 3 (antes só no 1), depois de 8 s com a nuvem online.
+- [ ] **Display envia `FAULT`** no heartbeat quando a W1 está em ERRO (antes o painel mostrava "OK" com a máquina parada). O FAULT some sozinho quando a W1 volta a IDLE.
+- [ ] **Display com watchdog de tarefa (20 s) e vigia do envio de rádio:** sem confirmação do rádio por 3 s com ≥ 4 envios pendentes → reinicializa só o ESP-NOW a cada 5 s; 3 tentativas sem resolver → reinicia o display (uptime > 60 s). Linhas `[TX] TRAVADO / reinicializando / normalizado` no serial do display.
+- [ ] **Ciclo do APP que não chega ao X15 em 3 min (estados 1 a 3):** a W1 cancela aquela lavagem (`Reserva do app cancelada: carro nao posicionou em 3 min`), vai para IDLE e manda o evento de falha com `errorCode` `X15_POSICAO`. O backend (`server/app/api/machine/fault/route.ts`, alterado em 2026-11-01, em produção desde 2026-11-01) trata esse código como **volta para a fila**: reserva ACTIVE/ENTERED → HELD, sem estorno, sem FAULT na máquina, push ao cliente e alerta leve ao admin. Sem esse deploy, o evento cai no fluxo antigo (FAILED + estorno + FAULT). Aplicado e no ar (commit 7dcd2e0 na main, 2026-11-01).
+- [ ] **Duração máxima do ciclo:** mais de 30 min em PROCESSO (pausa não conta) = para tudo, sem HOME automático, ERRO `Ciclo passou do tempo maximo (30 min)`. Valor em `CICLO_MAX_MS` (`maquina_estados.h`); ajustar se alguma lavagem real passar disso.
+- [ ] **Delta mudo:** com a máquina parada, 20 leituras seguidas (10 s) sem resposta do Delta = mensagem na tela `Delta (inversor) sem resposta no RS-485`, linha `[DELTA] MUDO` no serial e contador na NVS (`[BOOT] Delta mudo ... n=`). Não bloqueia nada; some sozinho. **Leitura do código de falha do Delta NÃO feita:** o mapa de registradores do código usa 0x2100/0x2101/0x2103 de um jeito que não confere com a tabela padrão do MS300 (onde 0x2100 é o código de erro); só dá para ler com segurança depois de confirmar o endereço no manual/parâmetros do SEU inversor.
+- [ ] **Monitor de memória:** a cada 10 s; abaixo de 40 KB livres registra (`[MEM] BAIXA`, NVS `mem`); abaixo de 20 KB com a máquina PARADA reinicia a W1. Nunca reinicia no meio de ciclo. Linha `[MEM] livre=... minimo=...` a cada 10 min no serial.
+- [ ] **Largura mínima do pulso do painel (X1/X2/X5/X6):** o pedido de modelo só vale se o contato ficar ativo por 50 ms (`PAINEL_PULSO_MIN_MS`); pulso menor é descartado com `[PAINEL] pulso curto descartado`. **Validar com o controle remoto real** (se algum botão/controle der pulso < 50 ms, baixar o valor).
+- Fail-safe da W2 (2 s, desliga tudo menos DO7), watchdog da W2 (8 s) e o link por cabo: ver `docs/LINK_W1_W2_UART.md` (Fase 2, nada gravado).
+**Roteiro de validação (depois do "grava")**: (1) boot com o braço fora do zero e carro fora: recuperação faz HOME; forçar falha (cabo do carrinho desconectado) e ver `HOME falhou (1/3) ... DESISTE` e ERRO; PARAR TUDO limpa. (2) Armar pelo painel, deixar o carro parado no X14/X15 sem chegar na posição por 3 min e ver o desarme. (3) Armar pelo painel e criar uma reserva no app antes disso: o app deve assumir. (4) Colocar a W1 em erro e conferir no admin/app que a máquina aparece como FALHA (não "OK"). (5) Display: no serial procurar `[TX]`; simular o travamento é difícil, então vale só conferir que não há reinícios do display (`up` do `[BOOT]`/uptime).
+
+**Ainda NÃO implementado (conversado em 2026-11-01):** leitura do código de falha do Delta/SAJ (falta confirmar o endereço do registrador); telemetria de saúde (reinícios/silêncios) para o painel do admin (hoje só serial/NVS; exige evento novo display→câmera→backend); supervisor externo de hardware e separar a emergência da comunicação (projeto elétrico: `docs/SUPERVISOR_HARDWARE.md`); cron de expiração no Railway (confirmar no painel).
+
+## K. HOME obrigatório + pulso de vida (2026-11-01) — compilado, NÃO gravado
+Fontes: lixo/testes/waveshare1 e testes/w1_w2_por_rxtx/waveshare1 (edições idênticas; build 954.407 B / 957.559 B).
+- [ ] **HOME obrigatório pelo botão** após energizar: desligue e religue a W1 com o braço fora do zero (ou depois de uma emergência). Esperado: nada se move, vermelho piscando, tela "Religou fora do zero: toque em HOME no display". Tocar em HOME: roda o HOME. Com carro no X15: mensagem de retirar o veículo; HOME não inicia. Religar já no zero: nada exigido.
+- [ ] Durante a espera, uma reserva do app não inicia ciclo.
+- [ ] **Pulso de vida em IO1** (GPIO1, borne do conector de expansão): multímetro VDC (ou LED + 330 Ω) entre IO1 e GND alterna ~0 V ↔ ~3,3 V a cada 3 s, com a máquina parada e em ciclo. Se não mexer, o borne não é o GPIO1: avisar antes de ligar qualquer supervisor.
+- Detalhes e pendências do supervisor externo: docs/SUPERVISOR_HARDWARE.md.
+- [ ] **Delta: parar na perda de comunicação Modbus** (parâmetros de tempo limite/tratamento de falha de comunicação do MS300; confirmar no manual). Pré-requisito do supervisor externo; detalhes em docs/SUPERVISOR_HARDWARE.md seção 6.
+
+## L. Registro permanente de reinícios + envio para a nuvem (2026-11-02) — compilado, NÃO gravado, NÃO enviado
+Pedido do Giovani: guardar o histórico de reinícios (W1 e W2) e mandar para a nuvem a cada reconexão, para o admin ver; reinício no meio de lavagem avisa o lavador na hora.
+**Peças e onde estão**
+- W1: `lixo/testes/waveshare1/reset_log_w1.h` (novo) + edições em controle.h, maquina_estados.h, nuvem_w1.h, protocolo_teste.h, tipos_w1.h, waveshare1.ino (cópia do cabo `w1_w2_por_rxtx/waveshare1` igual, mas SEM o aviso de boot da W2: pelo cabo ele precisa de um quadro LT_ novo, pendente no projeto do link). Build 957.011 B (produção) / 960.111 B (cabo).
+- W2: `lixo/testes/waveshare2/waveshare2.ino` manda `MSG_W2_BOOT` (motivo + id do boot) 1x/s nos primeiros 20 s depois de cada boot. Build 900.827 B.
+- Câmera: `firmware_camera/src/main.cpp` entende o evento tipo 4 e faz POST em `/api/machine/reset-log` (corpo `{key, info}`). Build OK (`pio run`).
+- Display: NÃO muda (repassa eventos de forma genérica).
+- Backend: branch local `backend-reset-log` (commit 9f40be9, em worktree no scratchpad, **não enviada**): `server/app/api/machine/reset-log/route.ts`, `server/lib/resets.ts`, seção no `server/app/admin/maquinas/page.tsx`, guias. Sem tabela nova (usa `Event` type `machine_reset`), sem migration.
+**ORDEM DE IMPLANTAÇÃO (obrigatória)**: 1) backend na main (só com "pode subir") e conferir `/api/health`; 2) câmera por OTA; 3) W2 e W1. Câmera antiga + W1 nova = a câmera não confirma o tipo 4, o display reenvia a cabeça da fila e os eventos de lavagem atrás dela ficam esperando.
+**Roteiro de validação**
+- [ ] Boot da W1 no monitor serial: linhas `[RST] W1 reiniciou: motivo=...` e `[RST] totais: ...`. Primeira energização: motivo POWERON, estado desconhecido (o hard reset do boot não aparece como falha).
+- [ ] Apertar RESET (EN) da W1 com a máquina em ciclo SECO: o serial mostra `estado_antes=5 ... EM CICLO` (valida o retrato da RTC). Não vai para a nuvem (reset técnico).
+- [ ] Religar a W1 por energia: motivo POWERON, vai para a nuvem após 15 s ligada (se houver internet); aparece em Admin > Máquinas > "Reinícios das placas".
+- [ ] Teste completo do aviso: ciclo SECO em andamento e desligar/religar a energia da **W2**: a W1 pausa, a W2 volta e avisa; deve chegar o push "A máquina parou: placa reiniciou" no lavador e no admin, e a linha na tabela com "ciclo interrompido".
+- [ ] Sem internet (câmera fora): os registros ficam e sobem quando voltar. Nenhum evento de lavagem fica preso atrás deles.
+- [ ] Depois de enviado, o mesmo reinício não aparece duas vezes no admin.
+
+### L.2 Relógio da máquina e cancelamento com estorno (2026-11-02) — compilado, NÃO gravado, NÃO enviado
+- **Relógio**: a câmera pega a hora por NTP (`pool.ntp.org` / `time.google.com`) e manda `MSG_HORA` (41, epoch UTC) à W1 a cada 30 s, só com a hora válida. A W1 mantém o relógio na RAM (`g_hora_*` em controle.h) e carimba cada reinício de trás para frente (hora atual − tempo ligada). O texto do evento ganha `;t=<epoch>`. Sem hora na W1, o campo some (e a W1 espera até 2 min de boot pela hora antes de enviar). Builds: W1 957.599 B / cabo 960.691 B; câmera OK. A hora some em corte total de energia até a câmera voltar à internet (usar o RTC da Waveshare é melhoria futura).
+- **Regra do Giovani (backend, branch local `backend-reset-log`, commit 07d1335)**: W1 reiniciou em ciclo → reservas do app ACTIVE/ENTERED que começaram ANTES do reset são canceladas e estornadas na hora; o cliente reserva de novo pelo app (não reagenda). W2 reiniciar não cancela. Sem a hora do reset (`t`) só registra e avisa. Testado no banco LOCAL com 11 casos (estorno, reenvio idempotente, reserva posterior intacta, W2, reset técnico, máquina parada, lixo, hora no futuro, 401).
+- [ ] Validação na máquina: com a câmera online, o serial da W1 mostra `[RST] ... carimbado: ha Ns (epoch ...)` poucos segundos depois do boot. No admin, a hora do reinício bate com o relógio real.
+- [ ] Validação do cancelamento (só com reserva de teste do app, na máquina em modo SECO): reiniciar a W1 no meio do ciclo por software não é possível sem hook; usar queda de energia da W1 NÃO cancela (estado desconhecido, sem c=1). O caminho c=1 da W1 só ocorre em watchdog/panic/brownout reais; o caminho foi validado no banco local.
+- Limite conhecido: queda **total** de energia (inclui o botão de emergência) aparece como "energia ligada" sem estado anterior: não cancela nem estorna sozinha; o cron de expiração (2x a duração) continua sendo a rede de segurança.
+
+### L.3 Fase 0 da retomada do ciclo (2026-11-02) — compilado, NÃO gravado, NÃO enviado
+Só observa e registra; **nenhuma decisão de movimento mudou**. Regras em `docs/REGRAS_RETOMADA_CICLO.md`. Código: `reset_log_w1.h` (reescrito, W1 produção e cabo), W2 (`waveshare2.ino`) e backend (branch local `backend-reset-log`). Builds: W1 960.631 B / cabo 963.711 B / W2 901.171 B. Câmera inalterada nesta rodada (o tipo 4 é genérico).
+- **Retrato da etapa** (RTC a cada volta do loop + checkpoint na NVS "et" a cada troca de etapa/giro, no máximo 1 por 1,5 s): processo, sub-estado, etapa, giro (n, sentido, destino), modelo, entradas/saídas das duas placas, frequência. Sobe junto de cada reinício **em ciclo** e de cada ocorrência.
+- **Ocorrências O1..O5** (só em AUTO_PROCESSO, fora do SECO; 1500 ms estáveis; 1 por tipo a cada 5 min): O1 X10 apagou sem 3 s de Y14, O2 X13 com X10, O3 X12 com X13, O4 X15 sem carro, O5 X10 apagou durante o giro. **Esperamos que O1 apareça** se a perda normal do X10 no avanço acontece antes de 3 s: é o dado para calibrar a regra.
+- **Diário X14/X15 na W2**: `MSG_W2_DIARIO` (42) a cada 5 s com as bordas; a W1 guarda o último na RTC e, depois de um reinício só da W1, calcula as bordas durante a queda (campos `a`/`b`).
+- [ ] Validação (máquina em SECO, depois ciclo real): o serial da W1 mostra `[RST] ... etapa: proc=... giro=...` depois de um reinício em ciclo; `[OCR] O1 ...` quando houver ocorrência; `[RST] #N: bordas durante a queda da W1: X14=.. X15=..` depois do boot; no admin, a coluna "Etapa" e a seção "Ocorrências observadas".
+- [ ] Conferir se O1..O5 disparam em ciclo NORMAL (sem falha): se disparar sempre, anotar o `valor`/etapa: é a calibração das regras (não é defeito da máquina).
+- Limite conhecido: sem a hora (câmera sem internet) as ocorrências sobem com a hora de chegada.
+
+### L.4 Sócio e bônus no wash-complete (2026-11-02) — compilado, NÃO gravado
+- W1 (`maquina_estados.h` e `nuvem_w1.h`, produção e cabo): ao concluir um ciclo local, o evento `wash-complete` leva `source` = `"socio"` (g_tipo_ciclo 2), `"bonus"` (3) ou `"remote"` (presencial). Builds: 960.695 B (produção) / 963.763 B (cabo). Display e câmera repassam o campo `source` sem mudança.
+- **Ordem**: backend primeiro (aceita `socio`/`bonus`; um backend antigo trataria `socio` como reserva de app e poderia confundir), depois a W1.
+- [ ] Validação: escolher na tela "sócio" (ou "bônus") para o próximo ciclo, concluir um ciclo local; no admin (Máquinas > resumo) aparece em Sócios (ou Bônus) com R$ 0,00 e Presencial não aumenta.
+
+### L.5 Trava de segurança do envio à nuvem (2026-11-02, dia da gravação)
+- Uma **câmera antiga** não conhece o evento tipo 4: não confirma, e o display reenviaria a cabeça da fila para sempre, **prendendo atrás dele os eventos de lavagem** (débito/estorno). Por isso a W1 só envia reinícios/ocorrências/retratos **depois de receber `MSG_HORA`** da câmera nova (`if (!g_hora_tem) return;` em `rst_enviar_tick`). Até lá o registro fica na NVS e no serial. Builds: W1 960.711 B / cabo 963.779 B.
+- Ordem de implantação continua: backend com o endpoint `reset-log` → câmera nova (OTA) → W1 já gravada começa a enviar sozinha. A W1 e a W2 podem ser gravadas antes sem risco.
+
+## M. Gravação na máquina em 2026-11-02 (resultado)
+**Gravado e verificado ("Hash of data verified")**
+- **W2 e W1: versão de PRODUÇÃO POR CABO** (`testes/w1_w2_por_rxtx/waveshare2` e `waveshare1`, UploadSpeed 230400) com watchdogs, HOME obrigatório, registro de reinícios/Fase 0, sócio/bônus, LT_DIARIO (diário do X14/X15) e aviso de reinício da W2 pelo uptime do LT_HB.
+- **Display (COM11):** `testes/display` com `PartitionScheme=huge_app,PSRAM=opi,FlashSize=16M` (a tabela de partição que já estava nele: nvs 0x9000/20 KB, app0 0x10000/3 MB, spiffs, coredump). A configuração dele (NVS) foi preservada. Compilação a frio levou 17 min (travou uma vez, foi refeita com `--build-path` novo).
+- **Câmera v7 publicada por OTA** (`camera.bin` = firmware_camera compilado, 1.211.504 B; `camera-version.json` = 7; sha256 conferido no servidor). Ela se atualiza em até 10 min **depois de conectar na internet**. Na gravação a câmera ainda estava offline (a W1 mostra `[NUVEM] ... flags=0`).
+- **Backend** em produção: reset-log (reinícios, retrato, ocorrências, estorno por reinício da W1), resumo/Visão geral, alertas sem repetição, texto do "voltou".
+
+**Cópias de segurança (fora do git):** pasta `Documentos\pili_backups_flash_2026-11-02` (W1 16 MB, display 4 MB; a W2 não teve cópia completa: o firmware antigo dela está em `backup_atual/bin/w2`).
+
+**Validações feitas**
+- Loopback TXD/RXD: **OK nas duas placas** (GPIO43/44).
+- Par por cabo, 10 min parado: zero CRC/timeout/truncado/espúrio/erro de UART, ida e volta máx. 26,5 ms. Os "perdidos" do teste eram artefato do sketch (T_FASE consumia a seq dos OIs; corrigido).
+- Tráfego real em produção por cabo: ~13.000 quadros em 44 min, **tudo zero**, silêncio máx. 200 ms.
+- Display ↔ W1: `[NUVEM] ordens ... idade=1s` (ESP-NOW ok).
+
+**Pendências**
+- [x] **IO1 CONFIRMADO em 2026-11-02 (informado pelo Giovani depois, na máquina: 'o IO1 está funcionando')**. Medida original, que não se reproduziu:  multímetro em IO1/GND leu 0,02 V fixo (esperado alternar 0↔3,3 V a cada 3 s). O código roda (conferido); provável que o borne "IO1" não seja o GPIO 1 (a doc da Waveshare não lista os pinos desse conector). Plano: sketch de leitura (só entradas) que diz qual GPIO cai quando o borne vai ao GND. Só importa para o supervisor externo.
+- [ ] **Câmera**: conferir energia/Wi-Fi; depois do OTA a W1 mostra `flags=4` (nuvem online) e passa a enviar o histórico de reinícios.
+- [ ] **Religar disjuntores** (inversores/bombas) e validar: HOME obrigatório pelo display, ciclo em SECO, depois ciclo real. Conferir no serial `[DELTA] voltou a responder`, `[RS485] ok`.
+- [ ] Conferir no admin (Máquinas > Reinícios das placas) quando a câmera nova enviar.
+
+## N. Correcoes feitas NA MAQUINA em 2026-11-02 (HOME)
+- **DEFEITO REAL ACHADO (W1): `comm_perdida()` dava TRUE com o link perfeito.** `g_hb2` (instante do ultimo quadro da W2) e gravado pela TAREFA de recepcao (callback da UART/ESP-NOW) e lido pelo laco principal; se a tarefa grava um instante mais novo que o `millis()` ja lido, `millis() - g_hb2` da negativo e, sem sinal, ~4 bilhoes > 700 ms. Aparecia no giro (a W2 manda muitos eventos de sensor). Prova: ocorrencia O6 com `valor=29` (29 ms desde o ultimo quadro) e o cabo a 0 erros. Correcao: `hb2_idade_ms()` (diferenca negativa = 0) em todos os 9 usos (HOME, pausa por falha da W2 no ciclo, status do display, alarme da W2, canal). A W2 nao tem o problema (processa os quadros no proprio laco).
+- **Ocorrencia O6** (`ocr_externa(6, ms)`): HOME falhou por comunicacao; grava retrato e sobe para a nuvem. O backend ainda mostra 'ocorrencia 6' (falta o nome em `lib/resets.ts`).
+- **Reavaliacao do zero na recuperacao de boot:** enquanto espera o botao HOME, se X16 + X12 ficarem ativos e estaveis por 1500 ms, encerra a recuperacao (antes ficava presa na decisao do boot, tomada com os sensores sem energia). Nao exercitada ainda em campo.
+- **Validado na maquina:** HOME obrigatorio pelo botao (`[REC] boot fora do zero` -> `HOME pedido pelo botao do display` -> `HOME concluido` -> `recuperacao encerrada`); 2 HOMEs completos sem falha depois da correcao; movimento manual ok; o filtro de pulso curto descartou pulsos falsos dos botoes do painel durante o movimento; cabo 0 erros com o motor girando.
+- Lição: opening the serial resets the W1 sometimes; o log de boot nao aparece (DBG so imprime com o host conectado).
+
+## O. Correcoes e regras novas gravadas NA MAQUINA em 2026-11-02 (tarde/noite)
+
+- **Gravado na W1 (cabo), commits 3532e38, bf69201, 731de19, c20fa3a, faf8ac0, b5d08b8** (copia ESP-NOW de producao compilada igual, nao gravada).
+- **START do app cancelava na hora** (`carro nao chegou na posicao em 3 min` junto do START): subtracao sem sinal (`g_t_app_armado` mais novo que `agora` no mesmo tick). Corrigido com sinal. VALIDADO: lavagem completa pelo app.
+- **X10 no inicio (AUTO_INICIANDO):** sem X10 a luz vermelha nao conta, nada liga; X10 volta -> 6 s recomecam; 60 s sem X10 -> erro. VALIDADO ('no partir deu certo').
+- **X10 no giro (G4/G5/G8):** pausa em 500 ms (motor parado, bombas desligadas), retoma sozinho com X10 estavel 1500 ms; giro 1->2 rebobina ate X16+X17 a 5 Hz e refaz o giro. VALIDADO ('o giro deu certo').
+- **X10 em TODAS as etapas (G3/G4/G5), b5d08b8:** etapa nao comeca sem X10; ausencia indevida (sem 3 s de Y14) no meio de qualquer etapa pausa/retoma. **NAO TESTADO ainda** (Giovani testa em outro dia: tirar o X10 no retorno ao X12 e entre etapas). Tambem desloca os watchdogs do X0 (`_cr_t_pulso`, `_cx_t_pulso`) na retomada (antes uma pausa > 4 s dava CARRO TRAVADO).
+- **HOME do giro: limite 25 s -> 60 s** (falhou aos 24,7 s com o braco longe do zero, em baixa velocidade).
+- **Ainda NAO programado (docs/REGRAS_RETOMADA_CICLO.md):** G6 (X13 com X10), G7 (carrinho parado na frente apos reinicio), G8b (giro triplo da volta a 5 Hz), retomada no meio do movimento apos reinicio (Fase 2), 5 Hz tambem no giro 2->1 retomado.
+- **Admin:** O6 com nome na main (8e5c683). IO1 confirmado pelo Giovani. Branch link-uart-w1-w2 com todos os commits so LOCAL (nao enviada).

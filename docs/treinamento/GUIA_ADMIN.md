@@ -37,18 +37,22 @@ No topo, o menu vai te levar pras outras seções: **Lavagens**, **Usuários**, 
 
 ## 3. Lavagens (`/admin/lavagens`)
 
-Histórico das últimas 200 lavagens compradas, com:
-- Quando foi comprada.
-- Cliente e placa do veículo.
-- Programa e valor.
-- **Status**: 🟡 Aguardando (pagou, esperando usar) · 🟢 Liberada (lavagem concluída, é aí que o valor é debitado de verdade) · 🔴 Cancelada (estornada).
-- Quem resgatou (se foi validado manualmente no balcão) e o código do voucher.
+No topo, uma tabela **por tipo de lavagem x origem**: **Presencial** (dinheiro nos botões da máquina), **App** (compra pela carteira), **Sócios** (mensalistas) e **Bônus** (promoção), com o total de cada coluna. Abaixo, as **últimas 300 lavagens de todas as origens**, misturadas por data, com:
+- Quando foi feita e a **Origem** (etiqueta colorida).
+- Cliente e placa (no app); nas presenciais/sócios/bônus aparece a máquina e o tipo.
+- Programa e valor (sócio e bônus têm valor R$ 0,00).
+- **Status**: 🟡 Aguardando (pagou, esperando usar) · 🟢 Concluída (é aí que o valor é debitado de verdade) · 🔴 Cancelada (estornada).
+- Detalhe: quem resgatou no balcão ou o código do voucher (app).
 
 ![Tela de lavagens](imagens/admin/03-lavagens.png)
 
-**Quando usar:** pra conferir se uma lavagem específica de um cliente foi processada, ou pra investigar reclamação ("paguei e não lavou").
+**Quando usar:** pra conferir se uma lavagem específica de um cliente foi processada, pra investigar reclamação ("paguei e não lavou") e pra ver quantas lavagens vieram de cada origem.
 
-> ⚠️ Essa lista mostra só as lavagens compradas **pelo app**. Lavagens pagas em dinheiro na hora (pelos botões da própria máquina) aparecem na tela de Máquinas, coluna "Presencial" (seção 6).
+**Contadores diferentes (acerto):** o display da máquina é a referência. Se os números dele (por modelo: presencial, app, sócios, bônus, desde o último acerto) forem diferentes dos da nuvem em duas conferências seguidas (a cada ~15 min), chega o alerta **"Contadores diferentes"** e, no topo desta tela, aparece um cartão com a tabela **Display × Nuvem** e dois botões — **você escolhe qual lista vale**:
+- **Usar a lista do display:** o que o display tem a mais em presencial, sócios e bônus é registrado agora como lavagem (presencial ao preço atual da unidade; sócio e bônus com valor R$ 0,00) e entra no fechamento. Diferenças no app, ou a nuvem ter mais que o display, ficam só como ajuste aceito: nada é apagado.
+- **Manter a lista da nuvem:** o display continua com os números dele até o próximo acerto na máquina; o aviso é encerrado.
+
+> ℹ️ As presenciais só são registradas na nuvem a partir de 02/11/2026; o contador por modelo do display da máquina (Presencial/Aplicativo/Sócios/Bônus) é de outra janela ("desde o último acerto") e pode ser maior. O fechamento financeiro por máquina continua na tela de **Máquinas** (seção 6).
 
 ---
 
@@ -142,6 +146,14 @@ Quando uma unidade tem **mais de uma máquina**, aparecem sub-abas (Máquina 1, 
 
 ---
 
+### Resumo no fim de cada máquina
+
+No **fim da aba de cada máquina** (página Máquinas) há o **Resumo (desde o último fechamento)**: uma tabela com cada **tipo de lavagem** e quantas foram **Presencial** (dinheiro na máquina), **App**, **Sócios** e **Bônus**, com o total e o valor. Sócios e bônus não geram dinheiro na hora, então têm valor R$ 0,00. Logo abaixo está o **Relatório do lavador (a pagar / a receber)**: "Deve repassar R$ X" (ele ficou com o dinheiro do presencial e deve a parte dos outros) ou "A receber R$ X".
+
+> Sócios e bônus só aparecem separados depois que a máquina receber a atualização do firmware que informa o tipo da lavagem. Até lá todos entram em Presencial.
+
+---
+
 ## 6b. Aspirador de pó — ativando numa máquina
 
 A máquina de aspirar pó fica ligada a um relé separado (DO8) e é controlada pelo mesmo app do cliente. Pra ativar:
@@ -175,7 +187,33 @@ Isso poupa você de fazer conta na mão — é só olhar esse número na hora de
 
 ## 8. O que fazer quando um alerta chegar
 
-Se uma máquina falhar, ficar sem internet, ou a câmera parar de mandar foto, você recebe uma **notificação push** (a mesma que o lavador recebe) com o resumo do problema. O alerta também fica registrado — pra investigar, vá em **Máquinas**, escolha a unidade/máquina certa e confira o status/última batida.
+Se uma máquina falhar, ficar sem internet, ou a câmera parar de mandar foto, você recebe **uma** notificação push (a mesma que o lavador recebe) com o resumo do problema. **O aviso não se repete enquanto o problema durar.** Quando a situação normaliza chega **um segundo aviso, "voltou"**, dizendo quanto tempo ficou com o problema. No painel (Alertas — 24h) o "voltou" aparece com ✓.
+
+### Visão geral: máquinas em abas, status e histórico de alertas
+
+A **Visão geral** abre com as **máquinas em abas**, no mesmo desenho da página Máquinas: uma aba por **unidade** (com um ponto colorido por máquina: verde = ok, amarelo = manutenção, vermelho = offline ou falha) e, quando a unidade tem mais de uma máquina, as **sub-abas** "Máquina 1", "Máquina 2"... A aba em que você está fica **destacada** (borda vermelha mais forte).
+
+Ao clicar em uma máquina você vê **só os dados dela**:
+- **Status:** cartões Máquina (OK, lavando, manutenção, falha, offline) e Display (segundos desde o último contato). O estado da câmera por máquina entra numa próxima etapa.
+- **Abertos agora:** o que está com problema neste momento (display fora, câmera fora, falha), desde quando.
+- **Histórico de alertas:** tudo o que já aconteceu, **sem apagar nada**, com filtros de **período** (24 h, 7 dias, 30 dias, tudo) e de **tipo** (câmera, display, falha, carro não posicionou, só os "voltou"), em páginas de 50 ("mais antigos →").
+
+Abaixo ficam os números gerais do negócio ("Resumo do negócio"). O antigo item **Alertas** do menu foi incorporado aqui. O **menu de cima** também destaca em qual página você está (linha vermelha embaixo do nome).
+
+### Reinícios das placas (fim da página Máquinas)
+
+Embaixo das abas aparece **"Reinícios das placas (30 dias)"**: quantas vezes a placa controladora (**W1**) e a das entradas/saídas (**W2**) reiniciaram, e quantas dessas foram **no meio de uma lavagem**. A tabela mostra quando, em qual máquina, por quê (queda de tensão, travou e o watchdog reiniciou, erro interno, "energia ligada" = a máquina foi religada, por exemplo depois do botão de emergência), em que estado a máquina estava e há quanto tempo estava ligada.
+
+- Reinício com a máquina **parada** ou que voltou ao normal só fica registrado.
+- Reinício **no meio de uma lavagem** é uma parada: você e o lavador da máquina recebem na hora um aviso no celular ("A máquina parou: placa reiniciou"). Confira a máquina e faça o **HOME no display**.
+- Se a placa que reiniciou foi a **W1** e havia uma lavagem do app em andamento, ela é **cancelada e o valor é devolvido ao saldo do cliente automaticamente**, e ele recebe um aviso. Não é reagendada: se quiser, o cliente reserva de novo pelo app. Se a que reiniciou foi a **W2**, a máquina pausa e retoma sozinha, e nada é cancelado.
+- Muitos "queda de tensão" apontam para fonte ou ruído elétrico; muitos "travou" apontam para o programa. Se a mesma máquina reinicia toda semana, avise o suporte.
+- A hora é a do reinício (a máquina pega a hora na internet). Se ela ainda estava sem relógio, aparece a hora em que o aviso chegou na nuvem.
+- A coluna **Etapa** mostra em que ponto da lavagem a máquina estava (processo, giro, sensores acesos). Se a energia caiu, aparece "ciclo em andamento antes da queda de energia". Os números "bordas X14/X15" mostram se o sensor de carro mudou enquanto só a W1 estava fora (útil para saber se um carro saiu ou entrou).
+
+### Ocorrências observadas
+
+Logo abaixo aparece **"Ocorrências observadas (30 dias)"**: situações em que dois sensores se contradizem (por exemplo, o X10 apagou sem a máquina andar). Por enquanto a máquina **só anota**, não age. Servem para afinar as regras de retomada da lavagem depois de uma queda. Se uma mesma ocorrência se repetir muito numa máquina, avise o suporte.
 
 ---
 

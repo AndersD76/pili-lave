@@ -1,0 +1,162 @@
+diff --git original/waveshare1/controle.h novo/waveshare1/controle.h
+index 5b88042..8e575a2 100644
+--- original/waveshare1/controle.h
++++ novo/waveshare1/controle.h
+@@ -7,6 +7,7 @@
+ #include "protocolo_teste.h"
+ #include "vfd_rs485_w1.h"
+ #include "saj_rs485_w1.h"
++#include "link_cfg.h"
+ 
+ // =======================================================================
+ // controle.h — Waveshare 1 como CONTROLADORA. Fornece a MESMA interface
+@@ -199,6 +200,9 @@ bool io2_get_di(uint8_t canal) {
+     if (bit & PULSO_W2_MASK) return (g_io2.di & bit) != 0;
+     return (g_viv2 & bit) != 0;
+ }
++#if LINK_W1_W2_UART
++#include "link_w2_uart.h"          // transporte W1<->W2 por CABO (UART0); com LINK_W1_W2_UART = 0 este arquivo nem entra
++#endif
+ static void ws2_envia_comando(uint8_t canal, uint8_t estado) {
+     // Limite de taxa: o MESMO comando (canal+estado) repetido em menos de 200 ms nao sai de novo (max 5/s por canal). Medido em
+     // 2026-10-31: ociosa a W1 chegou a ~520 quadros/s (antes ~5/s) porque esta funcao enviava a CADA chamada. O reforco continua
+@@ -209,11 +213,15 @@ static void ws2_envia_comando(uint8_t canal, uint8_t estado) {
+         if (ult_est[canal] == estado && (agora - ult_ms[canal]) < 200) return;
+         ult_est[canal] = estado; ult_ms[canal] = agora;
+     }
++#if LINK_W1_W2_UART
++    link_w2_cmd(canal, estado);     // cabo: mesmo comando, agora num quadro com CRC pela UART0
++#else
+     MsgComando m;
+     m.cab.tipo = MSG_COMANDO; m.cab.id_maquina = ID_MAQUINA;
+     m.cab.origem = ORIGEM_WAVE1; m.cab.seq = g_ws_seq++;
+     m.canal = canal; m.estado = estado;
+     tx_send((uint8_t*)MAC_WAVE2, (uint8_t*)&m, sizeof(m));
++#endif
+ }
+ void io2_set_do(uint8_t canal, bool estado) {
+     if (canal < 1 || canal > 8) return;
+@@ -241,7 +249,11 @@ static bool g_alarme_wave2_ativo = false;
+ static void wave2_alarme_tick() {
+     bool perdida = (millis() - g_hb2) > WAVE2_ALARME_MS;
+     if (perdida) {
++#if LINK_W1_W2_UART
++        if (g_estado_auto != AUTO_ERRO) alarme_modbus("Waveshare 2 sem contato (cabo)");
++#else
+         if (g_estado_auto != AUTO_ERRO) alarme_modbus("Waveshare 2 sem contato (radio)");
++#endif
+         g_alarme_wave2_ativo = true;
+     } else if (g_alarme_wave2_ativo) {
+         g_alarme_wave2_ativo = false;
+@@ -565,12 +577,18 @@ static void status_enviar() {
+     tx_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&s, sizeof(s));
+ }
+ 
++#if LINK_W1_W2_UART
++static volatile uint32_t g_disp_rx_ms = 0;   // ultimo instante em que o radio ouviu QUALQUER quadro do display (verifica a migracao de canal)
++#endif
+ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
+     if (info->src_addr[3] != ID_MAQUINA) return;
+     if (len < (int)sizeof(CabEspNow)) return;
+     const CabEspNow* cab = (const CabEspNow*)data;
+     if (cab->id_maquina != ID_MAQUINA) return;
+ 
++#if LINK_W1_W2_UART
++    if (cab->origem == ORIGEM_WAVE2) return;     // cabo: a W2 nao usa mais o radio (qualquer quadro dela por ESP-NOW e ignorado)
++#else
+     // ---- da Waveshare 2 ----
+     if (cab->origem == ORIGEM_WAVE2) {
+         if (cab->tipo == MSG_EVENTO && len >= (int)sizeof(MsgEvento)) {
+@@ -586,9 +604,13 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t*
+         }
+         return;
+     }
++#endif
+ 
+     // ---- do Display: so o comando do teste (NADA e executado aqui: fila / flag) ----
+     if (cab->origem != ORIGEM_DISPLAY && !(cab->origem == ORIGEM_CAMERA && cab->tipo == MSG_TESTE_DATA)) return;
++#if LINK_W1_W2_UART
++    if (cab->origem == ORIGEM_DISPLAY) g_disp_rx_ms = millis();
++#endif
+     if (cab->tipo == MSG_TESTE_CMD && len >= (int)sizeof(MsgTesteCmd)) {
+         const MsgTesteCmd* m = (const MsgTesteCmd*)data;
+         if (m->acao == 2) g_parar_pedido = true;                       // PARAR: prioridade maxima
+@@ -939,6 +961,28 @@ void canal_tick() {
+             g_manual_msg = "Canal: maquina ocupada"; g_manual_msg_ms = millis(); return;
+         }
+         g_can_ant = g_canal_atual; g_can_dest = n;
++#if LINK_W1_W2_UART
++        // CABO: a W2 nao esta no radio — nao ha passo da W2 (nem "vai para o canal N" nem espera pelo heartbeat dela). O resto da sequencia e
++        // igual (a W1 muda, confere, salva e manda o "oi" ao display). A rede de seguranca que a W2 dava ("se ela nao aparecer no canal novo, a
++        // W1 volta sozinha ao antigo") passa a ser: a W1 volta ao antigo se NAO OUVIR O DISPLAY no canal novo. Janela de 12 s (o display so
++        // chega ao canal novo ~1 s depois da W1, manda ordens a cada 2 s e desiste sozinho em 10 s): assim a W1 nunca reverte por engano.
++        aplica_canal(n);
++        g_can_hb_antes = g_disp_rx_ms; g_can_t0 = millis(); g_can_est = 1;                  // (g_can_hb_antes guarda o ultimo quadro do display ja ouvido)
++        DBG_PRINTF("[CANAL] migrando %u -> %u (esperando o display no canal novo)\n", (unsigned)g_can_ant, (unsigned)n);
++        return;
++    }
++    if (g_disp_rx_ms != g_can_hb_antes && (millis() - g_disp_rx_ms) < 3000) {               // display ouvido no canal novo
++        canal_salvar(g_can_dest);
++        canal_envia(MAC_DISPLAY, g_can_dest, 4);                                            // "oi" para o display
++        DBG_PRINTF("[CANAL] ok: no canal %u (salvo)\n", (unsigned)g_can_dest);
++        g_can_est = 0;
++    } else if (millis() - g_can_t0 > 12000) {                                               // falhou: volta ao canal antigo
++        aplica_canal(g_can_ant);
++        DBG_PRINTF("[CANAL] FALHOU: o display nao apareceu no canal %u; voltei ao %u\n", (unsigned)g_can_dest, (unsigned)g_can_ant);
++        g_manual_msg = "Canal: o display nao apareceu no canal novo; voltei ao antigo"; g_manual_msg_ms = millis();
++        g_can_est = 0;
++    }
++#else
+         canal_envia(MAC_WAVE2, n, 3);                                                       // a W2 vai primeiro (ainda no canal antigo)
+         aplica_canal(n);
+         g_can_hb_antes = g_hb2; g_can_t0 = millis(); g_can_est = 1;
+@@ -957,6 +1001,7 @@ void canal_tick() {
+         g_manual_msg = "Canal: a W2 nao acompanhou; voltei ao canal antigo"; g_manual_msg_ms = millis();
+         g_can_est = 0;
+     }
++#endif
+ }
+ 
+ // Resultado de entrega de cada esp_now_send (so confirma que o destino recebeu o quadro).
+@@ -1033,7 +1078,11 @@ void controle_init() {
+     esp_now_peer_info_t p = {}; p.channel=0; p.ifidx=WIFI_IF_STA; p.encrypt=true;
+     memcpy(p.lmk, ESPNOW_LMK, 16);
+     memcpy(p.peer_addr, MAC_DISPLAY, 6); esp_now_add_peer(&p);
++#if LINK_W1_W2_UART
++    link_w2_init();                   // cabo: sobe a UART0 (a W2 nao e mais peer do ESP-NOW)
++#else
+     memcpy(p.peer_addr, MAC_WAVE2, 6);   esp_now_add_peer(&p);
++#endif
+ }
+ 
+ // Reinicializa SO o ESP-NOW (sem reiniciar a placa) quando o envio trava: mesma configuracao do boot (PMK, callbacks, pares).
+@@ -1047,7 +1096,9 @@ static void espnow_reiniciar() {
+     esp_now_peer_info_t p = {}; p.channel=0; p.ifidx=WIFI_IF_STA; p.encrypt=true;
+     memcpy(p.lmk, ESPNOW_LMK, 16);
+     memcpy(p.peer_addr, MAC_DISPLAY, 6); esp_now_add_peer(&p);
++#if !LINK_W1_W2_UART
+     memcpy(p.peer_addr, MAC_WAVE2, 6);   esp_now_add_peer(&p);
++#endif
+     g_tx_pend = 0; g_tx_cb_ms = millis();
+ }
+ 
+@@ -1056,6 +1107,9 @@ extern bool g_giro_ativo;   // definido em processos.h
+ 
+ void controle_tick() {
+     wave2_alarme_tick();
++#if LINK_W1_W2_UART
++    link_w2_tick();                   // sinal de vida W1 -> W2 a cada 200 ms (a W2 desliga as saidas se ele sumir por 2 s)
++#endif
+ 
+     // Resumo do RS-485 a cada 5 s (serial): como as transacoes terminaram.
+     static uint32_t t_rs = 0;
+@@ -1070,6 +1124,9 @@ void controle_tick() {
+                    (unsigned)g_mb_ok, (unsigned)g_mb_zero, (unsigned)g_mb_curta, (unsigned)g_mb_crc,
+                    (unsigned)tot, (unsigned)(tot ? (100UL * g_mb_ok / tot) : 0),
+                    (int)g_vfd_mov, (int)g_giro_ativo, home_estado());
++#if LINK_W1_W2_UART
++        link_w2_relatorio();          // [W2LINK]: quadros ok/CRC ruim/truncados/espurios/erros da UART/maior intervalo/reinicios da W2
++#endif
+     }
+     // Reconciliacao das saidas da W2 (item 6): o comando sai UMA vez por radio, sem confirmacao,
+     // e a W2 pode recusar o Y14 se ele foi desligado ha menos de 500 ms. Aqui comparamos o que

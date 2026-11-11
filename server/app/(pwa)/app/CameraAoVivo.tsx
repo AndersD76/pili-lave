@@ -70,7 +70,8 @@ export default function CameraAoVivo({ titulo }: { titulo?: string }) {
         <span className="ponto" aria-hidden /> {titulo ?? "Câmera da máquina · ao vivo"}
       </div>
       {url ? (
-        <img src={url} alt="Imagem da câmera da máquina" className="camviva-img" />
+        <img src={url} alt="Imagem da câmera da máquina" className="camviva-img"
+             onError={() => { atual.current = ""; setUrl(""); }} />
       ) : (
         <div className="camviva-vazio">Aguardando imagem da câmera…</div>
       )}

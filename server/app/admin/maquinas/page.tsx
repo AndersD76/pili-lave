@@ -3,6 +3,7 @@ import { requireAdminPage } from "@/lib/admin";
 import { AdminNav } from "../nav";
 import MaquinasTabs from "./MaquinasTabs";
 import { divisaoCompleta, participacoesDaMaquina } from "@/lib/comissao";
+import { ESTADOS_AUTO, MOTIVOS_RESET, NOMES_OCORRENCIA } from "@/lib/resets";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ function fmtQuando(d: Date | null): string {
 }
 
 function fmtData(d: Date): string {
-  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
 }
 
 function money(cents: number): string {
@@ -105,6 +106,15 @@ export default async function AdminMaquinas() {
       })
     )
   );
+  // Sócios e bônus (firmware de 2026-11-02): a lavagem fica em LavagemPresencial com valor 0 e o tipo num Event "lavagem_tipo".
+  const tiposPorMaquina = await Promise.all(
+    machines.map((m) =>
+      prisma.event.findMany({
+        where: { type: "lavagem_tipo", createdAt: { gte: m.lastPaymentDate ?? new Date(0) }, payload: { path: ["machineId"], equals: m.id } },
+        select: { payload: true },
+      })
+    )
+  );
   // Aspirador desde o último fechamento — sempre pago pela carteira (nunca
   // em espécie), por isso entra só do lado "app" na divisão por escopo.
   const vacuumPorMaquina = await Promise.all(
@@ -173,6 +183,39 @@ export default async function AdminMaquinas() {
       divisaoAspirador = { participantes: porParticipante, totalAppCents };
     }
 
+    // RESUMO do fim da aba da máquina: lavagens por tipo x origem (presencial, app, sócios, bônus) e o relatório do lavador.
+    const sociosPorProg = new Map<number, number>();
+    const bonusPorProg = new Map<number, number>();
+    for (const ev of tiposPorMaquina[i]) {
+      const pl = (ev.payload ?? {}) as { programId?: number; tipo?: string };
+      if (!pl.programId) continue;
+      const alvo = pl.tipo === "SOCIO" ? sociosPorProg : pl.tipo === "BONUS" ? bonusPorProg : null;
+      if (alvo) alvo.set(pl.programId, (alvo.get(pl.programId) ?? 0) + 1);
+    }
+    const appPorProg = new Map(porProgramaPorMaquina[i].map((g) => [g.programId, { qtd: g._count._all, cents: g._sum.amountCents ?? 0 }]));
+    const presPorProg = new Map(presencialPorProgramaPorMaquina[i].map((g) => [g.programId, { qtd: g._count._all, cents: g._sum.amountCents ?? 0 }]));
+    const linhasResumo = programas.map((pr) => {
+      const pres = presPorProg.get(pr.id);
+      const so = sociosPorProg.get(pr.id) ?? 0;
+      const bo = bonusPorProg.get(pr.id) ?? 0;
+      const presencial = Math.max(0, (pres?.qtd ?? 0) - so - bo); // sócio/bônus também ficam em LavagemPresencial
+      const app = appPorProg.get(pr.id)?.qtd ?? 0;
+      const cents = (pres?.cents ?? 0) + (appPorProg.get(pr.id)?.cents ?? 0);
+      return { programa: pr.nome, presencial, app, socios: so, bonus: bo, total: presencial + app + so + bo, cents };
+    });
+    const totaisResumo = linhasResumo.reduce(
+      (t, l) => ({ presencial: t.presencial + l.presencial, app: t.app + l.app, socios: t.socios + l.socios, bonus: t.bonus + l.bonus, total: t.total + l.total, cents: t.cents + l.cents }),
+      { presencial: 0, app: 0, socios: 0, bonus: 0, total: 0, cents: 0 }
+    );
+    const lavadorDivisao = divisao?.participantes.find((p) => p.tipo === "LAVADOR");
+    const resumo = {
+      linhas: linhasResumo.map((l) => ({ ...l, valor: money(l.cents) })),
+      totais: { ...totaisResumo, valor: money(totaisResumo.cents) },
+      lavador: lavadorDivisao
+        ? { nome: userLabelMap.get(lavadorDivisao.userId ?? "") ?? "—", saldoCents: lavadorDivisao.saldoCents, saldo: money(Math.abs(lavadorDivisao.saldoCents)) }
+        : null,
+    };
+
     return {
       id: m.id,
       numero: m.numero,
@@ -189,6 +232,7 @@ export default async function AdminMaquinas() {
       vacuumPriceCents: m.vacuumPriceCents,
       vacuumDurationMin: m.vacuumDurationMin,
       valorDesdeFechamento: money(totalDesdeFechamentoPorMaquina[i]),
+      resumo,
       participantes: TIPOS_PARTICIPACAO.map((tipo) => {
         const p = participacoesPorMaquina[i].find((x) => x.tipo === tipo);
         return { tipo, userId: p?.userId ?? "", percentual: p?.percentual ?? 0 };
@@ -229,6 +273,58 @@ export default async function AdminMaquinas() {
         cliente: r.user.name ?? r.user.phone,
       })),
     };
+  });
+
+  // Reinícios das placas (W1/W2) enviados pela máquina — últimos 30 dias, para o admin ver a saúde elétrica/de firmware.
+  type PayloadReset = {
+    machineId?: string; quem?: string; motivo?: number; motivoNome?: string; estado?: number | null; estadoNome?: string | null;
+    emCiclo?: boolean; upAntSeg?: number | null; total?: number | null; deliberado?: number; quandoReset?: string | null; chave?: string; cicloNvs?: boolean;
+  };
+  const reiniciosBrutos = await prisma.event.findMany({
+    where: { type: "machine_reset", createdAt: { gte: new Date(Date.now() - 30 * 86_400_000) } },
+    orderBy: { createdAt: "desc" },
+    take: 300,
+  });
+  const reinicios = reiniciosBrutos.map((e) => {
+    const p = (e.payload ?? {}) as PayloadReset;
+    return { at: p.quandoReset ? new Date(p.quandoReset) : e.createdAt, p };
+  });
+  const nomeMaquina = new Map(machines.map((m) => [m.id, `${m.station.city} — máq. ${m.numero}`]));
+  const resetsW1 = reinicios.filter((r) => r.p.quem === "W1").length;
+  const resetsW2 = reinicios.filter((r) => r.p.quem === "W2").length;
+  const resetsEmCiclo = reinicios.filter((r) => r.p.emCiclo).length;
+
+  // Fase 0 da retomada: retrato da etapa de cada interrupção e ocorrências observadas (só registro).
+  type PayloadEtapa = {
+    chaveReset?: string; procNome?: string; giro?: number; giroDesc?: string; slot?: number; sub?: number;
+    entradasAtivas?: string[]; dx14?: number | null; dx15?: number | null; hz10?: number;
+  };
+  type PayloadOcorrencia = {
+    chave?: string; machineId?: string; tipo?: number; tipoNome?: string; estadoNome?: string | null; total?: number | null;
+    valor?: number | null; quandoOcorrencia?: string | null;
+  };
+  const desde30 = new Date(Date.now() - 30 * 86_400_000);
+  const [etapasBrutas, ocorrenciasBrutas] = await Promise.all([
+    prisma.event.findMany({ where: { type: "machine_etapa", createdAt: { gte: desde30 } }, orderBy: { createdAt: "desc" }, take: 400 }),
+    prisma.event.findMany({ where: { type: "machine_ocorrencia", createdAt: { gte: desde30 } }, orderBy: { createdAt: "desc" }, take: 100 }),
+  ]);
+  const etapaPorChave = new Map<string, PayloadEtapa>();
+  for (const e of etapasBrutas) {
+    const pe = (e.payload ?? {}) as PayloadEtapa;
+    if (pe.chaveReset) etapaPorChave.set(pe.chaveReset, pe);
+  }
+  const descEtapa = (e?: PayloadEtapa): string => {
+    if (!e) return "—";
+    const partes = [e.procNome ?? "?"];
+    if (e.giro) partes.push(`giro ${e.giro}/3`);
+    if (e.giroDesc) partes.push(e.giroDesc);
+    if (e.entradasAtivas?.length) partes.push(`sensores: ${e.entradasAtivas.join(" ")}`);
+    if (e.dx14 != null || e.dx15 != null) partes.push(`bordas X14/X15 na queda: ${e.dx14 ?? "?"}/${e.dx15 ?? "?"}`);
+    return partes.join(" · ");
+  };
+  const ocorrencias = ocorrenciasBrutas.map((e) => {
+    const po = (e.payload ?? {}) as PayloadOcorrencia;
+    return { at: po.quandoOcorrencia ? new Date(po.quandoOcorrencia) : e.createdAt, p: po, etapa: etapaPorChave.get(po.chave ?? "") };
   });
 
   const lavadoresProps = lavadores.map((l) => ({ id: l.id, label: l.name ?? l.phone }));
@@ -288,6 +384,104 @@ export default async function AdminMaquinas() {
           precosPorUnidade={precosPorUnidadeProps}
         />
       </div>
+
+      <h2 className="section-title" style={{ marginTop: 40 }}>Reinícios das placas (30 dias)</h2>
+      <div className="stats">
+        <div className="stat">
+          <div className="lab">W1 (controladora)</div>
+          <div className="val">{resetsW1}</div>
+        </div>
+        <div className="stat">
+          <div className="lab">W2 (entradas/saídas)</div>
+          <div className="val">{resetsW2}</div>
+        </div>
+        <div className={"stat" + (resetsEmCiclo > 0 ? " alerta" : "")}>
+          <div className="lab">No meio de uma lavagem</div>
+          <div className="val">{resetsEmCiclo}</div>
+        </div>
+      </div>
+      <p style={{ opacity: 0.7, fontSize: 13, margin: "12px 0" }}>
+        A hora é a do reinício (relógio da máquina, ajustado pela internet); se a máquina ainda estava sem relógio, é a hora de chegada na nuvem. &quot;Energia ligada&quot; é a máquina religada, por exemplo depois do botão de emergência.
+      </p>
+      {reinicios.length === 0 ? (
+        <p style={{ opacity: 0.7 }}>Nenhum reinício registrado nos últimos 30 dias.</p>
+      ) : (
+        <div className="tbl-wrap">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Quando</th>
+                <th>Máquina</th>
+                <th>Placa</th>
+                <th>Motivo</th>
+                <th>Estado antes</th>
+                <th>Etapa</th>
+                <th>Ligada antes</th>
+                <th>Total da placa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reinicios.slice(0, 40).map((r, i) => (
+                <tr key={i}>
+                  <td>{fmtData(r.at)}</td>
+                  <td>{nomeMaquina.get(r.p.machineId ?? "") ?? "—"}</td>
+                  <td>{r.p.quem ?? "—"}</td>
+                  <td>
+                    {r.p.deliberado === 1 ? "reiniciada de propósito (memória baixa)"
+                      : r.p.deliberado === 2 ? "reiniciada de propósito (rádio travado)"
+                      : r.p.motivoNome ?? MOTIVOS_RESET[r.p.motivo ?? -1] ?? "—"}
+                  </td>
+                  <td style={r.p.emCiclo ? { color: "var(--erro, #e5484d)", fontWeight: 600 } : undefined}>
+                    {r.p.estadoNome ?? (r.p.estado != null ? ESTADOS_AUTO[r.p.estado] : null) ?? "desconhecido"}
+                    {r.p.emCiclo ? " (ciclo interrompido)" : ""}
+                    {r.p.cicloNvs ? " (ciclo em andamento antes da queda de energia)" : ""}
+                  </td>
+                  <td style={{ fontSize: 13 }}>{descEtapa(etapaPorChave.get(r.p.chave ?? ""))}</td>
+                  <td>{r.p.upAntSeg ? `${Math.floor(r.p.upAntSeg / 60)} min` : "—"}</td>
+                  <td>{r.p.total ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <h2 className="section-title" style={{ marginTop: 40 }}>Ocorrências observadas (30 dias)</h2>
+      <p style={{ opacity: 0.7, fontSize: 13, margin: "12px 0" }}>
+        Contradições entre sensores que a máquina apenas <b>registra</b> (ainda não age sobre elas). Servem para ajustar as regras de retomada do ciclo. Cada tipo é registrado no máximo a cada 5 min por máquina.
+      </p>
+      {ocorrencias.length === 0 ? (
+        <p style={{ opacity: 0.7 }}>Nenhuma ocorrência registrada nos últimos 30 dias.</p>
+      ) : (
+        <div className="tbl-wrap">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Quando</th>
+                <th>Máquina</th>
+                <th>Ocorrência</th>
+                <th>Estado</th>
+                <th>Valor</th>
+                <th>Total do tipo</th>
+                <th>Etapa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ocorrencias.slice(0, 40).map((o, i) => (
+                <tr key={i}>
+                  <td>{fmtData(o.at)}</td>
+                  <td>{nomeMaquina.get(o.p.machineId ?? "") ?? "—"}</td>
+                  <td>{o.p.tipoNome ?? NOMES_OCORRENCIA[o.p.tipo ?? -1] ?? "—"}</td>
+                  <td>{o.p.estadoNome ?? "—"}</td>
+                  <td>{o.p.valor != null ? `${o.p.valor} ms de deslocamento` : "—"}</td>
+                  <td>{o.p.total ?? "—"}</td>
+                  <td style={{ fontSize: 13 }}>{descEtapa(o.etapa)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </main>
   );
 }
