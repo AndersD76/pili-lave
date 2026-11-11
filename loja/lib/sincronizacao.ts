@@ -17,23 +17,32 @@ export async function sincronizarVendas(): Promise<{ enviadas: number }> {
   const deviceKey = await lerConfig("deviceKey");
   if (!deviceKey) return { enviadas: 0 };
 
-  // vendas canceladas antes de sincronizar nunca vão — se cancelar depois
-  // de já ter ido, a cópia na nuvem fica (sem efeito hoje: não alimenta
-  // nenhum indicador ainda; revisitar quando a etapa 7 existir)
-  const pendentes = await prisma.venda.findMany({
-    where: { sincronizadaEm: null, canceladaEm: null }, take: LOTE, orderBy: { id: "asc" }, include: { itens: true },
-  });
-  if (pendentes.length === 0) return { enviadas: 0 };
+  // venda cancelada ANTES de sincronizar nunca vai; cancelada DEPOIS, a
+  // nuvem é avisada pra tirar dos indicadores
+  const [pendentes, canceladas] = await Promise.all([
+    prisma.venda.findMany({
+      where: { sincronizadaEm: null, canceladaEm: null }, take: LOTE, orderBy: { id: "asc" }, include: { itens: true },
+    }),
+    prisma.venda.findMany({
+      where: { sincronizadaEm: { not: null }, canceladaEm: { not: null }, cancelamentoSincronizadoEm: null },
+      take: LOTE, orderBy: { id: "asc" }, select: { codigo: true, canceladaEm: true },
+    }),
+  ]);
+  if (pendentes.length === 0 && canceladas.length === 0) return { enviadas: 0 };
 
-  const sincronizados = await sincronizarVendasNuvem(
+  const { sincronizados, cancelados } = await sincronizarVendasNuvem(
     NUVEM_URL, deviceKey,
     pendentes.map((v) => ({
       codigo: v.codigo, totalCents: v.totalCents, forma: v.forma, criadaEm: v.criadaEm.toISOString(),
       itens: v.itens.map((i) => ({ nome: i.nome, ean: i.ean, quantidade: i.quantidade, precoUnitCents: i.precoUnitCents })),
-    }))
+    })),
+    canceladas.map((v) => ({ codigo: v.codigo, canceladaEm: v.canceladaEm!.toISOString() }))
   );
-  if (sincronizados.length === 0) return { enviadas: 0 };
 
-  await prisma.venda.updateMany({ where: { codigo: { in: sincronizados } }, data: { sincronizadaEm: new Date() } });
+  const agora = new Date();
+  if (sincronizados.length > 0)
+    await prisma.venda.updateMany({ where: { codigo: { in: sincronizados } }, data: { sincronizadaEm: agora } });
+  if (cancelados.length > 0)
+    await prisma.venda.updateMany({ where: { codigo: { in: cancelados } }, data: { cancelamentoSincronizadoEm: agora } });
   return { enviadas: sincronizados.length };
 }

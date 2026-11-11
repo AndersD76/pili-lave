@@ -4,7 +4,8 @@
  * admin (/admin/lojas).
  *
  * - Venda SIMULADO (teste do caixa) não conta.
- * - Venda pela carteira que foi estornada (cancelada depois) não conta.
+ * - Venda cancelada pela loja não conta (VendaLoja.canceladaEm), nem venda
+ *   pela carteira que foi estornada.
  * - Faixa etária só existe pra venda pela carteira: é o débito na carteira
  *   (WalletTx LOJA, refId = código da venda) que diz quem comprou. Cartão é
  *   anônimo e entra como "Sem identificação".
@@ -70,7 +71,7 @@ export async function indicadoresDaLoja(lojaId: string, periodo: { de: string; a
   const fim = new Date(inicioDoDia(periodo.ate)!.getTime() + DIA_MS);
 
   const todas = await prisma.vendaLoja.findMany({
-    where: { lojaId, criadaEm: { gte: inicio, lt: fim }, forma: { not: "SIMULADO" } },
+    where: { lojaId, criadaEm: { gte: inicio, lt: fim }, forma: { not: "SIMULADO" }, canceladaEm: null },
     include: { itens: true },
   });
   const codigos = todas.map((v) => v.codigo);

@@ -215,6 +215,19 @@ O caminho normal é a loja **aparecer sozinha**: quando o computador dela é lig
 
 Também dá para cadastrar a loja à mão, no formulário **"Nova loja"** no fim da página. Nesse caso ela fica "sem computador vinculado" até o técnico ligar o computador e escolher essa loja na lista.
 
+### Indicadores de cada loja
+
+Clicando numa loja em **Lojas** abre a página dela (`/admin/lojas/[id]`), com os indicadores do período escolhido: faturamento, número de vendas e ticket médio, itens mais vendidos, vendas por hora e por dia da semana, por forma de pagamento e por faixa etária. São os mesmos números que o dono vê em "Minha loja" no app.
+
+- Venda de teste do caixa e venda cancelada não contam.
+- A faixa etária só existe para compra paga pela carteira do app; compra no cartão aparece como "Sem identificação".
+
+> ⚠️ Página construída em 10/11/2026 e ainda não conferida em tela. Se algo aparecer estranho, avise.
+
+### Avisos da loja
+
+A loja manda avisos ao dono (estoque mínimo, divergência de estoque, saída sem pagar, invasão). **Se a loja ainda não tem dono, esses avisos chegam para os administradores.**
+
 ### O que o administrador não faz
 
 - **Estoque e produtos**: ficam no computador de cada loja, não no painel.

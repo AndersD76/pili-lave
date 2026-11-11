@@ -201,6 +201,8 @@ O sistema confere a foto na hora: se não for o rosto de uma pessoa só, de fren
 
 Quem usa só a lavagem não precisa tirar foto. Para refazer, use **"Trocar minha foto"** na tela da loja.
 
+**Para apagar a foto e cancelar a autorização:** entre em "Trocar minha foto" e toque em **"Apagar minha foto e cancelar a autorização"**. A foto sai do sistema na hora e as lojas apagam a cópia delas em seguida. Para voltar a usar a loja depois, é só tirar outra. (Por enquanto esse botão existe na versão do navegador; no aplicativo instalado ele ainda vai entrar.)
+
 ![Tirando a foto do rosto](imagens/cliente/18-foto.png)
 
 ### A tela da loja
@@ -215,7 +217,7 @@ Quem usa só a lavagem não precisa tirar foto. Para refazer, use **"Trocar minh
 
 1. Você abre a porta pelo app. Entra uma pessoa por vez por abertura; ao entrar com criança, é só declarar.
 2. A loja comporta **3 pessoas por vez**. Se estiver cheia, o app avisa "Ocupação máxima esgotada, aguarde".
-3. Pegue o que quiser e passe cada item no caixa de autoatendimento.
+3. Pegue o que quiser e passe cada item no caixa de autoatendimento. O caixa olha para você pela câmera e reconhece de quem é a compra; se não reconhecer, ele pergunta "Você é: …?" com o nome de quem está na loja.
 4. Pague com o saldo do app ou no cartão.
 5. Saia. A porta sempre abre por dentro.
 

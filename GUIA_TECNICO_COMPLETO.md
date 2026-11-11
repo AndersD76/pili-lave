@@ -457,7 +457,9 @@ Quatro programas no mesmo computador da loja, que conversam por HTTP local com o
 
 Testes: `rosto/tests` (20) e `visao/testes` (21) com pytest; `server/_teste_nuvem_loja.mts` (38 verificações chamando os handlers direto). **Nunca testado**: as partes falando entre si de verdade (cada uma foi testada contra um vizinho falso), as telas novas no navegador/celular, envio real de push, catraca, câmeras IP, precisão do rosto com pessoas reais.
 
-Limitações conhecidas: venda cancelada depois de sincronizada continua contando nos indicadores (a loja não avisa a nuvem do cancelamento); só a câmera que vê a porta vincula rastro a visita; o bloqueio e a lotação só impedem alguém fisicamente quando houver equipamento na porta chamando `/api/entrada/autorizar`.
+Feito depois, em 10/11 à noite: (1) teste de integração real com loja + rosto + nuvem local no ar (entrada, rosto no caixa, eventos, saída sem pagar, divergência, alertas chegando à nuvem) e o Giovani reconhecido pelo rosto no caixa pela webcam; (2) `visao/principal.py` rodando na webcam contra a loja: pessoa sem visita virou invasão, com imagem, e o alerta chegou à nuvem; (3) cancelamento de venda já sincronizada agora vai pra nuvem — `Venda.cancelamentoSincronizadoEm` na loja (migration `20261111020655_venda_cancelamento_sincronizado`), `VendaLoja.canceladaEm` na nuvem (migration `loja_venda_cancelada`), enviado no mesmo `POST /api/loja/vendas/sincronizar` (campo `cancelamentos`, resposta `cancelados`), e os indicadores ignoram venda cancelada; (4) PWA: botão "Apagar minha foto e cancelar a autorização" em `/app/loja/foto` e botão de cancelar a lavagem também com a reserva ACTIVE (carro reconhecido, antes de entrar) em `/app`.
+
+Limitações conhecidas: só a câmera que vê a porta vincula rastro a visita; o bloqueio e a lotação só impedem alguém fisicamente quando houver equipamento na porta chamando `/api/entrada/autorizar`.
 
 ---
 

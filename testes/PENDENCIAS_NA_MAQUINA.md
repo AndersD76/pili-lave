@@ -120,6 +120,7 @@ a tela Wi-Fi mostra a rede da câmera, a senha digitada fica guardada, a máquin
 - [ ] **PWA: sem botão de cancelar no estado "carro reconhecido" (reserva ACTIVE).** `server/app/(pwa)/app/page.tsx` só mostra "Cancelar lavagem e receber de volta"
   quando a reserva é HELD, mas a rota `/api/reservations/[id]/cancel` já aceita HELD e ACTIVE. Deploy de produção só na `main` (a tela na `main` pode ser diferente da
   branch `loja-conveniencia`, que tem a "Loja conveniência"). Aguardando o "pode publicar" do Giovani.
+  **2026-11-10: botão acrescentado na branch `loja-conveniencia`** (cartão "Máquina liberada — pode entrar" com "Cancelar lavagem e receber de volta" quando a reserva está ACTIVE). Só compilado, não testado com reserva real e **não publicado** (a `main` continua sem ele).
 - [ ] **Verde preso depois de "cancelar":** a lâmpada da W1 (ociosa) segue o `lightState` do heartbeat; reserva ACTIVE = verde fixo. A reserva só volta a HELD
   depois de 5 min (`ACTIVE_TTL_MIN`) **quando `expireStale()` roda** (cron `/api/cron/expire-reservations`, ou chamadas a `/api/reservations` e à leitura de placa).
   Conferir se o cron está agendado no Railway; se não, a reserva fica ACTIVE para sempre. Voucher do teste: RQMF7HS5GT (reserva `cmvo5xphv005…`).

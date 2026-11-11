@@ -22,8 +22,10 @@ const Body = z.object({
         ),
       })
     )
-    .min(1)
-    .max(MAX_LOTE),
+    .max(MAX_LOTE)
+    .default([]),
+  /** Vendas já sincronizadas que a loja cancelou depois. */
+  cancelamentos: z.array(z.object({ codigo: z.string().min(1), canceladaEm: z.string() })).max(MAX_LOTE).default([]),
 });
 
 /**
@@ -54,5 +56,15 @@ export async function POST(req: NextRequest) {
     sincronizados.push(v.codigo);
   }
 
-  return NextResponse.json({ sincronizados });
+  // só marca venda DESTA loja; código que não existe aqui também é
+  // confirmado, pra loja não ficar reenviando pra sempre
+  const cancelados: string[] = [];
+  for (const c of parsed.data.cancelamentos) {
+    const quando = new Date(c.canceladaEm);
+    if (Number.isNaN(quando.getTime())) continue;
+    await prisma.vendaLoja.updateMany({ where: { codigo: c.codigo, lojaId: loja.id, canceladaEm: null }, data: { canceladaEm: quando } });
+    cancelados.push(c.codigo);
+  }
+
+  return NextResponse.json({ sincronizados, cancelados });
 }

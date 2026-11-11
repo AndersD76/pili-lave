@@ -146,6 +146,18 @@ export default function Home() {
           )}
         </div>
       )}
+      {/* Carro reconhecido, máquina esperando ele entrar: ainda dá pra
+          desistir (a rota de cancelar aceita ACTIVE; depois de entrar, não). */}
+      {arrival?.lavagem === "ACTIVE" && (
+        <div className="card">
+          <div className="lab">Máquina liberada — pode entrar</div>
+          <p className="sub">Desistiu? Cancele antes de entrar com o carro e o valor volta para o seu saldo.</p>
+          <button className="btn ghost" onClick={cancelar} disabled={cancelando} style={{ marginTop: 8 }}>
+            {cancelando ? "Cancelando…" : "Cancelar lavagem e receber de volta"}
+          </button>
+          {erroLiberar && <p className="err">{erroLiberar}</p>}
+        </div>
+      )}
       {arrival?.lavagem && arrival.lavagem !== "COMPLETED" && arrival.lavagem !== "FAILED" && (
         <CameraAoVivo />
       )}

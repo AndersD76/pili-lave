@@ -31,12 +31,14 @@ export default function FotoRosto() {
   const [autorizo, setAutorizo] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [temFoto, setTemFoto] = useState(false);
 
   useEffect(() => {
     if (!getToken()) { router.replace("/app/cadastro"); return; }
     api<Me>("/api/me")
       .then((m) => {
         if (!m.termosAceitos) { router.replace("/app/termos"); return; }
+        setTemFoto(m.temFoto);
         setPronto(true);
       })
       .catch(() => router.replace("/app/login"));
@@ -62,6 +64,18 @@ export default function FotoRosto() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível enviar a foto");
     } finally {
+      setLoading(false);
+    }
+  }
+
+  async function apagar() {
+    if (!confirm("Apagar sua foto? Você deixa de ser reconhecido no caixa e precisa tirar outra para voltar a usar a loja.")) return;
+    setError(""); setLoading(true);
+    try {
+      await api("/api/me/foto", { method: "DELETE" });
+      router.replace("/app/escolha");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível apagar a foto");
       setLoading(false);
     }
   }
@@ -95,6 +109,11 @@ export default function FotoRosto() {
         {loading ? "Enviando…" : "Enviar foto"}
       </button>
       <button className="btn ghost" onClick={() => router.replace("/app/escolha")}>Agora não</button>
+      {temFoto && (
+        <button className="btn ghost" onClick={apagar} disabled={loading}>
+          Apagar minha foto e cancelar a autorização
+        </button>
+      )}
     </div>
   );
 }

@@ -153,9 +153,13 @@ export type VendaSincronizacao = {
 /** Manda um lote de vendas pra nuvem (ver lib/sincronizacao.ts). Devolve os
  *  códigos que a nuvem confirmou ter recebido — só esses são marcados como
  *  sincronizados aqui; o resto fica pra tentar de novo na próxima vez. */
-export async function sincronizarVendasNuvem(nuvemUrl: string, deviceKey: string, vendas: VendaSincronizacao[]): Promise<string[]> {
-  const r = await chamarComDeviceKey(nuvemUrl, deviceKey, "/api/loja/vendas/sincronizar", { vendas }, 20000);
-  return r.ok && Array.isArray(r.json?.sincronizados) ? r.json.sincronizados : [];
+export async function sincronizarVendasNuvem(
+  nuvemUrl: string, deviceKey: string, vendas: VendaSincronizacao[],
+  cancelamentos: { codigo: string; canceladaEm: string }[] = []
+): Promise<{ sincronizados: string[]; cancelados: string[] }> {
+  const r = await chamarComDeviceKey(nuvemUrl, deviceKey, "/api/loja/vendas/sincronizar", { vendas, cancelamentos }, 20000);
+  const lista = (v: unknown): string[] => (r.ok && Array.isArray(v) ? v : []);
+  return { sincronizados: lista(r.json?.sincronizados), cancelados: lista(r.json?.cancelados) };
 }
 
 /** Testa se a nuvem está alcançável agora — decide se o caixa oferece

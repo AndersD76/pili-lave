@@ -241,6 +241,9 @@ model VendaLoja {
   forma      String
   criadaEm   DateTime
   recebidaEm DateTime @default(now())
+  /// A loja cancelou a venda depois de ela já ter sido sincronizada: fica
+  /// fora dos indicadores.
+  canceladaEm DateTime?
 
   loja  Loja            @relation(fields: [lojaId], references: [id])
   itens VendaLojaItem[]

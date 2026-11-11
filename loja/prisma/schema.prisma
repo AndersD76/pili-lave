@@ -182,6 +182,9 @@ model Venda {
   /// registro fica — não se apaga venda — só marcado.
   canceladaEm        DateTime?
   motivoCancelamento String?
+  /// Quando o cancelamento de uma venda JÁ sincronizada foi avisado à
+  /// nuvem (pra ela sair dos indicadores). null = ainda por avisar.
+  cancelamentoSincronizadoEm DateTime?
 
   itens VendaItem[]
 

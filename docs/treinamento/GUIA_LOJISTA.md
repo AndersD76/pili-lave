@@ -310,6 +310,8 @@ Vendeu errado, ou o cliente desistiu depois de já ter pago? Em **"Vendas"**, ab
 
 ### A venda vai sozinha pra nuvem
 
+Se você cancelar uma venda que já tinha subido, o cancelamento também sobe sozinho e ela sai dos indicadores do app.
+
 Toda venda fechada no caixa é mandada, sozinha e em segundo plano, pro sistema na nuvem — é só uma cópia, pra no futuro alimentar os indicadores do seu celular (faturamento, mais vendidos). A gestão da venda continua inteira aqui no computador da loja. Sem internet, ela fica esperando e vai quando a conexão voltar — você não precisa fazer nada.
 
 ### Backup do banco de dados
