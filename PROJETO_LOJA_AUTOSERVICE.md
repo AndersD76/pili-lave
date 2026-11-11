@@ -271,15 +271,16 @@ Parte do prompt original de controle de estoque (feito no Claude web), ajustada 
 | Tablet entrada | Android 10" anti-vandal | 1 | R$ 1.200 | R$ 1.200 |
 | Monitor touchscreen 15" | K-Mex LP-1503 | 1 | R$ 1.400 | R$ 1.400 |
 | Leitor código de barras | EVAWGIB 2D-CMOS-USB | 1 | R$ 137 | R$ 137 |
-| Mini PC totem | Intel i5 SSD Windows | 1 | R$ 1.500 | R$ 1.500 |
-| PC servidor central | RTX 4070 + i7 + 32GB RAM | 1 | R$ 8.000 | R$ 8.000 |
+| PC único da loja (caixa + gestão + câmeras + rosto) | RTX 4070 + i7 + 32GB RAM, Windows Pro com TPM | 1 | R$ 8.000 | R$ 8.000 |
 | Cabo ethernet Cat6 | Rolo 100m | 2 | R$ 200 | R$ 400 |
 | Trava elétrica | Porta entrada + porta saída | 2 | R$ 150 | R$ 300 |
 | Sensor infravermelho | Barreira de luz porta | 1 | R$ 80 | R$ 80 |
 | Sirene 12V | — | 1 | R$ 50 | R$ 50 |
 | ESP32 dedicado porta | ESP32 (trava + sirene) | 1 | R$ 30 | R$ 30 |
 | Maquininha cartão | Stone ou Cielo | 1 | R$ 0 | R$ 0 |
-| **Total estimado** | | | | **R$ 14.087** |
+| **Total estimado** | | | | **R$ 12.587** |
+
+**Um PC só (decidido em 10/11/2026):** o mini PC do totem saiu da lista. O programa ficou todo numa máquina (caixa, gestão, reconhecimento facial e câmeras), e a tela do caixa é uma página do navegador; o monitor touch, o leitor e a webcam do totem ligam direto nesse PC, que fica num armário trancado junto ao totem (cabo USB até ~5 m). Contrapartida: se ele parar, param caixa, câmeras e entrada juntos — por isso vale um nobreak, que ainda não está na tabela.
 
 A revisar com as decisões acima: o tablet da entrada (sem reconhecimento facial na porta, pode bastar um ponto BLE com uma tela simples) e a câmera do totem para o reconhecimento facial.
 
