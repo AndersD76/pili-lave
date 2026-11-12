@@ -1,4 +1,4 @@
-# Estado atual do projeto — resumo para quem vai continuar (atualizado em 2026-10-27)
+# Estado atual do projeto — resumo para quem vai continuar (atualizado em 2026-10-27; seção 10 em 2026-11-12)
 
 Este é o **ponto de entrada**. Ele diz o que existe hoje na máquina, o que foi decidido, o que foi feito em produção, e em que ordem ler o resto.
 Os outros documentos têm o detalhe; este diz onde ele está e o que mudou por último.
@@ -67,3 +67,20 @@ Os outros documentos têm o detalhe; este diz onde ele está e o que mudou por �
 - W1/W2: `arduino-cli compile|upload --fqbn esp32:esp32:esp32s3:PSRAM=opi,CPUFreq=240,FlashMode=qio,FlashSize=16M,CDCOnBoot=cdc` (W1 = COM24, W2 = COM10). **Abrir a serial da W1 a reinicia.**
 - Display: `--fqbn esp32:esp32:esp32s3:PartitionScheme=huge_app,PSRAM=opi,FlashSize=16M` (máquina = COM11); compilar leva ~5 min; **nunca dois compiles ao mesmo tempo**; às vezes precisa BOOT+RESET.
 - Câmera: PlatformIO em `firmware_camera` (`pio run`); publicar = copiar o `.bin` para `server/public/firmware/camera.bin`, subir `camera-version.json` e dar **push na `main`** (Railway publica; a câmera confere a cada 10 min). É **deploy de produção**.
+
+## 10. Mapa das versões do firmware (levantado em 2026-11-12 — leia antes de gravar qualquer placa)
+
+**Regra:** a máquina está funcionando bem; **não gravar W1, W2 nem display sem antes saber de que código é o que está dentro**. O que a `main` tem **não é tudo** que existe: há trabalho em outras branches e em um stash.
+
+| Onde está | O que tem | Situação |
+|---|---|---|
+| `main` (GitHub) | W1/W2/display de 03/11 (`b93ced9`) + etapas, sequências e contadores do display (04/11) | é o que o display **recebeu em 12/11** |
+| branch `link-uart-w1-w2` (GitHub), commit `3b6ef55` (06/11) | `main` + **mudanças da W1**: X10 não é mais vigiado durante o giro, X7 como contraprova do lado 2, pausa/retoma na falha de escrita do Delta (`processos.h`, `maquina_estados.h`, `tipos_w1.h`) | **fora da `main`**. A mensagem do commit diz "compilado, ainda NÃO gravado na W1 nem no display" (em 06/11); não há registro de gravação depois disso |
+| branch `wip-ota-display-w1-2026-11-09` (GitHub, criada em 12/11) | `3b6ef55` + **atualização remota (OTA) do display e da W1 pela câmera** (`ota_msg.h`, `ota_alvo.h`, alterações no `display.ino`, `waveshare1.ino`, `controle.h`, `maquina_estados.h`) | estava **só num stash local** (09/11), em nenhum commit; recuperada. Sem registro de compilação nem de gravação. Os 2 PPTX que estavam no stash **não** foram enviados (repositório público); estão em `C:\Users\giova\backups_placas\do_stash_2026-11-09\` |
+
+**O que está gravado em cada placa (verificado em 12/11):**
+- **Display:** gravado em 12/11 com o código da `main` (commit `9b83073`). Antes dele havia uma versão **mais antiga**, sem os contadores de 04/11. Cópia exata da memória de antes: `C:\Users\giova\backups_placas\2026-11-12\backup_display_COM11_2026-11-12.bin`.
+- **W1 e W2:** **não verificadas**. Nunca foram regravadas em 12/11. Para certificar: com a máquina parada, ler a memória de cada uma (`esptool read-flash`, ver `docs/BACKUP_E_RESTAURACAO.md`) e comparar com a compilação do código candidato.
+- **Câmera:** v9 publicada em 12/11 (OTA em até 10 min; confirmar com `node server/_diag_camera.mjs AAAA-MM-DD`).
+
+**Aviso:** o repositório é **público**. Senhas padrão do display (CONFIG 1111, TÉCNICO 2828, PAGAMENTO 3462) aparecem em `docs/COMBINADOS.md`, `GUIA_TECNICO_COMPLETO.md` e no código antigo em `lixo/`. Se ainda forem as senhas em uso, trocar em CONFIG.
