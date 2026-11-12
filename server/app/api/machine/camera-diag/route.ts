@@ -15,6 +15,10 @@ const Body = z.object({
   // v9: tamanho das fotos (KB), tempo de envio (ms), temperatura do chip, potência de transmissão (dBm), qualidade JPEG e fotos reduzidas
   kbMed: n.optional(), kbMax: n.optional(), tOk: n.optional(), tOkMax: n.optional(), tFal: n.optional(),
   temp: n.optional(), txp: n.optional(), q: n.optional(), fRed: n.optional(),
+  // v10: degrau da foto (0 = normal 1600x1200; 1-2 = mais compressao; 3 = 1280x1024; 4 = 1024x768)
+  niv: n.optional(),
+  // v10: versao do firmware que o W1 e o display dizem estar rodando (0 = ainda nao perguntou)
+  ow1: n.optional(), odp: n.optional(),
 });
 
 /**

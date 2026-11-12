@@ -75,31 +75,43 @@ static void dgZera() {
   g_dg.fotoKbSoma = g_dg.fotoKbMax = g_dg.fotoN = g_dg.tOkSomaMs = g_dg.tOkMaxMs = g_dg.tFalhaSomaMs = g_dg.fotoReduzidas = 0;
 }
 
-/* ===================== FOTO MENOR QUANDO O ENVIO FALHA (v9) =====================
+/* ===================== FOTO MENOR QUANDO O ENVIO FALHA (v9; v10 tambem baixa a RESOLUCAO) =====================
  * O diagnostico da v8 mostrou que a foto (~100 KB) falha no meio do envio (erro -3) em periodos longos, enquanto o heartbeat (pequeno)
- * passa. Entao, quando o envio falha em sequencia, a camera comprime mais o JPEG (numero de qualidade MAIOR = arquivo menor) ate o envio
- * voltar; depois de varias fotos seguidas entregues, volta um degrau por vez a qualidade normal. A resolucao (1600x1200) nao muda. */
+ * passa. Entao, quando o envio falha em sequencia, a camera manda uma foto MENOR, um degrau por vez (a cada 2 falhas seguidas): primeiro
+ * comprime mais o JPEG (qualidade 20 -> 30 -> 40) e, se ainda falhar, BAIXA A RESOLUCAO (1600x1200 -> 1280x1024 -> 1024x768).
+ * Depois de PILI_Q_OK_PARA_VOLTAR fotos seguidas entregues, sobe um degrau por vez de volta ao normal. Em operacao normal nada muda
+ * (a nuvem le a placa em 1600x1200); a resolucao menor so entra enquanto a internet esta ruim, melhor uma foto menor do que nenhuma. */
+struct NivelFoto { int q; framesize_t fs; };
+static const NivelFoto NIVEIS_FOTO[] = {
+  { PILI_JPEG_QUALITY, FRAMESIZE_UXGA },   // 0: normal (1600x1200)
+  { 30, FRAMESIZE_UXGA },                  // 1: mais compressao
+  { PILI_JPEG_QUALITY_MAX, FRAMESIZE_UXGA },   // 2: compressao maxima
+  { PILI_JPEG_QUALITY_MAX, FRAMESIZE_SXGA },   // 3: 1280x1024
+  { PILI_JPEG_QUALITY_MAX, FRAMESIZE_XGA },    // 4: 1024x768
+};
+#define N_NIVEIS_FOTO ((int)(sizeof(NIVEIS_FOTO) / sizeof(NIVEIS_FOTO[0])))
+static int     g_nivel    = 0;
 static int     g_q_atual  = PILI_JPEG_QUALITY;
 static uint8_t g_q_ok_seg = 0;
 static void qualidadeAplicar() {
+  g_q_atual = NIVEIS_FOTO[g_nivel].q;
   sensor_t* s = esp_camera_sensor_get();
-  if (s) s->set_quality(s, g_q_atual);
-  Serial.printf("[cam] qualidade JPEG agora %d (normal %d, limite %d)\n", g_q_atual, PILI_JPEG_QUALITY, PILI_JPEG_QUALITY_MAX);
+  if (s) { s->set_quality(s, g_q_atual); if (psramFound()) s->set_framesize(s, NIVEIS_FOTO[g_nivel].fs); }
+  Serial.printf("[cam] foto: nivel %d (qualidade JPEG %d, resolucao %s)\n", g_nivel, g_q_atual,
+                NIVEIS_FOTO[g_nivel].fs == FRAMESIZE_UXGA ? "1600x1200" : NIVEIS_FOTO[g_nivel].fs == FRAMESIZE_SXGA ? "1280x1024" : "1024x768");
 }
 static void qualidadeAposEnvio(bool ok, uint32_t falhasSeguidas) {
   if (ok) {
-    if (g_q_atual > PILI_JPEG_QUALITY && ++g_q_ok_seg >= PILI_Q_OK_PARA_VOLTAR) {
-      g_q_ok_seg = 0; g_q_atual -= PILI_Q_PASSO; if (g_q_atual < PILI_JPEG_QUALITY) g_q_atual = PILI_JPEG_QUALITY;
-      qualidadeAplicar();
-    }
+    if (g_nivel > 0 && ++g_q_ok_seg >= PILI_Q_OK_PARA_VOLTAR) { g_q_ok_seg = 0; g_nivel--; qualidadeAplicar(); }
   } else {
     g_q_ok_seg = 0;
-    if (falhasSeguidas >= 2 && (falhasSeguidas % 2) == 0 && g_q_atual < PILI_JPEG_QUALITY_MAX) {
-      g_q_atual += PILI_Q_PASSO; if (g_q_atual > PILI_JPEG_QUALITY_MAX) g_q_atual = PILI_JPEG_QUALITY_MAX;
-      qualidadeAplicar();
-    }
+    if (falhasSeguidas >= 2 && (falhasSeguidas % 2) == 0 && g_nivel < N_NIVEIS_FOTO - 1) { g_nivel++; qualidadeAplicar(); }
   }
 }
+/* v10: durante chamadas de rede (heartbeat, diagnostico, eventos...) o watchdog geral de 30 s fica PAUSADO, como ja era na foto. Com a internet
+ * muito lenta (foto de 90 KB levando 40-60 s, visto em 12/11) um unico POST pode passar de 30 s sem estar travado, e o watchdog reiniciava a
+ * camera (9 reinicios por WATCHDOG em 12/11, e a maquina ficava sem foto). Os timeouts do HTTPClient continuam limitando cada chamada. */
+struct WdtPausa { WdtPausa() { esp_task_wdt_delete(NULL); } ~WdtPausa() { esp_task_wdt_add(NULL); } };
 
 /* ===================== HARD RESET no boot (via firmware) =====================
  * Ao ENERGIZAR, reinicia o chip inteiro UMA vez (CPU + todos os periféricos) com a
@@ -221,6 +233,11 @@ typedef struct __attribute__((packed)) {
 
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal; } MsgCanal;
 typedef struct __attribute__((packed)) { CabEspNow cab; uint32_t epoch; } MsgHora;   // MSG_HORA
+#include "ota_msg.h"   // atualizacao remota do display/W1 (MSG_OTA_*), igual ao de testes/display
+static volatile bool g_ota_ack_novo = false;   // ultimo MSG_OTA_ACK recebido (o loop de entrega espera por ele)
+static MsgOtaAck     g_ota_ack;
+static uint16_t g_oa_ver_alvo[3] = {0, 0, 0};   // versao que cada alvo (indice OTA_ALVO_*) diz estar rodando (vem no ACK)
+static volatile uint32_t g_hb_rx_ms = 0;       // quando o display falou pela ultima vez (MSG_HB_STATE)
 typedef struct __attribute__((packed)) { CabEspNow cab; uint8_t canal; } MsgResyncReq;   // MSG_RESYNC_REQ
 #define MSG_REDE_INFO 22   // camera -> display: nome da rede Wi-Fi em que ela esta conectada (a cada 5 s)
 typedef struct __attribute__((packed)) { CabEspNow cab; int8_t rssi; char ssid[33]; } MsgRedeInfo;
@@ -460,7 +477,10 @@ static void onRecvImpl(const uint8_t* mac, const uint8_t* data, int len) {
   if (len < (int)sizeof(CabEspNow)) return;
   const CabEspNow* cab = (const CabEspNow*)data;
   if (cab->id_maquina != ID_MAQUINA) return;
-  if (cab->tipo == MSG_HB_STATE && len >= HB_STATE_BASE_LEN) {
+  if (cab->tipo == MSG_OTA_ACK && len >= (int)sizeof(MsgOtaAck)) {   // resposta do display/W1 a entrega de firmware
+    memcpy((void*)&g_ota_ack, data, sizeof(MsgOtaAck)); g_ota_ack_novo = true;
+  } else if (cab->tipo == MSG_HB_STATE && len >= HB_STATE_BASE_LEN) {
+    g_hb_rx_ms = millis();
     const MsgHbState* m = (const MsgHbState*)data;
     g_hb_proc = (len >= (int)sizeof(MsgHbState)) ? m->proc : 0;
     strncpy((char*)g_hb_state, m->state, sizeof(g_hb_state) - 1);
@@ -574,7 +594,7 @@ static void processarEvento() {
   if (ev.evt_tipo == 5) body += String("\"modelo\":") + ev.prog + ",\"seq\":\"" + ev.errcode + "\"";   // errcode = ids dos processos separados por ponto ("5.7")
   body += "}";
 
-  HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
+  WdtPausa _wdt; HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
   WiFiClientSecure tls; tls.setInsecure(); tls.setHandshakeTimeout(PILI_HTTP_TIMEOUT / 1000);
   int code = -1;
   if (http.begin(tls, g_api_url + path)) {
@@ -624,7 +644,7 @@ static void processarProvisionamento() {
   if (req.numero > 0) body += ",\"numero\":" + String(req.numero);
   body += "}";
 
-  HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
+  WdtPausa _wdt; HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
   WiFiClientSecure tls; tls.setInsecure(); tls.setHandshakeTimeout(PILI_HTTP_TIMEOUT / 1000);
   int code = -1; String respBody;
   if (http.begin(tls, g_api_url + "/api/machine/provisionar")) {
@@ -924,7 +944,7 @@ static void atenderUniRequest() {
   StaticJsonDocument<2048> doc;
   bool ok = false;
   if (WiFi.status() == WL_CONNECTED && g_api_url.length() >= 8) {
-    HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
+    WdtPausa _wdt; HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
     WiFiClientSecure tls; tls.setInsecure(); tls.setHandshakeTimeout(PILI_HTTP_TIMEOUT / 1000);
     String url = g_api_url + "/api/machine/unidades?cidade=" + cidade;
     if (http.begin(tls, url)) {
@@ -1111,9 +1131,10 @@ static void enviarDiagnostico() {
   b += ",\"tOk\":" + String(g_dg.fotoOk ? g_dg.tOkSomaMs / g_dg.fotoOk : 0) + ",\"tOkMax\":" + String(g_dg.tOkMaxMs);
   b += ",\"tFal\":" + String(g_dg.fotoFalha ? g_dg.tFalhaSomaMs / g_dg.fotoFalha : 0);
   b += ",\"temp\":" + String((int)temperatureRead()) + ",\"txp\":" + String((int)WiFi.getTxPower() / 4);
-  b += ",\"q\":" + String(g_q_atual) + ",\"fRed\":" + String(g_dg.fotoReduzidas);
+  b += ",\"ow1\":" + String(g_oa_ver_alvo[OTA_ALVO_W1]) + ",\"odp\":" + String(g_oa_ver_alvo[OTA_ALVO_DISPLAY]);
+  b += ",\"q\":" + String(g_q_atual) + ",\"niv\":" + String(g_nivel) + ",\"fRed\":" + String(g_dg.fotoReduzidas);
   b += "}";
-  HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
+  WdtPausa _wdt; HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
   WiFiClientSecure tls; tls.setInsecure(); tls.setHandshakeTimeout(PILI_HTTP_TIMEOUT / 1000);
   int code = -1;
   if (http.begin(tls, g_api_url + PILI_DIAG_PATH)) {
@@ -1134,7 +1155,7 @@ static void fazerHeartbeat() {
   if (WiFi.status() != WL_CONNECTED) return;
   if (g_api_url.length() < 8) return;
   String url = g_api_url + PILI_HB_PATH;
-  HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
+  WdtPausa _wdt; HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
   WiFiClientSecure tls; tls.setInsecure(); tls.setHandshakeTimeout(PILI_HTTP_TIMEOUT / 1000);
   if (!http.begin(tls, url)) return;
   http.addHeader("Content-Type", "application/json");
@@ -1201,7 +1222,7 @@ static bool cameraInit() {
   c.pin_d3 = Y5_GPIO; c.pin_d2 = Y4_GPIO; c.pin_d1 = Y3_GPIO; c.pin_d0 = Y2_GPIO;
   c.pin_vsync = VSYNC_GPIO; c.pin_href = HREF_GPIO; c.pin_pclk = PCLK_GPIO;
   c.xclk_freq_hz = 20000000; c.pixel_format = PIXFORMAT_JPEG;
-  c.frame_size = psramFound() ? FRAMESIZE_UXGA : FRAMESIZE_XGA; // 1600x1200: caracteres da placa legíveis
+  c.frame_size = psramFound() ? NIVEIS_FOTO[g_nivel].fs : FRAMESIZE_XGA; // 1600x1200: caracteres da placa legíveis
   c.jpeg_quality = g_q_atual;
   c.fb_count = psramFound() ? 2 : 1; // 2 buffers na PSRAM evitam FB-OVF em UXGA
   c.grab_mode = CAMERA_GRAB_LATEST;
@@ -1267,7 +1288,7 @@ static bool enviarFrame(camera_fb_t *fb) {
   {   // v9: tamanho e tempo de cada tentativa
     uint32_t kb = (uint32_t)(fb->len / 1024);
     g_dg.fotoN++; g_dg.fotoKbSoma += kb; if (kb > g_dg.fotoKbMax) g_dg.fotoKbMax = kb;
-    if (ok) { g_dg.tOkSomaMs += tEnvio; if (tEnvio > g_dg.tOkMaxMs) g_dg.tOkMaxMs = tEnvio; if (g_q_atual > PILI_JPEG_QUALITY) g_dg.fotoReduzidas++; }
+    if (ok) { g_dg.tOkSomaMs += tEnvio; if (tEnvio > g_dg.tOkMaxMs) g_dg.tOkMaxMs = tEnvio; if (g_nivel > 0) g_dg.fotoReduzidas++; }
     else g_dg.tFalhaSomaMs += tEnvio;
   }
   if (ok) { g_dg.fotoOk++; g_dg.fotoSeguidas = 0; }
@@ -1358,6 +1379,158 @@ static void hardResetSensor() {
     pinMode(RESET_GPIO, OUTPUT);
     digitalWrite(RESET_GPIO, LOW);  delay(20);
     digitalWrite(RESET_GPIO, HIGH); delay(20);
+  }
+}
+
+/* ===================== ATUALIZACAO REMOTA DO DISPLAY E DA W1 (v10) =====================
+ * A camera e a unica com internet. A cada PILI_OTA_ALVOS_CHECK_MS ela le server/public/firmware/{w1,display}-version.json
+ * ({"version":N,"size":bytes,"md5":"..."}); se a versao for maior que a ja confirmada, PERGUNTA ao alvo (MSG_OTA_INICIO: ele responde
+ * ocupado / ja atualizado / ok), baixa o .bin para a PSRAM, confere o MD5 e entrega em pedacos de 200 bytes por ESP-NOW, um por vez com ACK
+ * (tudo passa pelo display, que e o rele da W1). So tenta com o display ouvindo e a maquina FORA de lavagem; o alvo ainda decide por conta propria.
+ * Sem arquivo publicado (404) nao faz nada. Ver testes/display/ota_msg.h e ota_alvo.h. */
+#define PILI_OTA_ALVOS_CHECK_MS (15UL * 60UL * 1000UL)
+struct OtaManifesto { int versao; uint32_t tam; char md5[33]; };
+static int      g_oa_aplicada[3]   = {0, 0, 0};   // ultima versao do manifesto ja confirmada por alvo (indice = OTA_ALVO_*)
+static uint8_t  g_oa_tentativas[3] = {0, 0, 0};   // falhas seguidas da versao atual (3 = nao insiste ate reiniciar)
+
+static bool otaLerManifesto(const char* path, OtaManifesto& m) {
+  WdtPausa _wdt;
+  HTTPClient http; WiFiClientSecure tls; tls.setInsecure(); tls.setHandshakeTimeout(PILI_HTTP_TIMEOUT / 1000);
+  if (!http.begin(tls, g_api_url + path)) return false;
+  http.setTimeout(PILI_HTTP_TIMEOUT);
+  int code = http.GET();
+  if (code != 200) { http.end(); return false; }
+  StaticJsonDocument<192> doc;
+  auto err = deserializeJson(doc, http.getString());
+  http.end();
+  if (err) return false;
+  m.versao = doc["version"] | 0; m.tam = doc["size"] | 0;
+  const char* md = doc["md5"] | ""; memset(m.md5, 0, sizeof(m.md5)); strncpy(m.md5, md, 32);
+  return m.versao > 0 && m.tam >= 100000UL && m.tam <= 3UL * 1024UL * 1024UL && strlen(m.md5) == 32;
+}
+static bool otaEsperaAck(uint8_t alvo, uint32_t ms, MsgOtaAck& a) {
+  uint32_t t0 = millis();
+  while (millis() - t0 < ms) {
+    if (g_ota_ack_novo) { memcpy(&a, (const void*)&g_ota_ack, sizeof(a)); g_ota_ack_novo = false; if (a.alvo == alvo) return true; }
+    delay(1); esp_task_wdt_reset();
+  }
+  return false;
+}
+static bool otaEnviar(const void* msg, size_t len, uint8_t alvo, uint32_t espera_ms, uint8_t tentativas, MsgOtaAck& a) {
+  for (uint8_t i = 0; i < tentativas; i++) {
+    g_ota_ack_novo = false;
+    esp_now_send((uint8_t*)MAC_DISPLAY, (const uint8_t*)msg, len);
+    if (otaEsperaAck(alvo, espera_ms, a)) return true;
+  }
+  return false;
+}
+static void otaMontaInicio(MsgOtaInicio& ini, uint8_t alvo, const OtaManifesto& m) {
+  memset(&ini, 0, sizeof(ini));
+  ini.cab.tipo = MSG_OTA_INICIO; ini.cab.id_maquina = ID_MAQUINA; ini.cab.origem = ORIGEM_CAMERA; ini.cab.seq = 0;
+  ini.alvo = alvo; ini.versao = (uint16_t)m.versao; ini.tamanho = m.tam; memcpy(ini.md5, m.md5, 32);
+}
+/* retorno: 0 = entregue e conferido, 1 = o alvo ja esta atualizado, 2 = ocupado/sem resposta (tenta de novo depois, nao conta falha), 3 = falhou */
+static int otaTransferir(uint8_t alvo, const char* binPath, const OtaManifesto& m) {
+  const char* nome = (alvo == OTA_ALVO_W1) ? "W1" : "display";
+  MsgOtaAck a = {};
+  MsgOtaInicio ini; otaMontaInicio(ini, alvo, m);
+  // 1) pergunta primeiro (barato): evita baixar 1 MB se o alvo esta ocupado ou ja esta na versao
+  if (!otaEnviar(&ini, sizeof(ini), alvo, 1500, 4, a)) { Serial.printf("[ota-%s] sem resposta do alvo\n", nome); return 2; }
+  g_oa_ver_alvo[alvo] = a.versao_atual;
+  if (a.status == OTA_ST_JA_ATUALIZADO) { Serial.printf("[ota-%s] ja esta na v%u\n", nome, (unsigned)a.versao_atual); return 1; }
+  if (a.status == OTA_ST_OCUPADO) { Serial.printf("[ota-%s] maquina ocupada: tenta depois\n", nome); return 2; }
+  if (a.status != OTA_ST_OK) { Serial.printf("[ota-%s] alvo recusou (status %u erro %u)\n", nome, (unsigned)a.status, (unsigned)a.erro); return 3; }
+
+  // 2) baixa para a PSRAM e confere o MD5 (o alvo ainda confere de novo no fim)
+  uint8_t* buf = (uint8_t*)ps_malloc(m.tam);
+  if (!buf) { Serial.printf("[ota-%s] sem memoria para %lu bytes\n", nome, (unsigned long)m.tam); return 3; }
+  bool baixou = false;
+  {
+    WdtPausa _wdt;
+    HTTPClient http; WiFiClientSecure tls; tls.setInsecure(); tls.setHandshakeTimeout(PILI_HTTP_TIMEOUT / 1000);
+    if (http.begin(tls, g_api_url + binPath)) {
+      http.setTimeout(20000);
+      int code = http.GET();
+      if (code == 200 && (uint32_t)http.getSize() == m.tam) {
+        WiFiClient* s = http.getStreamPtr();
+        uint32_t got = 0, tProg = millis();
+        while (got < m.tam && millis() - tProg < 20000UL) {
+          size_t av = s->available();
+          if (av) { size_t n = s->readBytes(buf + got, min<size_t>(av, m.tam - got)); got += n; tProg = millis(); }
+          else delay(2);
+          esp_task_wdt_reset();
+        }
+        baixou = (got == m.tam);
+      } else Serial.printf("[ota-%s] download recusado (code=%d tam=%d, esperado %lu)\n", nome, code, http.getSize(), (unsigned long)m.tam);
+      http.end();
+    }
+  }
+  if (baixou) {
+    MD5Builder md5; md5.begin(); md5.add(buf, m.tam); md5.calculate();
+    if (!md5.toString().equalsIgnoreCase(String(m.md5))) { Serial.printf("[ota-%s] MD5 do download nao confere\n", nome); baixou = false; }
+  }
+  if (!baixou) { free(buf); Serial.printf("[ota-%s] download falhou\n", nome); return 3; }
+
+  // 3) o INICIO de novo (refresca ou reabre a sessao, que pode ter expirado durante o download) e entrega pedaco por pedaco
+  if (!otaEnviar(&ini, sizeof(ini), alvo, 1500, 4, a) || a.status != OTA_ST_OK) {
+    free(buf); Serial.printf("[ota-%s] alvo nao aceitou comecar (status %u)\n", nome, (unsigned)a.status); return (a.status == OTA_ST_OCUPADO) ? 2 : 3;
+  }
+  Serial.printf("[ota-%s] entregando v%d (%lu bytes)...\n", nome, m.versao, (unsigned long)m.tam);
+  uint32_t off = 0, tAnuncio = millis(), tHb = millis(), tFoto = millis(), pct = 0;
+  while (off < m.tam) {
+    esp_task_wdt_reset();
+    uint8_t n = (uint8_t)min<uint32_t>(OTA_DADOS_MAX, m.tam - off);
+    MsgOtaDados d = {}; d.cab.tipo = MSG_OTA_DADOS; d.cab.id_maquina = ID_MAQUINA; d.cab.origem = ORIGEM_CAMERA; d.cab.seq = 0;
+    d.alvo = alvo; d.offset = off; d.n = n; memcpy(d.dados, buf + off, n);
+    size_t len = offsetof(MsgOtaDados, dados) + n;
+    bool ok = false;
+    for (uint8_t t = 0; t < 12 && !ok; t++) {
+      g_ota_ack_novo = false;
+      esp_now_send((uint8_t*)MAC_DISPLAY, (uint8_t*)&d, len);
+      if (otaEsperaAck(alvo, 400, a)) {
+        if (a.status == OTA_ST_OK) { if (a.prox == off + n) ok = true; }   // ACK repetido/antigo: reenvia
+        else { free(buf); Serial.printf("[ota-%s] interrompido no byte %lu (status %u erro %u)\n", nome, (unsigned long)off, (unsigned)a.status, (unsigned)a.erro); return (a.status == OTA_ST_OCUPADO) ? 2 : 3; }
+      }
+    }
+    if (!ok) { free(buf); Serial.printf("[ota-%s] sem ACK no byte %lu: desisto\n", nome, (unsigned long)off); return 3; }
+    off += n;
+    uint32_t agora = millis();
+    if (agora - tAnuncio >= 1000) { tAnuncio = agora; anunciarCanal(); }     // o display nao pode achar que a camera sumiu
+    if (agora - tHb >= 30000UL)   { tHb = agora; fazerHeartbeat(); }         // nuvem/luzes da maquina continuam vivas (o alvo espera ate 90 s por um pacote)
+    if (agora - tFoto >= 60000UL) { tFoto = agora; enviarFotoPeriodica(); } // a nuvem nao conta a camera como offline
+    uint32_t p = (uint32_t)((uint64_t)off * 100ULL / m.tam);
+    if (p / 10 != pct / 10) { pct = p; Serial.printf("[ota-%s] %lu%%\n", nome, (unsigned long)p); }
+  }
+  free(buf);
+
+  // 4) fim: o alvo confere o MD5, troca de firmware e reinicia
+  MsgOtaFim f = {}; f.cab.tipo = MSG_OTA_FIM; f.cab.id_maquina = ID_MAQUINA; f.cab.origem = ORIGEM_CAMERA; f.cab.seq = 0; f.alvo = alvo;
+  if (otaEnviar(&f, sizeof(f), alvo, 5000, 3, a)) {
+    if (a.status == OTA_ST_CONCLUIDO) { Serial.printf("[ota-%s] CONCLUIDO: o alvo conferiu o MD5 e vai reiniciar\n", nome); return 0; }
+    Serial.printf("[ota-%s] fim recusado (status %u erro %u)\n", nome, (unsigned)a.status, (unsigned)a.erro); return 3;
+  }
+  // sem ACK do fim: o alvo pode ter reiniciado antes de o ACK chegar. Espera o boot e pergunta a versao.
+  Serial.printf("[ota-%s] sem ACK do fim: espero o reinicio e confiro a versao\n", nome);
+  for (uint32_t t0 = millis(); millis() - t0 < 30000UL;) { esp_task_wdt_reset(); delay(100); }
+  if (otaEnviar(&ini, sizeof(ini), alvo, 1500, 4, a)) { g_oa_ver_alvo[alvo] = a.versao_atual; if (a.status == OTA_ST_JA_ATUALIZADO) return 0; }
+  return 3;
+}
+static void verificarOtaAlvos() {
+  if (WiFi.status() != WL_CONNECTED || g_api_url.length() < 8 || g_lpr_enviando) return;
+  if (millis() - g_hb_rx_ms > 30000UL) return;                                  // display calado: nao ha por onde entregar
+  if (strncmp((const char*)g_hb_state, "WASHING", 7) == 0) return;               // nunca com lavagem em andamento
+  static const struct { uint8_t alvo; const char* ver; const char* bin; } AL[] = {
+    { OTA_ALVO_W1,      "/firmware/w1-version.json",      "/firmware/w1.bin" },
+    { OTA_ALVO_DISPLAY, "/firmware/display-version.json", "/firmware/display.bin" },   // o display por ultimo (ele e o rele da W1)
+  };
+  for (const auto& x : AL) {
+    OtaManifesto m;
+    if (!otaLerManifesto(x.ver, m)) continue;                                     // 404 = nada publicado
+    if (m.versao <= g_oa_aplicada[x.alvo] || g_oa_tentativas[x.alvo] >= 3) continue;
+    int r = otaTransferir(x.alvo, x.bin, m);
+    if (r == 0 || r == 1) { g_oa_aplicada[x.alvo] = m.versao; g_oa_tentativas[x.alvo] = 0; }
+    else if (r == 3) g_oa_tentativas[x.alvo]++;
+    break;                                                                        // um alvo por rodada
   }
 }
 
@@ -1485,8 +1658,9 @@ void loop() {
     }
   }
 
-  static uint32_t tOta = 0;
+  static uint32_t tOta = 0, tOtaAlvos = 0;
   if (millis() - tOta >= PILI_OTA_CHECK_MS) { tOta = millis(); verificarOTA(); }
+  if (millis() > 120000UL && millis() - tOtaAlvos >= PILI_OTA_ALVOS_CHECK_MS) { tOtaAlvos = millis(); verificarOtaAlvos(); }   // v10: firmware novo do display/W1 (dormente sem arquivo no servidor)
 
   if (!g_cam_ok) {
     static uint32_t tCamRetry = 0;
