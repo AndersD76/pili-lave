@@ -189,3 +189,13 @@ def test_limpeza_apaga_so_o_que_passou_do_prazo(loja):
     os.utime(velho, (antigo, antigo))
     assert loja.arm.limpar(forcar=True) == 1
     assert not os.path.exists(velho) and os.path.exists(novo)
+
+
+def test_loja_fora_do_ar_nao_e_consultada_a_cada_quadro(loja):
+    chamadas = []
+    loja.vinculo.buscar_ativas = lambda: chamadas.append(1)      # devolve None = sem resposta
+    loja.rodar(50)                                               # 10 s de quadros
+    assert len(chamadas) == 1
+    loja.rodar(50)                                               # passou a espera: tenta de novo
+    assert len(chamadas) == 2
+

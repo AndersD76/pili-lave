@@ -14,7 +14,10 @@ PADRAO = {
         "intervaloVisitasSegundos": 2,
     },
     "pessoas": {
-        "pesos": "yolo11n.pt",
+        # "yolox" = YOLOX oficial em ONNX (Apache-2.0), o padrão.
+        # "ultralytics" = YOLO da Ultralytics (AGPL-3.0), só para comparação.
+        "detector": "yolox",
+        "pesos": "modelos/yolox_tiny.onnx",
         "dispositivo": "auto",
         "imgsz": 480,
         "confianca": 0.35,
@@ -41,6 +44,10 @@ PADRAO = {
         "intervaloAlinhamentoSegundos": 30,
         "desvioMaximo": 0.02,
     },
+    # planta baixa (metros) para seguir a pessoa de uma câmera para a outra;
+    # cada câmera entra na conta quando tem "chao" calibrado (calibrar_chao.py)
+    "planta": {"largura": 6.0, "profundidade": 2.4, "raioMetros": 0.8, "raioPerdidoMetros": 1.5, "segundosPerdido": 15},
+    "trajeto": {"pontoSegundos": 0.5, "fotoSegundos": 2.0, "fotoNaPrateleiraSegundos": 1.0},
     "dados": {"pasta": "dados", "diasGuardar": 7},
     "cameras": [],
 }

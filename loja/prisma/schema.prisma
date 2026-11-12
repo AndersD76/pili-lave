@@ -383,6 +383,13 @@ model Divergencia {
   pago           Int
   /// JSON: [{visitaId, nome}] de quem esteve na loja no período.
   visitas        String    @default("[]")
+  /// JSON: [{visitaId, nome, codigoCliente}] de quem as câmeras viram junto
+  /// às prateleiras de onde saiu item — só preenchido quando FALTOU item
+  /// (saiu mais do que foi pago). É de quem se pede o trajeto (lib/trajetos.ts).
+  suspeitos      String    @default("[]")
+  /// JSON: [{visitaId, nome, resumo, imagens[], recebidoEm}] — o percurso de
+  /// cada suspeito, montado pelo programa das câmeras.
+  trajetos       String    @default("[]")
   /// ABERTA | REVISADA
   situacao       String    @default("ABERTA")
   decisao        String?

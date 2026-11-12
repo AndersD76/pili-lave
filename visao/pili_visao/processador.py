@@ -48,7 +48,7 @@ class _Zona:
 class ProcessadorCamera:
     def __init__(self, cfg: dict, cfg_camera: dict, rastreador, detector: DetectorPrateleira,
                  vinculo: VinculoVisitas, emissor: Emissor, armazenamento: Armazenamento,
-                 porta: MonitorPorta, vigia: VigiaCamera | None = None):
+                 porta: MonitorPorta, vigia: VigiaCamera | None = None, planta=None, trajetos=None):
         self.cfg = cfg
         self.cam = cfg_camera
         self.nome = cfg_camera["nome"]
@@ -58,6 +58,8 @@ class ProcessadorCamera:
         self.emissor = emissor
         self.arm = armazenamento
         self.porta = porta
+        self.planta = planta        # passagem entre câmeras (planta.py); None = desligada
+        self.trajetos = trajetos    # gravação do percurso de cada visita (trajetos.py)
         self.vigia = vigia or VigiaCamera(
             self._ler_referencia(""),
             cfg["camera"]["segundosSemQuadro"],
@@ -117,6 +119,7 @@ class ProcessadorCamera:
         self._porta(self.rastros, quadro, agora)
         if self.vigia.problema is None:
             self._prateleiras(self.rastros, quadro, agora)
+        self._registrar_trajetos(self.rastros, quadro, agora)
         if not self.rastros:
             if self.vigia.ref is None:
                 self.vigia.definir_referencia(quadro)
@@ -147,13 +150,21 @@ class ProcessadorCamera:
             v["quadros"] += 1
             v["ultimo"] = agora
             v["centro"] = self._norm(zonas.centro(r.caixa))
+            v["pe"] = self._norm(((r.caixa[0] + r.caixa[2]) / 2, r.caixa[3]))
+            v["pos"] = self.planta.para_planta(self.nome, v["pe"]) if self.planta else None
             if not v["confirmado"] and v["quadros"] >= MIN_QUADROS:
                 v["confirmado"] = True
                 self._nasceu(r.id, v, agora)
+            elif v["confirmado"] and r.id not in self.pendentes and (self.nome, r.id) not in self.vinculo.vinculos:
+                self._pela_planta((self.nome, r.id), v, agora)   # ainda sem dono: tenta de novo a cada quadro
+            if v["confirmado"] and self.planta:
+                self.planta.atualizar((self.nome, r.id), v["pos"], agora, self.vinculo.vinculos.get((self.nome, r.id)))
         for id_, v in list(self.vivos.items()):
             if agora - v["ultimo"] > SEGUNDOS_PERDIDO:
                 del self.vivos[id_]
                 self.pendentes.pop(id_, None)
+                if self.planta:
+                    self.planta.esquecer((self.nome, id_))
                 if v["confirmado"]:
                     self.perdidos.append(((self.nome, id_), v["centro"], agora))
         for item in list(self.perdidos):
@@ -177,9 +188,23 @@ class ProcessadorCamera:
         self.perdidos.remove(item)
         return True
 
+    def _pela_planta(self, chave, v, agora) -> bool:
+        """Passagem entre câmeras: o rastro herda a visita de quem outra
+        câmera está vendo (ou viu há pouco) no mesmo ponto do chão."""
+        if not self.planta or v.get("pos") is None:
+            return False
+        nesta = {self.vinculo.vinculos.get((self.nome, i)) for i in self.vivos if (self.nome, i) != chave}
+        visita = self.planta.vizinho(self.nome, v["pos"], agora, excluir=nesta - {None})
+        if visita is None:
+            return False
+        self.vinculo.vinculos[chave] = visita
+        return True
+
     def _nasceu(self, id_, v, agora) -> None:
         chave = (self.nome, id_)
         if self._herdar(chave, v["centro"], 0.12):
+            return
+        if self._pela_planta(chave, v, agora):
             return
         x1, y1, x2, y2 = v["primeira"]
         na_porta = self.masc_porta is not None and (
@@ -190,6 +215,16 @@ class ProcessadorCamera:
             self.pendentes[id_] = agora
         elif not self._herdar(chave, v["centro"], 0.3):
             self.vinculo.vincular_unica(chave)
+
+    def _registrar_trajetos(self, rastros, quadro, agora) -> None:
+        if not self.trajetos:
+            return
+        for r in rastros:
+            v = self.vivos.get(r.id)
+            visita = self.vinculo.visita_de((self.nome, r.id))
+            if v and v["confirmado"] and visita:
+                self.trajetos.registrar(visita, self.nome, agora, v.get("pos"), v["pe"], quadro, r.caixa)
+        self.trajetos.limpar()
 
     def _porta(self, rastros, quadro, agora) -> None:
         por_id = {r.id: r for r in rastros}
@@ -235,6 +270,8 @@ class ProcessadorCamera:
                     visita = self.vinculo.visita_de((self.nome, r.id))
                     if visita:
                         z.visitas.add(visita)
+                        if self.trajetos:
+                            self.trajetos.marcar_zona(visita, z.nome, agora)
                     else:
                         z.sem_visita.add(r.id)
                 z.durante_jpeg = codificar(quadro)
@@ -249,6 +286,13 @@ class ProcessadorCamera:
             z.anterior = cinza
             if z.estaveis < cfg["quadrosEstaveis"]:
                 continue
+            # quem estava na zona sem dono pode ter sido identificado depois
+            # (passagem entre câmeras, porta): vale o que se sabe agora
+            for id_ in list(z.sem_visita):
+                visita = self.vinculo.visita_de((self.nome, id_))
+                if visita:
+                    z.sem_visita.discard(id_)
+                    z.visitas.add(visita)
             houve_gente = bool(z.visitas or z.sem_visita)
             if z.ref is not None and not houve_gente and agora - z.ultima_medida < cfg["reconferirSegundos"]:
                 continue

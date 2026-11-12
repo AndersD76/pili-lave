@@ -72,6 +72,9 @@ como produto paralelo. Ao abrir o app, o cliente escolhe entre
 - **Qualquer divergência de estoque avisa o dono da loja com as imagens do momento.**
 - Cobrança automática nunca acontece por divergência sem dono claro; vai para revisão do dono.
 
+- **Trajeto do suspeito (pedido do Giovani em 11/11/2026, construído):** quando o fechamento do período dá item faltando, o sistema monta e manda ao dono o percurso, dentro da loja, de quem esteve junto às prateleiras de onde saiu item: mapa na planta e fotos com hora, câmera e prateleira. Se as câmeras não souberem dizer quem estava perto, manda o de todos que estiveram na loja no período. É material para o dono conferir; não acusa nem cobra ninguém.
+- **Seguir a pessoa pela loja inteira (11/11/2026, construído):** pela posição no chão. Cada câmera tem o piso calibrado em metros; quem aparece numa câmera no mesmo ponto em que outra já vê alguém é a mesma pessoa. Sem reconhecer roupa nem rosto.
+
 ### Totem (self-checkout)
 - Produto identificado **só pelo código de barras**.
 - **Identificação do cliente por reconhecimento facial** na câmera do totem, comparando apenas entre as pessoas que estão dentro da loja naquele momento (no máximo 3). Sem rosto na imagem: "Fique em frente à tela para reconhecimento facial".
@@ -152,6 +155,7 @@ O item 1 depende de o computador da loja ter Windows Pro e TPM, o que deve entra
 4. **Contador**: NFC-e da loja, NFS-e das lavagens, provedor de e-mail.
 5. Saída de emergência e alvará: validar com bombeiros.
 6. Proteção intelectual: revisar ao fim do projeto.
+8. **Licenças do software de visão (levantado em 11/11/2026, a decidir):** o dataset SKU-110K, previsto para a contagem de produtos, só permite uso acadêmico/não comercial; e o Ultralytics YOLO, usado para detectar pessoas, é AGPL-3.0 (uso comercial fechado pede a licença paga Enterprise ou abrir todo o código). Antes de uma loja comercial: trocar por um detector de licença Apache-2.0 ou contratar a licença, e montar o conjunto de fotos com as prateleiras da própria loja. **Em 11/11/2026 o detector de pessoas foi trocado pelo YOLOX (Apache-2.0)**; resta o contador de produtos, que ainda prevê um modelo da Ultralytics e não tem pesos.
 7. Como o dono identifica quem bloquear: hoje é pelo código do cliente digitado; quando houver registro de visitas e divergências (etapas 4 e 5), o bloqueio poderá ser feito direto a partir delas.
 
 ---

@@ -4,7 +4,8 @@
     "tokenArquivo": "../loja/dados/token-local.txt"
   },
   "pessoas": {
-    "pesos": "yolo11n.pt",
+    "detector": "yolox",
+    "pesos": "modelos/yolox_tiny.onnx",
     "dispositivo": "auto",
     "imgsz": 480,
     "confianca": 0.35,

@@ -41,6 +41,22 @@ class ClienteLoja:
             log.debug("visitas ativas: %s", e)
             return None
 
+    def pedidos_trajeto(self) -> list[dict]:
+        """Trajetos que a loja está pedindo (divergência com item faltando)."""
+        try:
+            return self._pedir("/api/visao/pedidos") or []
+        except Exception as e:
+            log.debug("pedidos de trajeto: %s", e)
+            return []
+
+    def enviar_trajeto(self, trajeto: dict) -> bool:
+        try:
+            self._pedir("/api/visao/trajetos", trajeto)
+            return True
+        except Exception as e:
+            log.warning("envio de trajeto: %s", e)
+            return False
+
     def enviar_evento(self, evento: dict) -> bool:
         try:
             self._pedir("/api/visao/eventos", evento)

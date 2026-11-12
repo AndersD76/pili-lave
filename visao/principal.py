@@ -9,10 +9,12 @@ from pili_visao import config as cfgmod
 from pili_visao.armazenamento import Armazenamento
 from pili_visao.camera import FonteVideo
 from pili_visao.loja import ClienteLoja, Emissor
+from pili_visao.planta import Planta
 from pili_visao.porta import BarreiraSimulada, MonitorPorta, SireneSimulada
 from pili_visao.prateleira import criar_detector
 from pili_visao.processador import ProcessadorCamera
-from pili_visao.rastreio import RastreadorYolo
+from pili_visao.rastreio import criar_rastreador
+from pili_visao.trajetos import Trajetos
 from pili_visao.visitas import VinculoVisitas
 
 log = logging.getLogger("visao")
@@ -34,6 +36,28 @@ def _desenhar(proc: ProcessadorCamera, quadro):
     return quadro
 
 
+def _epoca(iso):
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def atender_pedidos(cliente, trajetos) -> int:
+    """A loja achou item faltando: monta o trajeto de cada pessoa pedida e devolve."""
+    feitos = 0
+    for pedido in cliente.pedidos_trajeto():
+        inicio, fim = _epoca(pedido.get("inicio")), _epoca(pedido.get("fim"))
+        r = trajetos.compilar(pedido["visitaId"], pedido.get("nome") or "cliente",
+                              inicio - 5 if inicio else None, fim + 30 if fim else None,
+                              rotulo="divergencia_" + str(pedido["divergenciaId"]))
+        if cliente.enviar_trajeto({"divergenciaId": pedido["divergenciaId"], "visitaId": pedido["visitaId"], **r}):
+            log.info("trajeto de %s enviado (%d imagem(ns))", pedido.get("nome"), len(r["imagens"]))
+            feitos += 1
+    return feitos
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=None)
@@ -53,13 +77,19 @@ def main():
     emissor = Emissor(cliente.enviar_evento, arm.fila)
     vinculo = VinculoVisitas(cliente.visitas_ativas, cfg["loja"]["intervaloVisitasSegundos"])
     porta = MonitorPorta(SireneSimulada(), BarreiraSimulada(), cfg["porta"]["sireneSegundos"], cfg["porta"]["exigirBarreira"])
+    planta = Planta(cfg)
+    trajetos = Trajetos(cfgmod.pasta_dados(cfg), planta, cfg["trajeto"], cfg["dados"]["diasGuardar"])
+    sem_chao = [c["nome"] for c in cfg["cameras"] if not planta.calibrada(c["nome"])]
+    if sem_chao and len(cfg["cameras"]) > 1:
+        log.warning("câmeras sem o chão calibrado (%s): não seguem a pessoa vinda de outra câmera. Rode calibrar_chao.py.", ", ".join(sem_chao))
 
     p = cfg["pessoas"]
     cameras = []
     for cam in cfg["cameras"]:
-        rastreador = RastreadorYolo(p["pesos"], p["dispositivo"], p["imgsz"], p["confianca"])
+        rastreador = criar_rastreador(p, cfgmod.RAIZ)
         detector = criar_detector(cfg["prateleira"], rastreador.dispositivo)
-        cameras.append((FonteVideo(cam["fonte"]), ProcessadorCamera(cfg, cam, rastreador, detector, vinculo, emissor, arm, porta)))
+        cameras.append((FonteVideo(cam["fonte"]), ProcessadorCamera(cfg, cam, rastreador, detector, vinculo, emissor, arm, porta,
+                                                                           planta=planta, trajetos=trajetos)))
         log.info("câmera %s: fonte %s, %d zona(s)", cam["nome"], cam["fonte"], len(cam.get("zonas", [])))
 
     periodo = 1.0 / max(1, p["fpsAlvo"])
@@ -80,7 +110,10 @@ def main():
                 break
             if time.time() - ultimo_descarrego > 10:
                 ultimo_descarrego = time.time()
-                emissor.descarregar()
+                if vinculo.loja_respondendo(time.time()):   # loja fora do ar: não gasta o tempo limite de cada chamada
+                    emissor.descarregar()
+                    atender_pedidos(cliente, trajetos)
+                planta.limpar(time.time(), {v["visitaId"] for v in vinculo.ativas})
             if args.max_quadros and quadros >= args.max_quadros:
                 break
             if quadros and quadros % 100 == 0:

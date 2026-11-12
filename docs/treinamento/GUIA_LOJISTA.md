@@ -407,6 +407,7 @@ Para liberar de novo, toque em **Desbloquear** ao lado do nome. O histórico do 
 | Modo reposição (loja bloqueada para clientes enquanto um funcionário repõe) | Programa pronto (permissão "Fazer reposição", na tela **Visitas**); só bloqueia de verdade com o equipamento da porta |
 | Abrir a porta à distância pelo app (só o lojista) | Botão pronto em "Minha loja"; falta a trava física |
 | Câmeras e aviso de divergência com imagens | Programa pronto (tela **Divergências**, só o lojista); falta instalar e calibrar as câmeras |
+| Trajeto de quem esteve junto à prateleira quando falta item (mapa do percurso e fotos, na tela **Divergências** e num aviso no celular) | Programa pronto, testado só com simulação; falta instalar e calibrar as câmeras |
 | Reconhecimento facial no caixa | Programa pronto; falta a câmera do caixa e calibrar com rostos reais |
 | Indicadores no app (faturamento, mais vendidos, faixa etária) e avisos no celular (estoque mínimo, divergência, saída sem pagar, invasão) | Construídos em "Minha loja"; ainda sem teste no celular |
 | Nota fiscal das vendas | Depende de definição com o contador |

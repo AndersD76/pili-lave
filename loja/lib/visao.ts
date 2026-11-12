@@ -132,17 +132,29 @@ export async function fecharPeriodo(opcoes: { semCarencia?: boolean } = {}) {
     });
     if (saiuPrateleira === pago) return null;
 
+    // FALTOU item: de quem pedir o trajeto às câmeras. Quem estava junto às
+    // prateleiras de onde saiu algo; se as câmeras não souberam dizer, todos
+    // os que estiveram na loja no período.
+    let suspeitos: typeof visitas = [];
+    if (saiuPrateleira > pago) {
+      const perto = new Set<string>();
+      for (const ev of eventos.filter((e) => e.delta < 0)) {
+        if (ev.visitaId) perto.add(ev.visitaId);
+        for (const id of lerLista(ev.visitasNaZona)) perto.add(id);
+      }
+      suspeitos = visitas.filter((v) => perto.has(v.id));
+      if (suspeitos.length === 0) suspeitos = visitas;
+    }
+    const resumir = (lista: typeof visitas) => JSON.stringify(lista.map((v) => ({ visitaId: v.id, nome: v.nome, codigoCliente: v.codigoCliente })));
+
     const d = await tx.divergencia.create({
-      data: {
-        inicio, fim, saiuPrateleira, pago,
-        visitas: JSON.stringify(visitas.map((v) => ({ visitaId: v.id, nome: v.nome, codigoCliente: v.codigoCliente }))),
-      },
+      data: { inicio, fim, saiuPrateleira, pago, visitas: resumir(visitas), suspeitos: resumir(suspeitos) },
     });
     await tx.eventoVisao.updateMany({ where: { id: { in: eventos.map((ev) => ev.id) } }, data: { divergenciaId: d.id } });
     const quem = visitas.length > 0 ? ` Na loja no período: ${visitas.map((v) => v.nome).join(", ")}.` : " Ninguém com entrada registrada no período.";
     await criarAlerta(tx, {
       tipo: "DIVERGENCIA", titulo: "Divergência de estoque",
-      detalhe: `Saíram ${saiuPrateleira} unidade(s) das prateleiras e foram pagas ${pago}.${quem} Confira as imagens na gestão da loja.`,
+      detalhe: `Saíram ${saiuPrateleira} unidade(s) das prateleiras e foram pagas ${pago}.${quem} Confira as imagens na gestão da loja.${suspeitos.length > 0 ? " O trajeto de quem esteve junto às prateleiras chega em seguida." : ""}`,
       imagens: eventos.flatMap((ev) => lerLista(ev.imagens)), ocorridoEm: fim,
     });
     return d;

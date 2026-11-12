@@ -1,6 +1,7 @@
 import { lerLista } from "@/lib/alertas";
 import { prisma } from "@/lib/prisma";
 import { exigirLojista } from "@/lib/sessao";
+import { lerSuspeitos, lerTrajetos } from "@/lib/trajetos";
 import { Nav } from "../nav";
 import { revisarDivergencia } from "./actions";
 
@@ -82,6 +83,38 @@ export default async function Divergencias({ searchParams }: { searchParams: Pro
               </div>
             );
           })}
+
+          {lerSuspeitos(d.suspeitos).length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <strong>Trajeto de quem esteve junto às prateleiras</strong>
+              <p className="sub" style={{ marginTop: 2 }}>
+                Percurso de cada pessoa dentro da loja, montado pelas câmeras. Serve para você conferir; não é uma acusação.
+              </p>
+              {lerSuspeitos(d.suspeitos).map((s) => {
+                const t = lerTrajetos(d.trajetos).find((x) => x.visitaId === s.visitaId);
+                return (
+                  <div key={s.visitaId} style={{ marginTop: 10 }}>
+                    <span className="sub">
+                      <strong>{s.nome}</strong>{s.codigoCliente ? ` (código ${s.codigoCliente})` : ""} — {t ? t.resumo : "aguardando o programa das câmeras montar o trajeto…"}
+                    </span>
+                    {t && t.imagens.length > 0 && (
+                      <div className="evidencias">
+                        {t.imagens.map((_, i) => {
+                          const src = `/gestao/divergencias/imagem?divergencia=${d.id}&visita=${encodeURIComponent(s.visitaId)}&i=${i}`;
+                          return (
+                            <a key={i} href={src} target="_blank" rel="noreferrer">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={src} alt={i === 0 ? `Mapa do trajeto de ${s.nome}` : `Fotos do trajeto de ${s.nome}`} />
+                            </a>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {d.situacao === "ABERTA" ? (
             <form action={revisarDivergencia} className="linha-form" style={{ marginTop: 14 }}>

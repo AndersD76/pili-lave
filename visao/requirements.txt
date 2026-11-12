@@ -1,5 +1,7 @@
-ultralytics>=8.3
+onnxruntime
 opencv-python
 numpy
 lap>=0.5.12
 pytest
+# opcional, só para comparar com o detector antigo (licença AGPL-3.0):
+# ultralytics>=8.3
