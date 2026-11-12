@@ -583,6 +583,7 @@ void auto_tick() {
 // =======================================================================
 // Comandos externos (botoes / X3)
 // =======================================================================
+bool ota_ativa();   // ota_alvo.h
 void auto_iniciar(uint8_t modelo) {
     if (licenca_bloqueada()) {
         DBG_PRINTLN("[AUTO] bloqueado por licenca");

@@ -193,3 +193,6 @@ static_assert(sizeof(MsgScanResp) <= 250, "MsgScanResp passou de 250 bytes");
 static_assert(sizeof(MsgHbResp) <= 250 && sizeof(MsgEvt) <= 250 && sizeof(MsgEvtAck) <= 250 && sizeof(MsgHbState) <= 250, "mensagem da nuvem passou de 250 bytes");
 static_assert(sizeof(MsgProvReq) <= 250 && sizeof(MsgProvResp) <= 250 && sizeof(MsgIdentResp) <= 250 && sizeof(MsgUniResp) <= 250 && sizeof(MsgIdPushReq) <= 250, "mensagem de cadastro passou de 250 bytes");
 static_assert(sizeof(MsgNvEvt) <= 250 && sizeof(MsgNvEvtAck) <= 250 && sizeof(MsgNvOrdem) <= 250, "mensagem NV passou de 250 bytes");
+
+// ---- ATUALIZACAO REMOTA do display e da W1 (2026-11-09): camera -> display -> W1 ----
+#include "ota_msg.h"
