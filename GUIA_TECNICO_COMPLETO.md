@@ -275,7 +275,7 @@ Três sistemas de auth **separados e independentes**:
 - **Machine**: a máquina física, pertence a uma `WashStation`, tem `numero` (posição na unidade), `deviceKey`, status ao vivo, sensores X14/X15, contadores de lavagem, controle de licença (`lastPaymentDate` — também serve de ponto de "fechamento" pra todo mundo que participa dela), `vacuumEnabled`/`vacuumPriceCents`/`vacuumDurationMin` (aspirador, novo 10-06, ver 6.6c), e a lista de `MachineParticipante` vinculados (Lavador, Comissão 1, Comissão 2, Aluguel — ver 6.6). O campo antigo `operadorId` foi substituído pelo participante do tipo `LAVADOR`.
 - **VacuumUse** (nova, 10-06): um uso do aspirador — `userId`, `machineId`, `amountCents`, `durationSec`, `status` (`PAID` → `ACTIVE` → `COMPLETED`), `startedAt`, `completedAt`. Compra debita o crédito na hora (`PAID`); o cliente decide quando começar a contar o tempo (`ACTIVE`, botão "Começar agora"). Não depende de `Order`/`Reservation` — pode ser comprado solto, sem lavar o carro.
 - **Order**: a compra (voucher). Status `PAID` → `REDEEMED` (lavagem concluída) ou `CANCELED` (estorno).
-- **Reservation**: o motor real da fila — `HELD` (pago, esperando 1h) → `ACTIVE` (placa reconhecida, máquina livre, verde aceso) → `ENTERED` (X14 confirmou) → `COMPLETED` (**único ponto de débito de verdade**) / `EXPIRED` / `CANCELED` / `FAILED`.
+- **Reservation**: a **autorização** do carro (não há fila) — `HELD` (pago, autorizado por 1h) → `ACTIVE` (placa reconhecida ou "estou aqui", sem lavagem em andamento, verde aceso) → `ENTERED` (X14 confirmou) → `COMPLETED` (**único ponto de débito de verdade**) / `EXPIRED` / `CANCELED` / `FAILED`.
 - **LavagemPresencial** (nova, 09-19): uma linha por lavagem paga em dinheiro nos botões físicos X1-X6 — valor em R$ e data/hora exatos (o firmware só contava localmente, sem valor nem timestamp).
 - **Arrival**: registro de cada leitura de câmera, pra exibição no app (`WAITING_DRIVER`, `SUGGESTED` quando a leitura foi de baixa confiança e bate com a fila).
 - **WalletTx**: extrato real da carteira (TOPUP/WASH/REFUND/ADJUST).
@@ -285,7 +285,7 @@ Três sistemas de auth **separados e independentes**:
 
 ### 6.3 Fluxo de reserva e pagamento
 1. Cliente escolhe a **unidade primeiro** (obrigatório desde 09-19, ver 7 e 8), depois compra pelo app (`POST /api/orders`) → debita a carteira na hora, cria `Order` (PAID) + `Reservation` (HELD, válida por 1h). O preço já é o **da unidade escolhida** (`precoEfetivo`).
-2. Quando o carro chega, a câmera lê a placa → `handlePlateRead()` promove `HELD` → `ACTIVE` (se a máquina estiver livre) ou mantém na fila com o relógio congelado (se estiver ocupada — não queima o tempo do cliente por culpa da operação).
+2. Quando o carro chega, a câmera lê a placa (ou o cliente toca "estou aqui") → `handlePlateRead()` promove `HELD` → `ACTIVE` na hora. **Sem fila e sem ordem entre os carros autorizados (A, B, C…): vale o que chegar** (regra de 12/11/2026). Só **não interrompe uma lavagem em andamento** (`lavagemEmAndamento()`: reserva `ENTERED` na máquina): nesse caso a reserva segue `HELD` com verde piscando e é liberada na leitura seguinte, depois que a lavagem termina. Se outro carro estava liberado (`ACTIVE`) e ainda não entrou, o que chegou agora passa a ser o liberado e o outro volta a `HELD`, continuando autorizado. O status `WASHING` da máquina **não** bloqueia: o display também o manda com carro parado no X14/X15 (era o que deixava a reserva presa). Teste: `server/_teste_sem_fila.mts`.
 3. Sensor X14 confirma o carro entrando → `ENTERED`.
 4. Máquina reporta conclusão (`wash-complete`) → `COMPLETED` — **é aqui, e só aqui, que o valor é debitado de verdade** (a reserva só "segurava" o saldo). Se veio dos botões físicos (sem reserva), vira `LavagemPresencial` em vez de debitar carteira de ninguém.
 5. **Estorno automático**: se a reserva vence (1h) sem ser usada, o valor volta sozinho pro saldo. Se a máquina travar durante a lavagem (2× a duração do programa sem concluir), também estorna sozinho.
@@ -304,7 +304,7 @@ Leitura de alta confiança (≥0.97) libera sozinha; leitura fraca compara contr
 **Câmera ao vivo** (`/api/lpr/ao-vivo`, agora ligada na tela — era só backend até 10-06): sem `?img`, devolve metadados da captura mais recente (id/hora); com `?img=<id>`, devolve o JPEG daquela captura. Só libera pra quem **tem lavagem em andamento** (reserva viva) — câmera do pátio não é liberada pra qualquer um ver parado. As telas da unidade (mobile e PWA) fazem poll a cada 4s nos metadados e só baixam a imagem de novo quando o id muda; fora de uma lavagem ativa, mostram "Disponível quando sua lavagem estiver em andamento" em vez de ficar tentando.
 
 ### 6.5 Sistema multi-máquina
-Uma unidade (`WashStation`) pode ter **várias máquinas** (`Machine.numero`). A compra não escolhe qual máquina — entra numa **fila única**: quando promove a reserva, pega **qualquer máquina livre daquela unidade** (`machineForStation()`). O cliente só escolhe manualmente quando libera sem câmera e há mais de uma máquina (ver 6.3).
+Uma unidade (`WashStation`) pode ter **várias máquinas** (`Machine.numero`). A compra não escolhe qual máquina — a reserva é da unidade (sem fila): quando promove a reserva, pega **qualquer máquina livre daquela unidade** (`machineForStation()`). O cliente só escolhe manualmente quando libera sem câmera e há mais de uma máquina (ver 6.3).
 
 **Provisionamento** (`POST /api/machine/provisionar`): cadastro automático de máquina nova — recebe o ID único do chip + unidade (existente por `stationId`, ou nova por cidade+rua) + número. Reconhece unidade já existente mesmo com **acento, maiúscula E prefixo de logradouro diferentes** ("Joao Carlon" == "Rua João Carlon", fix de 09-19 depois de uma duplicata real em produção). Protegido por `PROVISION_SECRET`.
 
@@ -397,7 +397,7 @@ Cada unidade cobra o que quiser pelos 4 tipos de lavagem — não existe mais um
 /api/vacuum/buy         compra do aspirador (debita credito, cria VacuumUse em PAID)
 /api/vacuum/start       "começar agora" — vira ACTIVE, começa a contar o tempo
 /api/machine/           heartbeat, car-entered, wash-complete (app + presencial + sócio/bônus), fault
-                        (errorCode X15_POSICAO = volta para a fila, sem estorno), ack, next,
+                        (errorCode X15_POSICAO = a reserva volta a `HELD`, continua autorizada, sem estorno), ack, next,
                         provisionar, unidades (busca por cidade), reset-log (reinícios/ocorrências)
 /api/admin/machine/payment   marcar pagamento em dia (legado, ver /admin/maquinas)
 /api/cron/expire-reservations   cron do Railway (a cada 5 min) — expira reservas, estorna, checa saúde
@@ -610,7 +610,7 @@ Firmware da câmera tem seu próprio `PILI_PROVISION_SECRET` (deve bater com o `
 | Publicar firmware novo da câmera (OTA) | subir `PILI_FW_VERSION`, copiar `.bin` pra `server/public/firmware/camera.bin`, subir `camera-version.json` |
 | Lógica de cálculo de comissão/divisão | `server/lib/comissao.ts` |
 | Aprovar/rejeitar pedido de papel (lavador/comissão/aluguel) | `/admin/usuarios` (seção "Cadastros a aprovar"), `server/app/api/parceiro/solicitar/route.ts` |
-| Como a fila/reserva funciona | `server/lib/reservations.ts` |
+| Como a reserva (autorização, sem fila) funciona | `server/lib/reservations.ts` e `server/lib/lpr.ts` |
 | Como a placa é lida | `server/lib/lpr.ts`, `server/lib/vision-claude.ts` |
 | Login/cadastro do cliente | `server/app/api/auth/*`, `mobile/src/app/{login,cadastro}.tsx` |
 | Ciclo físico de lavagem (giro, carrinho, processos) | `testes/w1_w2_por_rxtx/waveshare1/maquina_estados.h`, `processos.h` |

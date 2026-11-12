@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
       if (upd.count > 0) {
         voltaram++;
         void avisarCliente(r.userId, {
-          titulo: "Sua reserva voltou para a fila",
+          titulo: "Sua lavagem continua autorizada",
           corpo: "O carro nao chegou na posicao em 3 minutos. Sua reserva continua valida: e so chegar de novo.",
           tag: "lavagem",
         });
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     });
     await alertarAdmin(
       "POSICAO_X15",
-      `O carro nao chegou na posicao (X15) em 3 min; ${voltaram} reserva(s) voltou(aram) para a fila.`,
+      `O carro nao chegou na posicao (X15) em 3 min; ${voltaram} reserva(s) voltou(aram) a ficar autorizada(s) (sem fila).`,
       { errorCode: body.errorCode, voltaram },
       auth.machine.id,
       auth.machine.operadorId

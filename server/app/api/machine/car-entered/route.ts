@@ -33,12 +33,12 @@ export async function POST(req: NextRequest) {
   const active =
     (await prisma.reservation.findFirst({
       where: { machineId: auth.machine.id, status: "ACTIVE", ...(wanted ? { id: wanted } : {}) },
-      orderBy: { activeAt: "asc" },
+      orderBy: { activeAt: "desc" },   // vale o carro que chegou por último (sem fila)
     })) ??
     (wanted
       ? await prisma.reservation.findFirst({
           where: { machineId: auth.machine.id, status: "ACTIVE" },
-          orderBy: { activeAt: "asc" },
+          orderBy: { activeAt: "desc" },
         })
       : null);
 

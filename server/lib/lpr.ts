@@ -5,9 +5,9 @@ import { ARRIVAL_TTL_MIN } from "./device";
 import { normalizePlate, plateCandidates, plateDistance } from "./placa";
 import {
   LightState,
-  QUEUE_FREEZE_MIN,
   defaultMachine,
   expireStale,
+  lavagemEmAndamento,
   machineAvailability,
   setTransientLight,
 } from "./reservations";
@@ -25,15 +25,16 @@ export type PlateReadResult = {
 };
 
 /**
- * Decisão central da chegada (matriz reserva × máquina):
- *  - reserva HELD válida + máquina LIVRE   → ACTIVE, verde sólido (pode entrar)
- *  - reserva HELD válida + máquina LAVANDO → segue HELD, verde piscando (fila;
- *    congela o relógio da reserva — espera por culpa da operação não a queima)
+ * Decisão central da chegada. NÃO HÁ FILA (regra do Giovani, 2026-11-12): cada reserva é uma AUTORIZAÇÃO do carro; os carros autorizados (A, B, C...)
+ * não têm ordem entre si — o que chegar (placa reconhecida ou "estou aqui" no app) é liberado na hora. Só não se interrompe a lavagem em andamento.
+ *  - reserva HELD válida + máquina OK e sem lavagem em andamento → ACTIVE, verde sólido (pode entrar). Se outro carro estava liberado e ainda
+ *    não entrou, o que chegou agora passa a ser o liberado (vale o carro que chega; o outro volta a HELD e segue autorizado)
+ *  - reserva HELD válida + lavagem em andamento (carro com reserva já dentro) → segue HELD, verde piscando (aguarde; é liberada na leitura
+ *    seguinte à lavagem, sem ordem)
  *  - reserva HELD válida + máquina FALHA/OFFLINE/MANUTENÇÃO → vermelho piscando
  *  - placa cadastrada sem reserva → alterna verde/vermelho (reserve no app)
  *  - placa desconhecida → vermelho sólido
- * Sem cancela: a luz é a única barreira. Verde sólido NUNCA sem máquina
- * confirmada livre (heartbeat < 60s).
+ * Sem cancela: a luz é a única barreira. Verde sólido NUNCA sem máquina confirmada viva (heartbeat < 60s).
  */
 export async function handlePlateRead(plate: string, machineOverride?: Machine): Promise<PlateReadResult> {
   await expireStale();
@@ -89,17 +90,29 @@ export async function handlePlateRead(plate: string, machineOverride?: Machine):
     } else if (reservation.status === "ACTIVE") {
       light = avail === "DOWN" ? "RED_BLINK" : "GREEN_SOLID"; // idempotente
       arrivalStatus = "REQUESTED";
-    } else if (avail === "FREE") {
-      // HELD → ACTIVE: aloca a máquina e acende o verde
-      await prisma.reservation.update({
-        where: { id: reservation.id },
-        data: {
-          status: "ACTIVE",
-          machineId: machine.id,
-          stationId: machine.stationId,
-          activeAt: new Date(),
-        },
-      });
+    } else if (avail === "DOWN") {
+      light = "RED_BLINK"; // máquina em falha/offline/manutenção
+    } else if (await lavagemEmAndamento(machine.id)) {
+      // outro carro está lavando: NÃO interrompe. Esta reserva segue autorizada; sem fila nem prioridade, é liberada quando a câmera ler a placa
+      // (ou o cliente tocar "estou aqui") depois que a lavagem terminar
+      light = "GREEN_BLINK";
+    } else {
+      // HELD → ACTIVE: aloca a máquina e acende o verde. Vale o carro que chegou: quem estava liberado e ainda não entrou volta a HELD (continua autorizado)
+      await prisma.$transaction([
+        prisma.reservation.updateMany({
+          where: { machineId: machine.id, status: "ACTIVE", id: { not: reservation.id } },
+          data: { status: "HELD", machineId: null, activeAt: null },
+        }),
+        prisma.reservation.update({
+          where: { id: reservation.id },
+          data: {
+            status: "ACTIVE",
+            machineId: machine.id,
+            stationId: machine.stationId,
+            activeAt: new Date(),
+          },
+        }),
+      ]);
       light = "GREEN_SOLID";
       arrivalStatus = "REQUESTED";
       // o cliente não fica olhando a tela: avisa no celular
@@ -108,15 +121,6 @@ export async function handlePlateRead(plate: string, machineOverride?: Machine):
         corpo: `${vehicle.plate} reconhecida — luz verde acesa. Boa lavagem!`,
         tag: "lavagem",
       });
-    } else if (avail === "WASHING") {
-      // fila: mantém HELD e congela o relógio da reserva
-      await prisma.reservation.update({
-        where: { id: reservation.id },
-        data: { expiresAt: new Date(Date.now() + QUEUE_FREEZE_MIN * 60_000) },
-      });
-      light = "GREEN_BLINK";
-    } else {
-      light = "RED_BLINK"; // máquina em falha/offline/manutenção
     }
   } else {
     // cadastrado, sem reserva — fluxo legado por Arrival continua valendo
@@ -182,7 +186,7 @@ export type SuggestResult = { arrivalId: string; plate: string; matchScore: numb
 
 /**
  * Leitura de placa FRACA (não passou no corte de auto-aceite): em vez de
- * jogar fora, compara com quem já pagou e está na fila (reserva HELD) nesta
+ * jogar fora, compara com quem já pagou e está autorizado (reserva HELD) nesta
  * estação. Se bater com EXATAMENTE UM veículo (folga de até 2 caracteres —
  * cobre sósias de OCR), cria uma chegada "SUGESTÃO" para o dono confirmar no
  * app ("é o seu carro?"). Nunca libera nada sozinho: só a confirmação do

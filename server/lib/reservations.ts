@@ -4,7 +4,6 @@ import { prisma } from "./prisma";
 /** Regras de tempo do fluxo de reserva. */
 export const HOLD_TTL_MIN = 60;        // validade da reserva (HELD)
 export const ACTIVE_TTL_MIN = 5;       // verde aceso sem X14 → volta a HELD
-export const QUEUE_FREEZE_MIN = 15;    // espera na fila estende a validade
 export const HEARTBEAT_OFFLINE_S = 60; // sem heartbeat → máquina OFFLINE
 export const LIGHT_TRANSIENT_S = 20;   // luz fixada por evento (placa lida etc.)
 export const DONE_GREEN_S = 10;        // verde de "pode sair" após concluir
@@ -90,11 +89,23 @@ export async function computeLight(m: Machine): Promise<LightState> {
   return "OFF";
 }
 
-/** Reserva que a máquina deve executar (START reenviado até car-entered/complete). */
+/**
+ * Lavagem em andamento DE VERDADE: um carro com reserva já entrou (ENTERED) e o ciclo roda. É a ÚNICA coisa que segura a liberação de outro carro
+ * (regra do Giovani, 2026-11-12: "não interrompe a lavagem em andamento"; não há fila). O status WASHING da máquina NÃO serve para isso: o display
+ * também o manda quando há carro parado no X14/X15 ou quando perde o contato com a W1, e o carro que acabou de chegar — justamente o que vamos
+ * liberar — é quem aciona esse sensor (foi o que deixou a reserva presa em 12/11).
+ */
+export async function lavagemEmAndamento(machineId: string): Promise<boolean> {
+  return (await prisma.reservation.count({ where: { machineId, status: "ENTERED" } })) > 0;
+}
+
+/** Reserva que a máquina deve executar (START reenviado até car-entered/complete): a que está em ciclo; senão a do carro que CHEGOU por último. */
 export async function pendingStart(m: Machine): Promise<Reservation | null> {
+  const emCiclo = await prisma.reservation.findFirst({ where: { machineId: m.id, status: "ENTERED" }, orderBy: { enteredAt: "asc" } });
+  if (emCiclo) return emCiclo;
   return prisma.reservation.findFirst({
-    where: { machineId: m.id, status: { in: ["ACTIVE", "ENTERED"] } },
-    orderBy: { activeAt: "asc" },
+    where: { machineId: m.id, status: "ACTIVE" },
+    orderBy: { activeAt: "desc" },
   });
 }
 

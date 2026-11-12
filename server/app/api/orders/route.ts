@@ -3,7 +3,7 @@ import { randomBytes } from "crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { HOLD_TTL_MIN, defaultMachine, machineForStation, machineAvailability, setTransientLight } from "@/lib/reservations";
+import { HOLD_TTL_MIN, defaultMachine, lavagemEmAndamento, machineForStation, machineAvailability, setTransientLight } from "@/lib/reservations";
 import { diagnosticar } from "@/lib/saude";
 import { precoEfetivo } from "@/lib/precos";
 
@@ -77,10 +77,11 @@ export async function POST(req: NextRequest) {
       { status: 503 }
     );
 
-  /* Modo "cheguei": libera na hora. Só faz sentido com a máquina LIVRE —
-   * se ela estiver lavando outro carro, a reserva entra na fila normal. */
+  /* Modo "cheguei": libera na hora (sem fila). Só não libera se a máquina estiver parada por falha ou se houver uma lavagem em andamento
+   * (carro com reserva já dentro): a reserva fica autorizada e libera quando ela terminar. O status WASHING da máquina NÃO impede: ele
+   * também significa "tem carro parado no X14/X15", que é este mesmo carro. */
   const agoraNaMaquina = parsed.data.jaEstouNaMaquina === true;
-  const maquinaLivre = machine ? machineAvailability(machine) === "FREE" : false;
+  const maquinaLivre = machine ? machineAvailability(machine) !== "DOWN" && !(await lavagemEmAndamento(machine.id)) : false;
   const liberarJa = agoraNaMaquina && maquinaLivre && !!machine;
 
   /* Já tem lavagem paga esperando? NÃO cobra de novo. Antes o débito
