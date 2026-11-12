@@ -2,6 +2,7 @@
 #include "tipos.h"
 #include "comm_espnow.h"
 #include "nvs_manager.h"
+#include "diag_x10x12.h"   // registro do avanco/retorno do carrinho (so observa)
 
 // --- App/backend: forward declarations (definicoes vem depois, no display.ino,
 //     em backend_client.h/licenca.h — evita dependencia circular com g_estado_auto) ---
@@ -783,16 +784,19 @@ void x10_pausa_tick(uint32_t agora) {
             if ((int32_t)(agora - t_msg) >= 1000) { t_msg = agora; g_manual_msg = X10 ? "X10 voltou: iniciando..." : "Aguardando X10 (carro sob a mesa)"; g_manual_msg_ms = millis(); }
             if (g_x10_segura && (int32_t)(agora - t_seg) >= (int32_t)X10_PAUSA_MAX_MS) { g_x10_segura = false; auto_erro("Sem X10 (carro sob a mesa) por 60 s - lavagem cancelada"); return; }
         } else if (indevido && !g_giro_ativo) {                    // G4/G5: no meio da etapa. DURANTE O GIRO o X10 NAO e vigiado (2026-11-06: o lavador relatou 3 pausas falsas por leitura do X10 no dia; vale so nos deslocamentos e no inicio da etapa)
-            if (!t_sem) t_sem = agora ? agora : 1;
+            if (!t_sem) { t_sem = agora ? agora : 1; DX_LOG("X10 apagado sem 3 s de deslocamento (acumulado %lums): contando %lums para pausar", (unsigned long)y14_ms, (unsigned long)X10_PERDIDO_MS); }
             if ((int32_t)(agora - t_sem) >= (int32_t)X10_PERDIDO_MS) {
                 t_sem = 0;
-                auto_pausar();                                  // para o Delta, desliga bombas/solenoides, guarda o movimento e o instante
+                auto_pausar();
+                DX_LOG("PAUSA por X10 apagado (deslocamento acumulado %lums)", (unsigned long)y14_ms);
+                dx_nuvem(true, 3, (uint16_t)min<uint32_t>(y14_ms, 4095UL)); dx_enviar();   // o motor ja esta parado (auto_pausar)                                  // para o Delta, desliga bombas/solenoides, guarda o movimento e o instante
                 bool rew = giro_x10_pausa_marcar();             // giro 1->2: a retomada rebobina (e nao re-emite o movimento antigo)
                 if (rew) _pausa_mov = 0;
                 g_pausa_x10 = true; t_pausa = agora; t_volta = 0;
                 DBG_PRINTF("[X10] ausente no meio da etapa (deslocamento %lu ms) -> PAUSADO (motor parado, bombas desligadas)%s\n", (unsigned long)y14_ms, rew ? "; ao voltar: rebobina ate a posicao 1 e refaz o giro" : "");
             }
         } else {
+            if (t_sem) DX_LOG("X10 voltou antes dos 500 ms: pausa descartada");
             t_sem = 0;
         }
     } else if (g_estado_auto != AUTO_PAUSADO) {

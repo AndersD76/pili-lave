@@ -645,6 +645,17 @@ static uint16_t    _cf_freq_apos_x10 = 0; // freq de chegada da rampa (piso, man
 static uint32_t    _cf_t_ramp = 0;        // ultimo instante em que a rampa foi recalculada
 static bool        _cf_x0_ant = false;
 static const char* _cf_msg = "";
+// ---- REGRA G4 NO AVANCO + REGISTRO (2026-11-12, pedido do Giovani) ----
+// Perder o X10 so vale como "acabou o carro" depois de X10_FWD_MIN_MS de deslocamento (regra G4 de docs/REGRAS_RETOMADA_CICLO.md). Antes disso o apagao
+// do X10 e ignorado e o carrinho segue andando; se for longo (500 ms), a regra de pausa (x10_pausa_tick) para a maquina e espera o X10 voltar. Em carro
+// real o fim de curso da frente (X13) tambem encerra o avanco (antes so valia no SECO): a regra de 3 s alonga o caminho de um carro curto.
+#define X10_FWD_MIN_MS    3000UL
+#define X13_FWD_APOS_MS   1500UL   // o X13 so vale depois disso (a partida esta a metros do fim de curso da frente: leitura antes disso = ruido)
+#define X13_CONFIRMA_MS    100UL
+static uint32_t _cf_t_inicio  = 0;   // instante em que o avanco comecou (os cronometros deslocam na pausa)
+static uint32_t _cf_drop_ini  = 0;   // X10 apagado: desde quando (0 = aceso)
+static uint8_t  _cf_drop_rel  = 0;   // o apagao ja foi relatado (a janela de 3 s acabou com ele ainda apagado)
+static uint32_t _cf_x13_desde = 0;
 
 // Garante o motor PARADO DE VEZ antes de um novo movimento. O carrinho costuma
 // vir logo apos o giro (REV); arrancar sem o motor parar = REVERSAO de sentido
@@ -681,6 +692,8 @@ static void carr_fwd_iniciar(uint16_t freq_antes_x10, uint16_t freq_apos_x10, ui
     _cf_t_x10_lost = 0;                   // reinicia o debounce da perda do X10
     g_x10_ausente_ok = false;
     _x10sim_modo = 1; _x10sim_t0 = millis();   // bancada: X10 simulado (avanco)
+    _cf_t_inicio = millis(); _cf_drop_ini = 0; _cf_drop_rel = 0; _cf_x13_desde = 0;
+    dx_zero(); DX_LOG("avanco inicia: freq=%.1fHz X10=%d X12=%d X13=%d", freq_antes_x10 / 10.0f, (int)X10, (int)X12, (int)X13);
 }
 
 static int carr_fwd_tick() {
@@ -688,6 +701,17 @@ static int carr_fwd_tick() {
         vfd_stop(); SET_Y14(false);
         DBG_PRINTLN("[CARRINHO] X13 (fim de curso frente) -> avanco encerrado");
         return SUB_DONE;
+    }
+    if (!g_teste_seco) {                      // carro real (2026-11-12): fim de curso da frente tambem encerra o avanco (confirmado por 100 ms, so depois de 1,5 s de caminho)
+        if (X13 && (millis() - _cf_t_inicio) >= X13_FWD_APOS_MS) {
+            if (!_cf_x13_desde) _cf_x13_desde = millis();
+            else if (millis() - _cf_x13_desde >= X13_CONFIRMA_MS) {
+                vfd_stop(); SET_Y14(false);
+                DX_LOG("X13 (fim de curso da frente) -> avanco encerrado (X10=%d)", (int)X10);
+                dx_nuvem(true, 4, (uint16_t)min<uint32_t>(millis() - _cf_t_inicio, 4095UL)); dx_enviar();
+                return SUB_DONE;
+            }
+        } else _cf_x13_desde = 0;
     }
     // REVERTIDO (achado em campo): essa confirmacao usava vfd_lendo_rodando(),
     // leitura BLOQUEANTE (ate 3x ~100ms) dentro do loop de controle — gerou
@@ -717,16 +741,36 @@ static int carr_fwd_tick() {
                  //           exatamente na posicao esperada (ex.: trocou o carro entre um
                  //           teste e outro e o X10 ja comeca lendo 0, sem o carrinho ter
                  //           avancado de verdade).
-                 if (!x10_efetivo() && X15) {
+                 {   // REGRA G4 (2026-11-12): antes de X10_FWD_MIN_MS de deslocamento o X10 apagado e IGNORADO (so carro real; no SECO o X10 e simulado)
+                 bool cedo = !g_teste_seco && (millis() - _cf_t_inicio) < X10_FWD_MIN_MS;
+                 bool x10_off = !x10_efetivo();
+                 if (x10_off) {
+                     if (_cf_drop_ini == 0) {
+                         _cf_drop_ini = millis(); _cf_drop_rel = 0;
+                         DX_LOG("X10 APAGOU (%lums de deslocamento)%s", (unsigned long)(_cf_drop_ini - _cf_t_inicio), cedo ? " - IGNORADO (menos de 3 s)" : "");
+                     } else if (!cedo && !_cf_drop_rel && (_cf_drop_ini - _cf_t_inicio) < X10_FWD_MIN_MS) {
+                         _cf_drop_rel = 1;   // a janela de 3 s acabou com o X10 ainda apagado: nao era um apagao curto
+                         DX_LOG("X10 segue apagado ao fim da janela de 3 s: vale como fim do carro");
+                         dx_drop(!g_teste_seco, _cf_drop_ini - _cf_t_inicio, millis() - _cf_drop_ini);
+                     }
+                 } else if (_cf_drop_ini) {
+                     uint32_t dur = millis() - _cf_drop_ini;
+                     DX_LOG("X10 VOLTOU (ficou apagado %lums)", (unsigned long)dur);
+                     if (!_cf_drop_rel && (_cf_drop_ini - _cf_t_inicio) < X10_FWD_MIN_MS) dx_drop(!g_teste_seco, _cf_drop_ini - _cf_t_inicio, dur);
+                     _cf_drop_ini = 0;
+                 }
+                 if (x10_off && X15 && !cedo) {
                      if (_cf_t_x10_lost == 0) _cf_t_x10_lost = millis();          // X10 caiu a 0 agora
                      if (millis() - _cf_t_x10_lost >= X10_FWD_LOST_MS) {          // ficou 0 por 150ms -> perdeu de verdade
                          DBG_PRINTF("[CARRINHO] perdeu X10 -> inicia rampa %.1fHz -> %.1fHz em %ums\n",
                                        _cf_freq_antes_x10 / 10.0f, _cf_freq_apos_x10 / 10.0f, CARR_RAMPA_MS);  // TEMP debug
+                         DX_LOG("avanco aceitou a perda do X10 (%lums de deslocamento)", (unsigned long)(millis() - _cf_t_inicio));
                          _cf_st = 1; _cf_t_x10 = millis(); _cf_t_ramp = 0;
                          g_x10_ausente_ok = true;   // saiu do X10 de proposito: a ausencia ate o retorno e normal (nao pausa)
                      }
                  } else {
                      _cf_t_x10_lost = 0;                                          // X10 voltou (ou X15 ausente) -> reseta
+                 }
                  }
                  break;
         case 1: {
@@ -748,6 +792,8 @@ static int carr_fwd_tick() {
                  }
                  if (dtr >= _cf_dwell) {
                      vfd_stop(); SET_Y14(false);
+                     DX_LOG("avanco terminou (%lums de deslocamento) X10=%d", (unsigned long)(millis() - _cf_t_inicio), (int)X10);
+                     dx_enviar();
                      return SUB_DONE;
                  }
                  break; }
@@ -845,6 +891,9 @@ static uint32_t _cx_t_pulso = 0;   // watchdog X0 no retorno: ultimo instante em
 static bool     _cx_x0_ant  = false;
 static uint16_t _cx_freq    = 0;   // freq que estava rodando ao achar o X12 — de onde a rampa parte
 static uint32_t _cx_t_ramp  = 0;   // ultimo recalculo da rampa
+static uint32_t _cx_t_visto = 0, _cx_t_subida = 0;   // (registro, 2026-11-12) 1a vez que o X12 acendeu neste retorno / ultima subida dele
+static uint8_t  _cx_reinicios = 0;                  // vezes em que o X12 apagou ANTES de completar a confirmacao de 300 ms (cada uma soma >= 300 ms de caminho)
+static bool     _cx_x12_ant = false;
 
 static void carr_rev_x12_iniciar(uint16_t freq_hz10) {
     DBG_PRINTF("[CARRINHO] REV_X12 (retorno final) freq=%.1fHz\n", freq_hz10 / 10.0f);  // TEMP debug
@@ -859,6 +908,8 @@ static void carr_rev_x12_iniciar(uint16_t freq_hz10) {
     _cx_x0_ant  = X0;
     _t_x12_on = 0;                        // reinicia validacao de 300ms do X12
     g_x10_ausente_ok = true;              // retorno final ao X12: nao precisa ver o carro, X10 dispensado ate a proxima etapa comecar
+    _cx_x12_ant = X12; _cx_t_subida = millis(); _cx_t_visto = _cx_x12_ant ? millis() : 0; _cx_reinicios = 0;
+    dx_zero(); DX_LOG("retorno ao X12 inicia: freq=%.1fHz X10=%d X12=%d", freq_hz10 / 10.0f, (int)X10, (int)X12);
 }
 
 static int carr_rev_x12_tick() {
@@ -878,8 +929,25 @@ static int carr_rev_x12_tick() {
             return SUB_ERR;
         }
     }
+    if (_cx_st == 0) {   // registro do X12 (2026-11-12): so observa
+        bool x12 = X12;
+        if (x12 && !_cx_x12_ant) {
+            _cx_t_subida = millis();
+            if (!_cx_t_visto) { _cx_t_visto = _cx_t_subida; DX_LOG("X12 acendeu"); } else DX_LOG("X12 acendeu de novo");
+        } else if (!x12 && _cx_x12_ant) {
+            uint32_t aceso = millis() - _cx_t_subida;
+            bool reinicia = aceso < SENSOR_VALID_MS;
+            if (reinicia && _cx_reinicios < 255) _cx_reinicios++;
+            DX_LOG("X12 APAGOU depois de %lums aceso%s", (unsigned long)aceso, reinicia ? " (a confirmacao de 300 ms recomeca)" : "");
+        }
+        _cx_x12_ant = x12;
+    }
     switch (_cx_st) {
-        case 0:  if (x12_estavel()) { _cx_st = 1; _cx_t = millis(); _cx_t_ramp = 0; } break; // fim de curso X12 >=300ms -> inicia rampa
+        case 0:  if (x12_estavel()) {
+                     _cx_st = 1; _cx_t = millis(); _cx_t_ramp = 0;
+                     if (!_cx_t_visto) _cx_t_visto = millis();
+                     DX_LOG("X12 confirmado (%lums desde a 1a vez que acendeu, %u reinicio(s) da confirmacao) -> rampa", (unsigned long)(millis() - _cx_t_visto), (unsigned)_cx_reinicios);
+                 } break; // fim de curso X12 >=300ms -> inicia rampa
         case 1: {
             // Rampa linear de 500ms, da freq que estava rodando ate parar —
             // recalculada a cada CARR_RAMPA_STEP_MS, mesmo principio da
@@ -888,6 +956,11 @@ static int carr_rev_x12_tick() {
             if (dtr >= CARR_RAMPA_MS) {
                 vfd_stop();
                 SET_Y14(false);
+                uint32_t total = _cx_t_visto ? millis() - _cx_t_visto : 0;
+                DX_LOG("retorno parou: %lums desde a 1a vez que o X12 acendeu (%u reinicio(s) da confirmacao)", (unsigned long)total, (unsigned)_cx_reinicios);
+                if (_cx_reinicios > 0 || total > 1000UL)   // anomalia: confirmacao reiniciada ou parada tardia
+                    dx_nuvem(!g_teste_seco, 2, (uint16_t)((min<uint8_t>(_cx_reinicios, 15) << 8) | min<uint32_t>(total / 10UL, 255UL)));
+                dx_enviar();
                 return SUB_DONE;
             }
             if (millis() - _cx_t_ramp >= CARR_RAMPA_STEP_MS) {
@@ -1417,6 +1490,11 @@ void processos_shift_timers(uint32_t delta) {
     _cx_t        += delta;   // carrinho REV ate X12
     _cx_t_ramp   += delta;   // rampa de desaceleracao do retorno (ao achar o X12)
     _cf_t_ramp   += delta;   // rampa de desaceleracao do avanco (apos perder X10)
+    _cf_t_inicio += delta;   // regra G4 no avanco: a pausa nao conta como deslocamento
+    if (_cf_drop_ini)  _cf_drop_ini  += delta;
+    if (_cf_x13_desde) _cf_x13_desde += delta;
+    if (_cx_t_visto)   _cx_t_visto   += delta;
+    if (_cx_t_subida)  _cx_t_subida  += delta;
     if (_sec_t_pausa) _sec_t_pausa += delta;   // pausa inicial da secagem (10s)
 }
 

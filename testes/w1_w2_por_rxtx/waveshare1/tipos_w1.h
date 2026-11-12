@@ -137,6 +137,7 @@ int  proc_estado();
 const char* recuperacao_pedir_home();   // botao HOME do display durante a recuperacao de boot: libera o HOME (devolve a mensagem para a tela)
 const char* recuperacao_mensagem();     // aviso da recuperacao (aguardando o HOME / retirar o veiculo) ou nullptr
 void recuperacao_tick();
+void ocr_diag(uint16_t v);                     // reset_log_w1.h: relatorio do carrinho (diag_x10x12.h), ocorrencia tipo 7; v = (subtipo<<12)|dados
 void ocr_externa(uint8_t tipo, uint16_t valor);   // reset_log_w1.h: registra uma OCORRENCIA de fora (ex.: 6 = HOME falhou por comunicacao com a W2; valor = ms sem quadro)
 void rst_sw_motivo(uint8_t m);                 // reset_log_w1.h: marca um restart DELIBERADO (1 memoria critica, 2 radio travado) antes do ESP.restart
 void rst_evento_confirmado(const char* res);   // reset_log_w1.h: o display confirmou um evento tipo 4 (reinicio) da fila
