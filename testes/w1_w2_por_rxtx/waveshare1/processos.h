@@ -702,22 +702,10 @@ static int carr_fwd_tick() {
         DBG_PRINTLN("[CARRINHO] X13 (fim de curso frente) -> avanco encerrado");
         return SUB_DONE;
     }
-    if (!g_teste_seco) {                      // carro real (2026-11-12): fim de curso da frente tambem encerra o avanco (confirmado por 100 ms, so depois de 1,5 s de caminho)
-        if (X13 && (millis() - _cf_t_inicio) >= X13_FWD_APOS_MS) {
-            if (!_cf_x13_desde) _cf_x13_desde = millis();
-            else if (millis() - _cf_x13_desde >= X13_CONFIRMA_MS) {
-                vfd_stop(); SET_Y14(false);
-                if (x10_efetivo()) {   // G6 (2026-11-12): fim de curso da frente com o X10 ainda lendo o carro e contradicao: o retorno ate o X10 nao teria onde parar (e ia ate bater no fundo)
-                    DX_LOG("X13 (fim de curso da frente) com o X10 ainda aceso -> erro");
-                    dx_nuvem(true, 4, (uint16_t)min<uint32_t>(millis() - _cf_t_inicio, 4095UL)); dx_enviar();
-                    _cf_msg = "X13 (fim de curso) com X10 aceso";
-                    return SUB_ERR;
-                }
-                DX_LOG("X13 (fim de curso da frente) -> avanco encerrado (X10=%d)", (int)X10);
-                dx_nuvem(true, 4, (uint16_t)min<uint32_t>(millis() - _cf_t_inicio, 4095UL)); dx_enviar();
-                return SUB_DONE;
-            }
-        } else _cf_x13_desde = 0;
+    {   // X13 so e OBSERVADO no avanco (2026-11-12). A ideia de que ele e o fim de curso da FRENTE e que devia encerrar o avanco NAO se confirmou: nas 7 ocorrencias O2
+        // ("X13 com X10") ele acendeu SEMPRE durante os retornos, nunca no avanco; encerrar o avanco por ele deixava o X10 aceso e o retorno ia ate bater. Nada decide por ele.
+        static bool x13_ant = false; bool x13 = X13;
+        if (x13 != x13_ant) { x13_ant = x13; DX_LOG("X13 %s durante o avanco (X10=%d, %lums de deslocamento)", x13 ? "ACENDEU" : "apagou", (int)X10, (unsigned long)(millis() - _cf_t_inicio)); }
     }
     // REVERTIDO (achado em campo): essa confirmacao usava vfd_lendo_rodando(),
     // leitura BLOQUEANTE (ate 3x ~100ms) dentro do loop de controle — gerou
@@ -875,6 +863,11 @@ static int carr_rev_x10_tick() {
         vfd_stop(); SET_Y14(false);
         _cf_msg = "CARRO TRAVADO (retorno X10)";
         return SUB_ERR;
+    }
+    {   // (2026-11-12) so observa: transicoes dos sensores durante o retorno ate o X10 (serial [DX])
+        static uint8_t ant = 255; uint8_t at = (X10 ? 1 : 0) | (X12 ? 2 : 0) | (X13 ? 4 : 0) | (X0 ? 8 : 0);
+        if (_cr_t_ini && at != ant) { if (ant != 255) DX_LOG("retorno parcial: X10=%d X12=%d X13=%d X0=%d (saiu=%d)", (int)X10, (int)X12, (int)X13, (int)X0, (int)_cr_saiu); ant = at; }
+        if (millis() - _cr_t_ini < 100) ant = 255;   // zera no inicio de cada retorno
     }
     if (!x10_efetivo()) { _cr_saiu = true; _cr_t_x10_on = 0; }  // confirma saida + reseta constancia
     switch (_cr_st) {
