@@ -814,7 +814,7 @@ static uint32_t _cr_t_pulso = 0;   // watchdog X0: ultimo instante em que o X0 p
 static uint32_t _cr_t_ini   = 0;   // inicio do retorno parcial (registro)
 static uint32_t _cr_x12_desde = 0; // G7: desde quando o X12 le a regua de tras neste retorno (0 = nao le)
 static bool     _cr_x13_ini   = false;   // o X13 ja estava aceso ao comecar o retorno (carrinho encostado na regua da frente)
-#define X12_RET_PARCIAL_MS 100UL   // G7: X12 aceso por 100 ms no retorno parcial ja basta (chegar la e erro; cada ms a mais e carrinho andando para o fim de curso)
+#define X12_RET_PARCIAL_MS 1000UL  // G7: X12 aceso por 1000 ms no retorno parcial = passou do X12 (a regua e comprida e o carrinho as vezes demora para sair dela: 100 ms dava risco de erro falso; o X13 aceso para na hora)
 static bool     _cr_x0_ant  = false;
 
 static void carr_rev_x10_iniciar(uint16_t freq_hz10) {
