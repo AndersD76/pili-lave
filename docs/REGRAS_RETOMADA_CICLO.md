@@ -6,7 +6,7 @@ Objetivo (Giovani): **nunca perder uma lavagem**. Depois de um reinício ou qued
 
 ## 1. Geometria e sentidos (figura do Giovani + código)
 
-- **Sentido A = anti-horário. Sentido B = horário.** Deslocamento: **X12 = fim de curso sentido B (trás)**, **X13 = fim de curso sentido A (frente)**. **Y14 = contator do deslocamento**, **Y4 = contator do giro** (trava Y4↔Y14: nunca os dois).
+- **Sentido A = anti-horário. Sentido B = horário.** Deslocamento: **X12 = fim de curso sentido B (trás)**, **X13 = fim de curso sentido A (frente)**. **ATENÇÃO (Giovani, 2026-11-12): os sensores X12 e X13 ficam NO CARRINHO e há uma régua em cada ponta da máquina.** Se o carrinho passa do X12 (ex.: o retorno parcial sem o X10 apagar), o X12 lê a régua de trás e, mais adiante, o X13 (lado da frente do carrinho) lê essa MESMA régua: X13 aceso durante um retorno NÃO significa que foi ao fim de curso da frente; significa que o carrinho passou do X12 e está chegando ao fim de curso de trás. **Y14 = contator do deslocamento**, **Y4 = contator do giro** (trava Y4↔Y14: nunca os dois).
 - **Posição 1 do braço = X16 + X17 juntos** (HOME do braço). A leitura da **posição 2 pelo X17 foi retirada** das regras até ser corrigida (pendência P1): enquanto isso a posição 2 só é conhecida pela memória gravada, não por sensor.
 - **Giro normal** (pré-lavagem, espuma A, etc.): sempre sentido A, na ida (1→2) e na volta (2→1).
 - **Giro triplo da Alta Pressão** (código + confirmado pelo Giovani para a ida): **ida, com o carrinho no X12: 1→2 em A, 2→1 em B, 1→2 em A.** A volta usa a mesma sequência de sentidos (A, B, A), começando na posição 2: **confirmado pelo Giovani (2026-11-02): depois que volta ao X10, faz o giro triplo.**
