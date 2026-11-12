@@ -812,6 +812,9 @@ static uint32_t _cr_t_x10_on = 0;    // instante em que X10 comecou a ler ativo 
 
 static uint32_t _cr_t_pulso = 0;   // watchdog X0: ultimo instante em que o X0 pulsou
 static uint32_t _cr_t_ini   = 0;   // inicio do retorno parcial (registro)
+static uint32_t _cr_x12_desde = 0; // G7: desde quando o X12 le a regua de tras neste retorno (0 = nao le)
+static bool     _cr_x13_ini   = false;   // o X13 ja estava aceso ao comecar o retorno (carrinho encostado na regua da frente)
+#define X12_RET_PARCIAL_MS 100UL   // G7: X12 aceso por 100 ms no retorno parcial ja basta (chegar la e erro; cada ms a mais e carrinho andando para o fim de curso)
 static bool     _cr_x0_ant  = false;
 
 static void carr_rev_x10_iniciar(uint16_t freq_hz10) {
@@ -828,7 +831,7 @@ static void carr_rev_x10_iniciar(uint16_t freq_hz10) {
                            // aceitar de primeira uma leitura residual/fantasma)
     _cr_t_x10_on = 0;
     _cr_t_pulso  = millis();              // arma o watchdog do X0 (carro travado no meio-retorno)
-    _cr_t_ini    = millis(); dx_zero();
+    _cr_t_ini    = millis(); dx_zero(); _cr_x12_desde = 0; _cr_x13_ini = X13;
     DX_LOG("retorno parcial ate o X10 inicia: X10=%d X12=%d X13=%d (precisa ver o X10 apagar e acender de novo)", (int)X10, (int)X12, (int)X13);
     _cr_x0_ant   = X0;
 }
@@ -845,12 +848,17 @@ static int carr_rev_x10_tick() {
         DBG_PRINTLN("[CARRINHO] X12 (fim de curso tras) no retorno parcial -> encerrado");
         return SUB_DONE;
     }
-    if (!g_teste_seco && x12_estavel()) {     // G7 (2026-11-12): carro REAL chegou ao X12 sem achar o X10 -> PARA e da erro. Antes so valia no SECO e o carrinho seguia ate bater no fim de curso
-        vfd_stop(); SET_Y14(false);
-        DX_LOG("retorno parcial chegou ao X12 sem achar o X10 (X10=%d X13=%d): para e da erro", (int)X10, (int)X13);
-        dx_nuvem(true, 5, (uint16_t)min<uint32_t>(millis() - _cr_t_ini, 4095UL)); dx_enviar();
-        _cf_msg = "Retorno parcial: X12 sem achar o X10";
-        return SUB_ERR;
+    if (!g_teste_seco) {   // G7 (2026-11-12): carro REAL, o retorno ate o X10 NAO pode chegar a regua de tras. Os sensores X12 e X13 ficam no carrinho e ha uma regua em cada ponta da maquina:
+        // se passou do X12, o X12 le a regua de tras e, mais adiante, o X13 (lado da frente do carrinho) le essa mesma regua. Qualquer um dos dois = PARA e da erro (antes so valia no SECO e o carrinho ia ate bater).
+        if (X12) { if (!_cr_x12_desde) _cr_x12_desde = millis(); } else _cr_x12_desde = 0;
+        bool passou13 = X13 && !_cr_x13_ini;
+        if (passou13 || (_cr_x12_desde && (millis() - _cr_x12_desde) >= X12_RET_PARCIAL_MS)) {
+            vfd_stop(); SET_Y14(false);
+            DX_LOG("retorno parcial passou do X12 sem achar o X10 (X10=%d X12=%d X13=%d): para e da erro", (int)X10, (int)X12, (int)X13);
+            dx_nuvem(true, 5, (uint16_t)min<uint32_t>(millis() - _cr_t_ini, 4095UL)); dx_enviar();
+            _cf_msg = "Retorno parcial: passou do X12 sem X10";
+            return SUB_ERR;
+        }
     }
     // REVERTIDO — ver nota em carr_fwd_tick()/giro_tick() (leitura bloqueante
     // causou essa exata mensagem de erro falso num teste real).
