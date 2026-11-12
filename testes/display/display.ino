@@ -44,11 +44,13 @@ static bool     g_cfg_ok[6][4];
 
 static void wifi_on_recv(const uint8_t* data, int len);    // wifi_tecnico.h
 static void nd_on_recv(const uint8_t* data, int len);      // nuvem_display.h
+static void ota_display_recv(const uint8_t* data, int len);   // atualizacao remota (abaixo)
 
 static void on_recv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
     if (len < (int)sizeof(CabEspNow)) return;
     const CabEspNow* c = (const CabEspNow*)data;
     if (c->id_maquina != ID_MAQUINA) return;
+    if (c->tipo >= MSG_OTA_INICIO && c->tipo <= MSG_OTA_ACK) { ota_display_recv(data, len); return; }   // atualizacao remota (camera <-> display <-> W1)
     if (c->origem == ORIGEM_CAMERA && (c->tipo == MSG_HB_RESP || c->tipo == MSG_EVT_ACK)) { nd_on_recv(data, len); return; }   // nuvem: resposta do backend
     if (c->origem == ORIGEM_WAVE1 && c->tipo == MSG_NV_EVT) { nd_on_recv(data, len); return; }                                   // evento da W1
     if (c->origem == ORIGEM_CAMERA || (c->origem == ORIGEM_WAVE1 && c->tipo == MSG_CANAL)) { wifi_on_recv(data, len); return; }   // camera / "oi" da W1
@@ -81,6 +83,45 @@ static inline esp_err_t tx_send(const uint8_t* mac, const uint8_t* dado, size_t 
 static void on_send_cb(const esp_now_send_info_t* info, esp_now_send_status_t st) {
     (void)info; (void)st;
     g_tx_pend = 0; g_tx_cb_ms = millis();                // o radio confirmou (ok ou falha): o envio NAO esta travado
+}
+
+// ---- ATUALIZACAO REMOTA (2026-11-09): a camera baixa o firmware e entrega por ESP-NOW. O display (1) ATUALIZA A SI MESMO e (2) e o RELE da W1:
+// camera -> display -> W1 (reescreve a origem para DISPLAY, que a W1 aceita) e W1 -> display -> camera. Ver ota_msg.h / ota_alvo.h. O que chega no
+// callback so e copiado; o envio e a gravacao acontecem no loop().
+#define OTA_MEU_ALVO   OTA_ALVO_DISPLAY
+#define OTA_MEU_ORIGEM ORIGEM_DISPLAY
+#define OTA_FW_VERSAO  1          // SOBE a cada firmware publicado (server/public/firmware/display-version.json); o rodando so aceita versao MAIOR
+static bool ota_pode_agora() {    // o display pode reiniciar se a W1 nao estiver em ciclo/movimento (W1 sem contato: nao ha ciclo que dependa dele)
+    bool fresco = g_st_ok && (millis() - g_st_ms) < 3000UL;
+    if (!fresco) return true;
+    return g_st.estado_auto == 0 && !g_st.rodando && g_st.manual_mov == 0 && g_st.man_saidas == 0 && g_st.home_estado == 0;
+}
+static void ota_tx_ack(const MsgOtaAck* a) { esp_now_send((uint8_t*)MAC_CAMERA, (uint8_t*)a, sizeof(*a)); }
+#include "ota_alvo.h"
+static uint8_t       g_rel_buf[sizeof(MsgOtaDados)];
+static volatile int  g_rel_len = 0;
+static volatile bool g_rel_novo = false;
+static uint8_t       g_rel_dest = 0;      // 1 = camera, 2 = W1
+static void ota_display_recv(const uint8_t* data, int len) {   // callback do ESP-NOW: so copia
+    if (len < (int)sizeof(CabEspNow) + 1) return;
+    const CabEspNow* c = (const CabEspNow*)data;
+    uint8_t alvo = data[sizeof(CabEspNow)];
+    if (c->tipo == MSG_OTA_ACK) {                                  // resposta da W1 -> camera
+        if (c->origem == ORIGEM_WAVE1 && !g_rel_novo) { memcpy(g_rel_buf, data, len > (int)sizeof(g_rel_buf) ? (int)sizeof(g_rel_buf) : len); g_rel_len = len; g_rel_dest = 1; g_rel_novo = true; }
+        return;
+    }
+    if (c->origem != ORIGEM_CAMERA) return;
+    if (alvo == OTA_ALVO_W1) {                                     // camera -> W1
+        if (!g_rel_novo) { memcpy(g_rel_buf, data, len > (int)sizeof(g_rel_buf) ? (int)sizeof(g_rel_buf) : len); ((CabEspNow*)g_rel_buf)->origem = ORIGEM_DISPLAY; g_rel_len = len; g_rel_dest = 2; g_rel_novo = true; }
+    } else if (alvo == OTA_ALVO_DISPLAY) {
+        ota_on_recv(data, len);                                    // para o proprio display
+    }
+}
+static void ota_rele_tick() {
+    if (!g_rel_novo) return;
+    uint8_t b[sizeof(MsgOtaDados)]; int n = g_rel_len; if (n > (int)sizeof(b)) n = (int)sizeof(b);
+    memcpy(b, g_rel_buf, n); uint8_t dest = g_rel_dest; g_rel_novo = false;
+    esp_now_send((uint8_t*)(dest == 2 ? MAC_WAVE1 : MAC_CAMERA), b, n);
 }
 
 // Sem confirmacao no ESP-NOW: comandos criticos (PARAR) saem repetidos.
@@ -1199,6 +1240,9 @@ void loop() {
     }
     wifi_tick();         // busca de redes / migracao de canal (maquina de estados, fora do LVGL)
     cad_tick();          // cadastro da maquina (busca de unidade, cadastro, identidade)
+    ota_rele_tick();     // atualizacao remota: repassa camera <-> W1
+    ota_tick();          // atualizacao remota do proprio display
+    ota_validar_tick();  // confirma o firmware novo depois de 60 s de pe (senao o bootloader volta ao anterior)
     nd_tick();           // nuvem: heartbeat/eventos com a camera e ordens para a W1
     seq_sync_tick();     // sequencia dos modelos alterada -> evento para a nuvem
     ct_sync_tick();      // contadores de lavagem (referencia) -> nuvem confere e avisa o admin

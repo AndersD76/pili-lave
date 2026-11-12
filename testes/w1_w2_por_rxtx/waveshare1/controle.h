@@ -297,6 +297,7 @@ static uint32_t g_man_sai_t0 = 0;
 static QueueHandle_t   g_fila_cfg = nullptr;   // elementos CfgItem (o callback so enfileira; NVS/envio no loop)
 static QueueHandle_t   g_fila_cmd = nullptr;   // elementos uint16_t: acao | (arg << 8)
 void processa_comandos();   // definida mais abaixo
+static void ota_on_recv(const uint8_t* data, int len);   // ota_alvo.h (atualizacao remota: so copia o pacote)
 
 // ---- Movimento MANUAL segurando o botao (homem morto) ----
 // O callback so anota "estou segurando" (g_manual_cmd/g_manual_ms). Quem move o motor e o loop
@@ -651,6 +652,8 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* 
         else if (g_fila_cmd) { uint16_t a = (uint16_t)m->acao | ((uint16_t)m->arg << 8); xQueueSend(g_fila_cmd, &a, 0); }
     } else if (cab->tipo == MSG_NV_EVT_ACK || cab->tipo == MSG_NV_ORDEM) {        // nuvem (via display): confirmacao de evento e ordens
         nuvem_on_recv(data, len);
+    } else if (cab->tipo >= MSG_OTA_INICIO && cab->tipo <= MSG_OTA_FIM) {          // atualizacao remota (camera -> display -> W1): so copia
+        ota_on_recv(data, len);
     } else if (cab->tipo == MSG_CANAL && len >= (int)sizeof(MsgCanal)) {          // display: "vai para o canal N"
         const MsgCanal* m = (const MsgCanal*)data;
         if (m->canal >= 1 && m->canal <= 13) g_canal_pedido = m->canal;
