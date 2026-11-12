@@ -47,6 +47,15 @@
 // Resolução mantida (1600x1200, legibilidade da placa) -- só mais
 // compressão JPEG (12->20, ~100-130KB->bem menor).
 #define PILI_JPEG_QUALITY    20
+// v9: quando o envio da foto falha em sequência, a câmera comprime mais (número maior = arquivo menor) até este limite,
+// subindo PILI_Q_PASSO a cada 2 falhas seguidas, e volta um passo depois de PILI_Q_OK_PARA_VOLTAR fotos seguidas entregues.
+#define PILI_JPEG_QUALITY_MAX   40
+#define PILI_Q_PASSO            10
+#define PILI_Q_OK_PARA_VOLTAR   20
+// v9: potência de transmissão do Wi-Fi. Era 11 dBm fixo (herdado do firmware original, sem motivo registrado). O sinal que a
+// câmera RECEBE era bom (-60 dBm), mas a foto falhava no envio: com 11 dBm o roteador ouve a câmera ~8 dB mais fraco do que ela
+// o ouve. 15 dBm é um meio-termo. Se aparecer reinício por "QUEDA-DE-TENSAO" no diagnóstico, a fonte não aguenta: voltar a 11.
+#define PILI_WIFI_TX            WIFI_POWER_15dBm
 #define PILI_HTTP_TIMEOUT    15000  // ms
 #define PILI_HB_INTERVALO_MS 10000  // heartbeat a cada 10s
 #define PILI_CANAL_ANUNCIO_MS 1000  // anuncia MSG_CANAL no canal atual a cada 1s
@@ -79,7 +88,7 @@
 //   se a gravação fechar certinho (senão continua rodando o firmware atual
 //   -- o ESP32 nunca troca pra uma imagem incompleta/corrompida sozinho).
 //   SUBIR A VERSÃO aqui a cada firmware novo, senão ele nunca se atualiza.
-#define PILI_FW_VERSION       8   // v8: diagnostico da camera para a nuvem (POST /api/machine/camera-diag: Wi-Fi, memoria, falhas de foto/heartbeat, motivo do reinicio) — so observa, nao muda nenhuma decisao. v7: evento tipo 4 (reinicio das placas) -> /api/machine/reset-log; hora por NTP para a W1 (MSG_HORA, 41). v6: informa ao display a rede Wi-Fi conectada (MSG_REDE_INFO). v5: comando de canal do display, re-sync automatico, respostas da nuvem tambem para a W1
+#define PILI_FW_VERSION       9   // v9: foto menor quando o envio falha em sequencia, potencia de transmissao 15 dBm e diagnostico com tamanho/tempo de envio/temperatura. v8: v8: diagnostico da camera para a nuvem (POST /api/machine/camera-diag: Wi-Fi, memoria, falhas de foto/heartbeat, motivo do reinicio) — so observa, nao muda nenhuma decisao. v7: evento tipo 4 (reinicio das placas) -> /api/machine/reset-log; hora por NTP para a W1 (MSG_HORA, 41). v6: informa ao display a rede Wi-Fi conectada (MSG_REDE_INFO). v5: comando de canal do display, re-sync automatico, respostas da nuvem tambem para a W1
 #define PILI_OTA_VERSION_PATH "/firmware/camera-version.json"
 #define PILI_OTA_BIN_PATH     "/firmware/camera.bin"
 #define PILI_OTA_CHECK_MS     (10UL * 60UL * 1000UL)  // confere a cada 10min

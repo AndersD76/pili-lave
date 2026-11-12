@@ -12,6 +12,9 @@ const Body = z.object({
   fOk: n, fFalha: n, fSeg: n, fCode: n,
   hbOk: n, hbFalha: n, hbCode: n,
   quedas: n, scans: n, descMaxS: n, fbFalhas: n,
+  // v9: tamanho das fotos (KB), tempo de envio (ms), temperatura do chip, potência de transmissão (dBm), qualidade JPEG e fotos reduzidas
+  kbMed: n.optional(), kbMax: n.optional(), tOk: n.optional(), tOkMax: n.optional(), tFal: n.optional(),
+  temp: n.optional(), txp: n.optional(), q: n.optional(), fRed: n.optional(),
 });
 
 /**

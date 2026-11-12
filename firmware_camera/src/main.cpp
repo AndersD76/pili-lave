@@ -53,6 +53,8 @@ struct CamDiag {
   uint32_t quedasWifi, scans, fbFalhas, descMaxS;
   int32_t  rssiMin, rssiMax, rssiSoma; uint32_t rssiN;
   uint32_t heapMin, blocoMin;
+  // v9: tamanho das fotos e tempo de cada envio (para saber se a foto falha por ser grande ou por a rede estar lenta)
+  uint32_t fotoKbSoma, fotoKbMax, fotoN, tOkSomaMs, tOkMaxMs, tFalhaSomaMs, fotoReduzidas;
 };
 static CamDiag g_dg;   // zerado; dgZera() (no setup) poe os minimos/maximos em valores iniciais
 static esp_reset_reason_t g_dg_rst = ESP_RST_UNKNOWN;   // motivo do ultimo reinicio (lido no setup)
@@ -70,6 +72,33 @@ static void dgZera() {
   g_dg.quedasWifi = g_dg.scans = g_dg.fbFalhas = g_dg.descMaxS = 0;
   g_dg.rssiMin = 127; g_dg.rssiMax = -127; g_dg.rssiSoma = 0; g_dg.rssiN = 0;
   g_dg.heapMin = 0xFFFFFFFFUL; g_dg.blocoMin = 0xFFFFFFFFUL;
+  g_dg.fotoKbSoma = g_dg.fotoKbMax = g_dg.fotoN = g_dg.tOkSomaMs = g_dg.tOkMaxMs = g_dg.tFalhaSomaMs = g_dg.fotoReduzidas = 0;
+}
+
+/* ===================== FOTO MENOR QUANDO O ENVIO FALHA (v9) =====================
+ * O diagnostico da v8 mostrou que a foto (~100 KB) falha no meio do envio (erro -3) em periodos longos, enquanto o heartbeat (pequeno)
+ * passa. Entao, quando o envio falha em sequencia, a camera comprime mais o JPEG (numero de qualidade MAIOR = arquivo menor) ate o envio
+ * voltar; depois de varias fotos seguidas entregues, volta um degrau por vez a qualidade normal. A resolucao (1600x1200) nao muda. */
+static int     g_q_atual  = PILI_JPEG_QUALITY;
+static uint8_t g_q_ok_seg = 0;
+static void qualidadeAplicar() {
+  sensor_t* s = esp_camera_sensor_get();
+  if (s) s->set_quality(s, g_q_atual);
+  Serial.printf("[cam] qualidade JPEG agora %d (normal %d, limite %d)\n", g_q_atual, PILI_JPEG_QUALITY, PILI_JPEG_QUALITY_MAX);
+}
+static void qualidadeAposEnvio(bool ok, uint32_t falhasSeguidas) {
+  if (ok) {
+    if (g_q_atual > PILI_JPEG_QUALITY && ++g_q_ok_seg >= PILI_Q_OK_PARA_VOLTAR) {
+      g_q_ok_seg = 0; g_q_atual -= PILI_Q_PASSO; if (g_q_atual < PILI_JPEG_QUALITY) g_q_atual = PILI_JPEG_QUALITY;
+      qualidadeAplicar();
+    }
+  } else {
+    g_q_ok_seg = 0;
+    if (falhasSeguidas >= 2 && (falhasSeguidas % 2) == 0 && g_q_atual < PILI_JPEG_QUALITY_MAX) {
+      g_q_atual += PILI_Q_PASSO; if (g_q_atual > PILI_JPEG_QUALITY_MAX) g_q_atual = PILI_JPEG_QUALITY_MAX;
+      qualidadeAplicar();
+    }
+  }
 }
 
 /* ===================== HARD RESET no boot (via firmware) =====================
@@ -481,7 +510,7 @@ static void onRecv(const uint8_t* mac, const uint8_t* data, int len) { onRecvImp
 
 static void espnowInit() {
   WiFi.mode(WIFI_STA);
-  WiFi.setTxPower(WIFI_POWER_11dBm);
+  WiFi.setTxPower(PILI_WIFI_TX);   // v9: era 11 dBm fixo (ver pili_cam_config.h)
   esp_wifi_set_mac(WIFI_IF_STA, (uint8_t*)MAC_CAMERA);
   esp_wifi_set_channel(g_canal_radio, WIFI_SECOND_CHAN_NONE);
   if (esp_now_init() != ESP_OK) { Serial.println("[espnow] init FALHOU"); return; }
@@ -1076,6 +1105,13 @@ static void enviarDiagnostico() {
   b += ",\"hbOk\":" + String(g_dg.hbOk) + ",\"hbFalha\":" + String(g_dg.hbFalha) + ",\"hbCode\":" + String((int)g_dg.hbUltCode);
   b += ",\"quedas\":" + String(g_dg.quedasWifi) + ",\"scans\":" + String(g_dg.scans);
   b += ",\"descMaxS\":" + String(g_dg.descMaxS) + ",\"fbFalhas\":" + String(g_dg.fbFalhas);
+  // v9: tamanho medio/maximo das fotos (KB), tempo medio/maximo de um envio que deu certo e tempo medio ate falhar (ms),
+  //     temperatura interna do chip (C, imprecisa: vale a TENDENCIA), potencia de transmissao em uso (dBm), qualidade JPEG atual e fotos enviadas reduzidas
+  b += ",\"kbMed\":" + String(g_dg.fotoN ? g_dg.fotoKbSoma / g_dg.fotoN : 0) + ",\"kbMax\":" + String(g_dg.fotoKbMax);
+  b += ",\"tOk\":" + String(g_dg.fotoOk ? g_dg.tOkSomaMs / g_dg.fotoOk : 0) + ",\"tOkMax\":" + String(g_dg.tOkMaxMs);
+  b += ",\"tFal\":" + String(g_dg.fotoFalha ? g_dg.tFalhaSomaMs / g_dg.fotoFalha : 0);
+  b += ",\"temp\":" + String((int)temperatureRead()) + ",\"txp\":" + String((int)WiFi.getTxPower() / 4);
+  b += ",\"q\":" + String(g_q_atual) + ",\"fRed\":" + String(g_dg.fotoReduzidas);
   b += "}";
   HTTPClient http; http.setTimeout(PILI_HTTP_TIMEOUT);
   WiFiClientSecure tls; tls.setInsecure(); tls.setHandshakeTimeout(PILI_HTTP_TIMEOUT / 1000);
@@ -1166,7 +1202,7 @@ static bool cameraInit() {
   c.pin_vsync = VSYNC_GPIO; c.pin_href = HREF_GPIO; c.pin_pclk = PCLK_GPIO;
   c.xclk_freq_hz = 20000000; c.pixel_format = PIXFORMAT_JPEG;
   c.frame_size = psramFound() ? FRAMESIZE_UXGA : FRAMESIZE_XGA; // 1600x1200: caracteres da placa legíveis
-  c.jpeg_quality = PILI_JPEG_QUALITY;
+  c.jpeg_quality = g_q_atual;
   c.fb_count = psramFound() ? 2 : 1; // 2 buffers na PSRAM evitam FB-OVF em UXGA
   c.grab_mode = CAMERA_GRAB_LATEST;
   Serial.printf("[cam] iniciando (psram=%d, heap=%u max_bloco=%u)...\n",
@@ -1222,17 +1258,26 @@ static bool enviarFrame(camera_fb_t *fb) {
   // derrubava a câmera NO MEIO do envio da foto, mesmo progredindo normal).
   esp_task_wdt_delete(NULL);
   g_lpr_enviando = true;   // pausa o anuncio ESP-NOW de canal durante o envio (ver loop())
+  uint32_t tEnvio = millis();
   int code = http.POST(fb->buf, fb->len);
+  tEnvio = millis() - tEnvio;
   g_lpr_enviando = false;
   esp_task_wdt_add(NULL);
   bool ok = (code >= 200 && code < 300); // 202 = aceito p/ análise em segundo plano
+  {   // v9: tamanho e tempo de cada tentativa
+    uint32_t kb = (uint32_t)(fb->len / 1024);
+    g_dg.fotoN++; g_dg.fotoKbSoma += kb; if (kb > g_dg.fotoKbMax) g_dg.fotoKbMax = kb;
+    if (ok) { g_dg.tOkSomaMs += tEnvio; if (tEnvio > g_dg.tOkMaxMs) g_dg.tOkMaxMs = tEnvio; if (g_q_atual > PILI_JPEG_QUALITY) g_dg.fotoReduzidas++; }
+    else g_dg.tFalhaSomaMs += tEnvio;
+  }
   if (ok) { g_dg.fotoOk++; g_dg.fotoSeguidas = 0; }
   else {
     g_dg.fotoFalha++; g_dg.fotoUltCode = code; g_dg.fotoSeguidas++;
     if (g_dg.fotoSeguidas > g_dg.fotoSeguidasMax) g_dg.fotoSeguidasMax = g_dg.fotoSeguidas;
     if (g_dg.fotoSeguidas >= 3) g_dg_pedido = true;   // 3 fotos seguidas sem subir: relata sem esperar os 5 min
   }
-  if (ok) Serial.printf("[lpr] %uKB -> %s\n", (unsigned)(fb->len / 1024), http.getString().substring(0, 140).c_str());
+  qualidadeAposEnvio(ok, g_dg.fotoSeguidas);
+  if (ok) Serial.printf("[lpr] %uKB em %lums -> %s\n", (unsigned)(fb->len / 1024), (unsigned long)tEnvio, http.getString().substring(0, 140).c_str());
   else    Serial.printf("[lpr] envio falhou (%d: %s) | rssi=%d heap=%u max_bloco=%u\n",
                          code, http.errorToString(code).c_str(), (int)WiFi.RSSI(),
                          (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
