@@ -657,7 +657,7 @@ static uint32_t _cf_drop_ini  = 0;   // X10 apagado: desde quando (0 = aceso)
 static uint8_t  _cf_drop_rel  = 0;   // o apagao ja foi relatado (a janela de 3 s acabou com ele ainda apagado)
 static uint32_t _cf_x13_desde = 0;
 static bool     _cf_x13_fim   = false;   // (2026-11-13, pedido do Giovani) o avanco tambem termina quando o X13 le a regua da frente (so a Cor Magica pede isso)
-#define COR_MAGICA_DWELL_MS 5000UL   // tempo que a Cor Magica SEGUE depois de perder o X10 (era 1000 ms), ou ate o X13, o que vier primeiro; depois volta
+#define COR_MAGICA_DWELL_MS 3000UL   // tempo que a Cor Magica SEGUE depois de perder o X10 (era 1000 ms; 3 s por pedido do Giovani em 13/11), ou ate o X13, o que vier primeiro; depois volta
 
 // Garante o motor PARADO DE VEZ antes de um novo movimento. O carrinho costuma
 // vir logo apos o giro (REV); arrancar sem o motor parar = REVERSAO de sentido
@@ -1388,7 +1388,7 @@ static bool tick_cor_magica() {
     // ANTES (comportamento anterior; para voltar a ele, descomente esta linha e apague a de baixo):
     // return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, espera_slot_ms((uint32_t)g_config.atraso_cor_magica * 1000));
     return _proc_simples(false, COR_MAGICA_DWELL_MS, 6, 7, _off_cm, 2000, espera_slot_ms((uint32_t)g_config.atraso_cor_magica * 1000),
-                         nullptr, nullptr, COR_MAGICA_DESLIGA_NA_VOLTA != 0, true);   // segue 5 s depois do X10 (era 1 s) ou ate o X13
+                         nullptr, nullptr, COR_MAGICA_DESLIGA_NA_VOLTA != 0, true);   // segue 3 s depois do X10 (era 1 s) ou ate o X13
 }
 
 // ---- Cera de agua: Y10 + Y7 + Y0, SEM giro (velocidade = etapa 1, antes "Spray agua") ----
