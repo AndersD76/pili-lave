@@ -28,7 +28,7 @@
 // ---- ATUALIZACAO REMOTA (2026-11-09): a camera entrega o firmware novo pelo display; ver ota_alvo.h ----
 #define OTA_MEU_ALVO   OTA_ALVO_W1
 #define OTA_MEU_ORIGEM ORIGEM_WAVE1
-#define OTA_FW_VERSAO  3          // SOBE a cada firmware publicado (server/public/firmware/w1-version.json); o rodando so aceita versao MAIOR
+#define OTA_FW_VERSAO  4          // SOBE a cada firmware publicado (server/public/firmware/w1-version.json); o rodando so aceita versao MAIOR
 static bool ota_pode_agora() {    // so com a maquina PARADA e em repouso
     return g_estado_auto == AUTO_IDLE && !g_teste_rodando && !home_rodando() && !g_manual_ativo && !recuperacao_ativa() && !g_parar_pedido && g_man_sai == 0;
 }

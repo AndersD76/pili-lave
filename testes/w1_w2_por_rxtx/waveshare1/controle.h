@@ -677,6 +677,39 @@ static void on_recv_controlador(const esp_now_recv_info_t* info, const uint8_t* 
 //   bit0 valvula (Y6)  bit1 espuma A (Y2+Y7)  bit2 espuma B (Y3+Y7)  bit3 cor magica (Y1+Y0+Y7)  bit4 secagem (Y5)  bit5 cera (Y10+Y7)
 // A bomba de espuma (Y7) e o compressor (Y5) so ligam com o botao BOMBA em ON (tela TECNICO), igual aos ciclos.
 // A bomba de alta pressao (Y13) NAO e manual aqui: continua so no ciclo/teste.
+// ---- TESTE DO SAJ POR RS-485 (2026-11-13, pedido do Giovani) ----
+// Dentro do TESTE DA BOMBA (botao "BOMBA TESTE (20 s)" da tela TECNICO, acao 66) a frequencia do SAJ muda pelo RS-485: 24 Hz (0-5 s), 35 Hz (5-10 s) e de volta a
+// 24 Hz (10-20 s). A cada mudanca a W1 ESCREVE o registrador 0x1000 (mesmo com TESTE_SAJ_POR_RS485 = 0, que continua desligando a escrita no ciclo normal) e 2,5 s
+// depois LE a frequencia de saida (0x1001) e mostra na tela e na serial ([SAJ-TESTE]). Se a frequencia lida nao acompanhar o pedido, o inversor NAO esta aceitando a
+// frequencia pelo RS-485 (parametros de fonte de comando/frequencia, endereco 4, velocidade e paridade do SAJ) e e isso que falta configurar nele.
+static uint8_t  _saj_t_fase = 255, _saj_t_lido = 0;
+static uint32_t _saj_t_ini = 0;
+static float    _saj_t_pedido = 0;
+static char     _saj_t_msg[48] = "";
+void saj_teste_tick(uint32_t dt) {
+    uint8_t fase = dt < 5000UL ? 0 : (dt < 10000UL ? 1 : 2);
+    float alvo = (fase == 1) ? 35.0f : 24.0f;
+    if (fase != _saj_t_fase) {
+        _saj_t_fase = fase; _saj_t_lido = 0; _saj_t_ini = millis(); _saj_t_pedido = alvo;
+        uint16_t reg = (uint16_t)saj_freq_para_registrador(alvo);
+        bool ok = false;
+        for (uint8_t i = 0; i < 3 && !ok; i++) { ok = mb_write_reg(MB_ADDR_SAJ, SAJ_REG_FREQ, reg); if (!ok) delay(15); }
+        DBG_PRINTF("[SAJ-TESTE] fase %u: pede %.1f Hz (reg 0x1000 = %u) -> escrita %s\n", (unsigned)fase, alvo, (unsigned)reg, ok ? "OK" : "SEM RESPOSTA");
+        if (!ok) { snprintf(_saj_t_msg, sizeof(_saj_t_msg), "SAJ %.0f Hz: sem resposta no RS-485", alvo); g_manual_msg = _saj_t_msg; g_manual_msg_ms = millis(); _saj_t_lido = 1; }
+    }
+    if (!_saj_t_lido && millis() - _saj_t_ini >= 2500UL) {
+        _saj_t_lido = 1;
+        uint16_t sai[1] = {0}, aj[1] = {0};
+        bool l1 = false, l2 = false;
+        for (uint8_t i = 0; i < 3 && !l1; i++) { l1 = mb_read_regs(MB_ADDR_SAJ, SAJ_REG_FREQ_OUT, 1, sai); if (!l1) delay(10); }
+        for (uint8_t i = 0; i < 3 && !l2; i++) { l2 = mb_read_regs(MB_ADDR_SAJ, SAJ_REG_FREQ, 1, aj); if (!l2) delay(10); }
+        DBG_PRINTF("[SAJ-TESTE] fase %u: pediu %.1f Hz | 0x1001 (saida) = %s%u | 0x1000 (ajuste) = %s%u\n", (unsigned)_saj_t_fase, _saj_t_pedido,
+                   l1 ? "" : "SEM LEITURA ", (unsigned)sai[0], l2 ? "" : "SEM LEITURA ", (unsigned)aj[0]);
+        if (l1) snprintf(_saj_t_msg, sizeof(_saj_t_msg), "SAJ pediu %.0f Hz | saida lida %.1f Hz", _saj_t_pedido, sai[0] / 100.0f);
+        else    snprintf(_saj_t_msg, sizeof(_saj_t_msg), "SAJ pediu %.0f Hz | sem leitura da saida", _saj_t_pedido);
+        g_manual_msg = _saj_t_msg; g_manual_msg_ms = millis();
+    }
+}
 #define MAN_SAI_TETO_MS 60000
 void man_sai_zera() { g_man_sai = 0; }
 static void man_sai_aplicar(uint8_t novo) {
@@ -699,8 +732,10 @@ static void man_sai_aplicar(uint8_t novo) {
 }
 static bool man_sai_livre() { return g_estado_auto == AUTO_IDLE && !g_teste_rodando && !home_rodando() && !g_manual_ativo; }
 void man_sai_tick() {
+    if (!(g_man_sai & 0x40)) _saj_t_fase = 255;         // teste da bomba desligado: a proxima vez recomeca do 24 Hz
     if (!g_man_sai) return;
     if (!man_sai_livre()) { g_man_sai = 0; return; }   // ciclo/HOME/movimento assumiram (eles desligam as saidas no inicio)
+    if (g_man_sai & 0x40) saj_teste_tick(millis() - g_man_sai_t0);   // TESTE DO SAJ POR RS-485 durante o teste da bomba
     uint32_t teto = (g_man_sai & 0x40) ? 20000UL : MAN_SAI_TETO_MS;     // a bomba de alta pressao desliga em 20 s
     if (millis() - g_man_sai_t0 > teto) {
         man_sai_aplicar(0);
