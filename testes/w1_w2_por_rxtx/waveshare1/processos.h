@@ -656,6 +656,8 @@ static uint32_t _cf_t_inicio  = 0;   // instante em que o avanco comecou (os cro
 static uint32_t _cf_drop_ini  = 0;   // X10 apagado: desde quando (0 = aceso)
 static uint8_t  _cf_drop_rel  = 0;   // o apagao ja foi relatado (a janela de 3 s acabou com ele ainda apagado)
 static uint32_t _cf_x13_desde = 0;
+static bool     _cf_x13_fim   = false;   // (2026-11-13, pedido do Giovani) o avanco tambem termina quando o X13 le a regua da frente (so a Cor Magica pede isso)
+#define COR_MAGICA_DWELL_MS 5000UL   // tempo que a Cor Magica SEGUE depois de perder o X10 (era 1000 ms), ou ate o X13, o que vier primeiro; depois volta
 
 // Garante o motor PARADO DE VEZ antes de um novo movimento. O carrinho costuma
 // vir logo apos o giro (REV); arrancar sem o motor parar = REVERSAO de sentido
@@ -675,7 +677,7 @@ static bool vfd_parar_de_vez(uint32_t ms) {
 // processos com giro (Pre-Lavagem, Alta Pressao, Espuma A) isso e o 20Hz
 // fixo (CARRINHO_X10_FREQ_HZ10); nos demais e a mesma freq_antes_x10 (sem
 // troca nenhuma).
-static void carr_fwd_iniciar(uint16_t freq_antes_x10, uint16_t freq_apos_x10, uint32_t dwell_ms) {
+static void carr_fwd_iniciar(uint16_t freq_antes_x10, uint16_t freq_apos_x10, uint32_t dwell_ms, bool x13_fim = false) {
     DBG_PRINTF("[CARRINHO] FWD freq_antes_x10=%.1fHz freq_apos_x10=%.1fHz dwell=%ums\n",
                   freq_antes_x10 / 10.0f, freq_apos_x10 / 10.0f, (unsigned)dwell_ms);  // TEMP debug
     if (vfd_parar_de_vez(VFD_SETTLE_MS)) return;   // motor parado antes de reverter p/ FWD (PARAR cancela)
@@ -692,7 +694,7 @@ static void carr_fwd_iniciar(uint16_t freq_antes_x10, uint16_t freq_apos_x10, ui
     _cf_t_x10_lost = 0;                   // reinicia o debounce da perda do X10
     g_x10_ausente_ok = false;
     _x10sim_modo = 1; _x10sim_t0 = millis();   // bancada: X10 simulado (avanco)
-    _cf_t_inicio = millis(); _cf_drop_ini = 0; _cf_drop_rel = 0; _cf_x13_desde = 0;
+    _cf_t_inicio = millis(); _cf_drop_ini = 0; _cf_drop_rel = 0; _cf_x13_desde = 0; _cf_x13_fim = x13_fim;
     dx_zero(); DX_LOG("avanco inicia: freq=%.1fHz X10=%d X12=%d X13=%d", freq_antes_x10 / 10.0f, (int)X10, (int)X12, (int)X13);
 }
 
@@ -784,6 +786,15 @@ static int carr_fwd_tick() {
                      }
                      vfd_run_fwd(f);
                  }
+                 if (_cf_x13_fim && X13) {                                   // X13 leu a regua da frente: chegou ao fim, nao segue mais
+                     if (!_cf_x13_desde) _cf_x13_desde = millis();
+                     else if (millis() - _cf_x13_desde >= 100UL) {
+                         vfd_stop(); SET_Y14(false);
+                         DX_LOG("X13 (regua da frente) encerrou o avanco, %lums apos perder o X10", (unsigned long)dtr);
+                         dx_nuvem(true, 4, (uint16_t)min<uint32_t>(millis() - _cf_t_inicio, 4095UL)); dx_enviar();
+                         return SUB_DONE;
+                     }
+                 } else _cf_x13_desde = 0;
                  if (dtr >= _cf_dwell) {
                      vfd_stop(); SET_Y14(false);
                      DX_LOG("avanco terminou (%lums de deslocamento) X10=%d", (unsigned long)(millis() - _cf_t_inicio), (int)X10);
@@ -1258,7 +1269,8 @@ static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
                           uint32_t espera_fim_ms = 0,
                           void (*fim_liga)() = nullptr,
                           void (*fim_desliga)() = nullptr,
-                          bool desliga_na_volta = false) {   // true = desliga as saidas do processo quando COMECA A VOLTAR (ate o X12)
+                          bool desliga_na_volta = false,     // true = desliga as saidas do processo quando COMECA A VOLTAR (ate o X12)
+                          bool fwd_x13_fim = false) {        // true = o avanco tambem termina pelo X13 (so a Cor Magica)
     switch (_pst) {
         case SP_HOME:
             // TESTE: checagem de HOME por processo desativada — validacao unica agora
@@ -1282,7 +1294,7 @@ static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
             // perder o X10, cai pra 20Hz fixo ate o fim do dwell. Sem giro
             // (Espuma B, Cor Magica, etc.): mantem a mesma velocidade o tempo
             // todo (nao ha troca).
-            carr_fwd_iniciar(vel(etapa_desl), com_giro ? CARRINHO_X10_FREQ_HZ10 : vel(etapa_desl), fwd_dwell); _pst = SP_FWD; break;
+            carr_fwd_iniciar(vel(etapa_desl), com_giro ? CARRINHO_X10_FREQ_HZ10 : vel(etapa_desl), fwd_dwell, fwd_x13_fim); _pst = SP_FWD; break;
         case SP_FWD: {
             int r = carr_fwd_tick();
             if (r == SUB_ERR) { auto_erro(_cf_msg); return false; }
@@ -1375,8 +1387,8 @@ static bool tick_cor_magica() {
     if (_pst == SP_HOME) { SET_Y1(true); SET_Y7(true); SET_Y0(true); saj_set_freq(35.0f); }   // Y0 junto com a Cor Magica
     // ANTES (comportamento anterior; para voltar a ele, descomente esta linha e apague a de baixo):
     // return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, espera_slot_ms((uint32_t)g_config.atraso_cor_magica * 1000));
-    return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, espera_slot_ms((uint32_t)g_config.atraso_cor_magica * 1000),
-                         nullptr, nullptr, COR_MAGICA_DESLIGA_NA_VOLTA != 0);
+    return _proc_simples(false, COR_MAGICA_DWELL_MS, 6, 7, _off_cm, 2000, espera_slot_ms((uint32_t)g_config.atraso_cor_magica * 1000),
+                         nullptr, nullptr, COR_MAGICA_DESLIGA_NA_VOLTA != 0, true);   // segue 5 s depois do X10 (era 1 s) ou ate o X13
 }
 
 // ---- Cera de agua: Y10 + Y7 + Y0, SEM giro (velocidade = etapa 1, antes "Spray agua") ----
