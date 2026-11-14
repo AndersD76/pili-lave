@@ -25,6 +25,16 @@
 #include "nuvem_w1.h"          // heartbeat/eventos/licenca/lampada/aspirador direto com a camera
 #include "reset_log_w1.h"      // registro permanente dos reinicios (W1 e W2) + envio para a nuvem
 
+// ---- ATUALIZACAO REMOTA (2026-11-09): a camera entrega o firmware novo pelo display; ver ota_alvo.h ----
+#define OTA_MEU_ALVO   OTA_ALVO_W1
+#define OTA_MEU_ORIGEM ORIGEM_WAVE1
+#define OTA_FW_VERSAO  4          // SOBE a cada firmware publicado (server/public/firmware/w1-version.json); o rodando so aceita versao MAIOR
+static bool ota_pode_agora() {    // so com a maquina PARADA e em repouso
+    return g_estado_auto == AUTO_IDLE && !g_teste_rodando && !home_rodando() && !g_manual_ativo && !recuperacao_ativa() && !g_parar_pedido && g_man_sai == 0;
+}
+static void ota_tx_ack(const MsgOtaAck* a) { tx_send((uint8_t*)MAC_DISPLAY, (uint8_t*)a, sizeof(*a)); }   // o display repassa a camera
+#include "ota_alvo.h"
+
 // ===================== HARD RESET no boot (via firmware) =====================
 #define HARD_RESET_APAGA_NVS 0
 #define HR_MARCA 0x50494C49UL
@@ -95,7 +105,7 @@ void setup() {
     esp_task_wdt_add(NULL);
 
     g_estado.modo_auto = true;   // esta placa so roda o automatico — o display decide via MSG_AUTO_CMD
-    Serial.printf("[WAVE1-MESTRE] pronto (ESP-NOW canal %d, RS-485 Delta/SAJ sozinho)\n", g_canal_atual);
+    Serial.printf("[WAVE1-MESTRE] pronto (ESP-NOW canal %d, RS-485 Delta/SAJ sozinho) firmware v%d\n", g_canal_atual, (int)OTA_FW_VERSAO);
 }
 
 void loop() {
@@ -132,6 +142,8 @@ void loop() {
         if (millis() - t_vida >= VIDA_MEIO_PERIODO_MS) { t_vida = millis(); nivel_vida = !nivel_vida; digitalWrite(VIDA_PIN, nivel_vida); }
     }
 
+    ota_tick();            // atualizacao remota: grava o que chegou pelo display
+    ota_validar_tick();    // confirma o firmware novo depois de 60 s de pe (senao o bootloader volta ao anterior)
     rst_tick();            // retrato RTC do estado (para o proximo reset), W2 reiniciou?, envio do historico
     led_tick();
 }

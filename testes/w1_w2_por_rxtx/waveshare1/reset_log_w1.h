@@ -322,6 +322,18 @@ static void ocr_tick(uint32_t agora) {
     }
 }
 
+// Relatorio do avanco/retorno do carrinho (diag_x10x12.h, 2026-11-12): ocorrencia tipo 7. No maximo 4 a cada 30 s (so anomalias; nao inunda o anel de 8).
+void ocr_diag(uint16_t v) {
+    static uint32_t t0 = 0; static uint8_t n = 0;
+    uint32_t agora = millis();
+    if (!t0 || agora - t0 > 30000UL) { t0 = agora ? agora : 1; n = 0; }
+    if (n >= 4) return;
+    n++;
+    RstEtapa et; rst_capturar(et);
+    rst_adicionar(3, 7, (uint8_t)g_estado_auto, RST_F_SNAP | RST_F_EST_OK, 0, 0, agora / 1000UL, &et, v);
+    rst_salvar();
+}
+
 // Ocorrencia registrada por OUTRO trecho do firmware (ex.: O6 = HOME falhou por comunicacao com a W2; valor = ms sem quadro). No maximo 1 por minuto por tipo.
 void ocr_externa(uint8_t tipo, uint16_t valor) {
     static uint32_t ult[8] = {};

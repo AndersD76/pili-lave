@@ -83,6 +83,16 @@ uint32_t g_giro_timeout_ms = GIRO_TIMEOUT_DEFAULT_MS;
 #define GIRO_FASE_GIRO        0    // fase: girando normalmente
 #define GIRO_FASE_HOME        1    // fase: buscando o home em pulsos
 #define GIRO_FASE_PARANDO     2    // fase: confirmando que o motor realmente parou (reenvia STOP)
+#define GIRO_FASE_POS2        3    // fase: giro 1->2 parou por TEMPO; procura o X7 (contraprova do lado 2) em pulsos lentos
+// X7 = contraprova da posicao 2 (como o X16 e do X17 na posicao 1). O giro 1->2 continua parando por TEMPO; ao parar:
+//   X7 ja lido (estavel >100 ms) -> pronto; X7 ainda NAO lido -> avanca aos poucos (mesmo sentido do giro) ate achar;
+//   X7 lido durante o giro mas JA PASSOU (nao esta sobre ele) -> volta um pouco (sentido oposto) ate achar.
+// Mesmos pulsos lentos da busca do home (5 Hz, 1 s). DESLIGADO (0) ate o X7 ser realocado fisicamente para a posicao 2: com o sensor no lugar
+// antigo a busca nunca acharia e mexeria o braco a toa. X7_POS2_OBRIGATORIO 1 = nao achar o X7 vira ERRO (0 = so registra e segue o ciclo).
+#define X7_POS2_ATIVO         1
+#define X7_POS2_OBRIGATORIO   0
+#define X7_BUDGET_LEG1        3    // pulsos no 1o sentido (escolhido pela memoria: nao leu / passou)
+#define X7_BUDGET_LEG2        6    // pulsos no sentido invertido (3 para voltar + 3 para explorar o outro lado)
 // Achado em campo: vfd_stop() ja tenta 4x internamente (vfd_write_reg_retry,
 // ~60ms de janela), mas sao 4 tentativas em UM UNICO instante — se a rajada
 // de ruido do proprio motor (giro em alta velocidade) durar mais que isso,
@@ -118,22 +128,22 @@ static uint32_t _giro_t_home_on = 0;   // (legado, nao usado)
 // campo: o motor pode parar de girar de verdade (comando de RUN perdido por
 // ruido) e o firmware nao percebia, pois o relogio (dt) continuava contando
 // como se estivesse girando, ate cair sem querer na busca fina do home ja
-// perto do fim do processo. Agora acompanha se X11/X16/X17/X7 MUDAM de
+// perto do fim do processo. Agora acompanha se X11/X16/X17 MUDAM de
 // estado (nao so o nivel) — se ficar tempo demais sem nenhuma mudanca, reenvia
 // o comando de giro (so ESCREVE, nao le nada — nao bloqueia o loop).
 #define GIRO_STALL_MS     2500   // sem nenhuma mudanca de sensor por esse tempo -> reenvia o comando
 static uint32_t _giro_t_vida    = 0;   // ultima vez que algum sensor do giro mudou
-static uint8_t  _giro_sensores_ant = 0; // snapshot anterior (bits: X11,X16,X17,X7)
+static uint8_t  _giro_sensores_ant = 0; // snapshot anterior (bits: X17,X16,X11) — o X7 nao participa do giro (so contraprova do lado 2, ver braco_lado2_tick)
 // --- estado do fine-homing (busca do home em pulsos apos o giro 2->1) ---
 static bool     _giro_viu_home  = false;// memoria: passou pelo home durante o giro?
 static bool     _giro_saiu_pos2 = false;// ja saiu da pos2 inicial (X17 zerou)
 static uint32_t _giro_t_saiu_pos2 = 0;  // marco de tempo: instante em que o braco DEIXOU a pos2 (base dos cronometros do 2->1)
 static bool     _giro_viu_x17   = false;// (apos sair da pos2) reentrou na zona do X17 perto do home
 static bool     _giro_viu_x16   = false;// (apos sair da pos2) viu o sensor dedicado do home (X16)
-// --- memoria de direcao do fine-homing (ordem anti-horaria 2->1: X11 -> X16 -> X17 -> X7) ---
+// --- memoria de direcao do fine-homing (ordem anti-horaria 2->1: X11 -> X16 -> X17) ---
 static bool     _giro_viu_x11   = false;// viu o intermediario X11 (aquem do home)
 static bool     _giro_saiu_x16  = false;// viu o X16 e depois SAIU dele (passou do home)
-static bool     _giro_viu_x7    = false;// chegou no X7 (alem do home -> passou com folga)
+static bool     _giro_viu_x7    = false;// (giro 1->2) X7 lido estavel durante o giro: a busca da posicao 2 decide o sentido por isso
 static uint8_t  _giro_fase      = GIRO_FASE_GIRO;
 
 // Diagnostico do ultimo giro (mostrado na tela de testes)
@@ -156,6 +166,17 @@ static int      _giro_parar_ret = 0;   // valor a retornar quando confirmar (SUB
 // dest_home: true se este giro especifico termina na posicao 1 (home, onde X17 E
 // HOME_GIRO ficam ativos juntos) -> criterio de parada exige os DOIS constantes.
 // false = termina na posicao 2 (so X17) -> criterio de parada so olha X17 (como hoje).
+// Ordem ao Delta que se perdeu de vez (4 tentativas x 3 rodadas). No ciclo automatico com carro real PAUSA (g_delta_pausa_pedida: o auto_tick
+// para o motor, desliga as bombas e retoma sozinho quando o Delta voltar a responder) e devolve true: o chamador segue armando a sub-maquina,
+// pois o movimento pretendido (g_vfd_mov) e reemitido na retomada. Nos testes/seco, ou PARAR pedido, comporta-se como antes: erro (false).
+static bool delta_falhou(const char* msg) {
+    if (g_parar_pedido) return false;
+    if (g_teste_seco || g_teste_rodando || g_estado_auto != AUTO_PROCESSO) { auto_erro(msg); return false; }
+    g_delta_pausa_pedida = true;
+    DBG_PRINTF("[DELTA] ordem perdida (%s) -> PAUSA e tenta de novo\n", msg);
+    return true;
+}
+
 static void giro_iniciar(bool fwd, uint16_t freq_hz10, bool dest_home) {
     if (freq_hz10 > GIRO_FREQ_MAX) freq_hz10 = GIRO_FREQ_MAX;
     if (freq_hz10 < 1) freq_hz10 = 1;
@@ -170,8 +191,7 @@ static void giro_iniciar(bool fwd, uint16_t freq_hz10, bool dest_home) {
     SET_Y4(true);
     // (3) envia parametros: freq do processo + REV (ou FWD)
     if (!vfd_run_garantido(fwd, freq_hz10)) {
-        if (!g_parar_pedido) auto_erro("RS-485: Delta nao recebeu o comando do giro");
-        return;
+        if (!delta_falhou("RS-485: Delta nao recebeu o comando do giro")) return;
     }
 
     _giro_dur_cur    = giro_dur_do_proc((uint8_t)g_estado.processo_ativo);   // tempo do processo atual
@@ -192,8 +212,8 @@ static void giro_iniciar(bool fwd, uint16_t freq_hz10, bool dest_home) {
     _giro_viu_x17    = false;
     _giro_viu_x16    = false;
     _giro_viu_x11    = false;
-    _giro_saiu_x16   = false;
     _giro_viu_x7     = false;
+    _giro_saiu_x16   = false;
     _giro_fase       = GIRO_FASE_GIRO;
     _fh_st           = 0;
     _fh_tentativa    = 0;
@@ -245,8 +265,8 @@ static int giro_rewind_tick() {
             if (combo) { _gr_st = 3; break; }   // ja esta na posicao 1
             SET_Y4(true);
             if (!vfd_run_garantido(!_giro_fwd, GIRO_REWIND_HZ10)) {
+                if (delta_falhou("RS-485: Delta nao recebeu o comando de rebobinar o giro")) break;   // pausa; ao retomar, tenta de novo neste mesmo estado
                 g_giro_rewind = false; g_giro_ativo = false; SET_Y4(false);
-                if (!g_parar_pedido) auto_erro("RS-485: Delta nao recebeu o comando de rebobinar o giro");
                 return SUB_ERR;
             }
             _gr_t = agora; _gr_st = 2;
@@ -315,12 +335,12 @@ static int giro_tick() {
         }
         switch (_fh_st) {
             case 0:  // escolhe o sentido inicial pela MEMORIA do giro e faz o 1o settle.
-                // Ordem anti-horaria (2->1): X11 -> X16 -> X17 -> X7.
-                //  PASSOU do home (saiu do X16, ou chegou no X7) -> volta HORARIO (fwd).
+                // Ordem anti-horaria (2->1): X11 -> X16 -> X17.
+                //  PASSOU do home (saiu do X16) -> volta HORARIO (fwd).
                 //  AQUEM  do home (viu X11 mas nao chegou/ficou)  -> segue ANTI-HORARIO (rev).
-                if (_giro_saiu_x16 || _giro_viu_x7) {
+                if (_giro_saiu_x16) {
                     _fh_fwd = true;   // horario — voltar
-                    DBG_PRINTLN("[GIRO] fine-home: PASSOU (saiu X16 / chegou X7) -> horario");
+                    DBG_PRINTLN("[GIRO] fine-home: PASSOU (saiu X16) -> horario");
                 } else {
                     _fh_fwd = false;  // anti-horario — avancar
                     DBG_PRINTF("[GIRO] fine-home: AQUEM (viu_x11=%d) -> anti-horario\n", (int)_giro_viu_x11);
@@ -376,6 +396,54 @@ static int giro_tick() {
         return SUB_RUN;
     }
 
+    // ================= FASE POS2: CONTRAPROVA DO LADO 2 PELO X7 (so com X7_POS2_ATIVO) =================
+    if (_giro_fase == GIRO_FASE_POS2) {
+        if (g_braco_lado2) {   // X7 estavel (>100 ms): braco confirmado no lado 2 -> para na hora
+            SET_Y4(false); vfd_stop();
+            DBG_PRINTF("[GIRO] 1->2: X7 confirmou o lado 2 (pulsos=%u)\n", (unsigned)_fh_n);
+            return giro_parar_e_confirmar(SUB_DONE);
+        }
+        switch (_fh_st) {
+            case 0:  // espera o motor parar (regra do inversor) e escolhe o sentido pela memoria
+                if (agora - _fh_t >= VFD_SETTLE_MS) {
+                    _fh_fwd = _giro_viu_x7 ? !_giro_fwd : _giro_fwd;   // ja passou do X7 -> volta ; ainda nao leu -> segue em frente
+                    _fh_n = 0; _fh_leg = 0;
+                    DBG_PRINTF("[GIRO] 1->2: X7 %s -> pulsos %s\n", _giro_viu_x7 ? "ja passou" : "ainda nao lido", _fh_fwd == _giro_fwd ? "para frente" : "de volta");
+                    _fh_st = 1;
+                }
+                break;
+            case 1:
+                SET_Y4(true);
+                if (_fh_fwd) vfd_run_fwd(FH_PULSE_HZ10); else vfd_run_rev(FH_PULSE_HZ10);
+                _fh_t = agora; _fh_st = 2;
+                break;
+            case 2:  // pulso de FH_PULSE_MS (o X7 estavel interrompe no topo)
+                if (agora - _fh_t >= FH_PULSE_MS) { vfd_stop(); _fh_t = agora; _fh_st = 3; }
+                break;
+            case 3:  // inercia morre; avalia
+                if (agora - _fh_t >= FH_SETTLE_MS) {
+                    _fh_n++;
+                    uint8_t budget = (_fh_leg == 0) ? X7_BUDGET_LEG1 : X7_BUDGET_LEG2;
+                    if (_fh_leg == 0 && _fh_n >= budget) {
+                        _fh_fwd = !_fh_fwd; _fh_leg = 1; _fh_n = 0;
+                        DBG_PRINTLN("[GIRO] 1->2: X7 nao achado -> inverte o sentido");
+                    } else if (_fh_leg == 1 && _fh_n >= budget) {
+                        SET_Y4(false); vfd_stop();
+                        DBG_PRINTLN("[GIRO] 1->2: X7 NAO encontrado apos a busca");
+#if X7_POS2_OBRIGATORIO
+                        _giro_msg = "ERRO: X7 (lado 2) nao encontrado";
+                        return giro_parar_e_confirmar(SUB_ERR);
+#else
+                        return giro_parar_e_confirmar(SUB_DONE);   // contraprova so informativa por ora: segue o ciclo
+#endif
+                    }
+                    _fh_t = agora; _fh_st = 1;
+                }
+                break;
+        }
+        return SUB_RUN;
+    }
+
     // ================= FASE 1: GIRO NORMAL =================
     uint32_t dt = agora - _giro_t0;      // tempo desde que Y4 ligou (T=0)
 
@@ -384,7 +452,7 @@ static int giro_tick() {
     // dela, o watchdog abaixo so OLHA os sensores que ja sao lidos (sem
     // leitura extra) e so ESCREVE quando precisa — nunca bloqueia o loop.)
     //
-    // WATCHDOG DE "BRACO PARADO DE VERDADE": acompanha se X11/X16/X17/X7
+    // WATCHDOG DE "BRACO PARADO DE VERDADE": acompanha se X11/X16/X17
     // mudam de estado durante o giro normal. Achado em campo: o motor pode
     // parar de girar de verdade (RUN perdido por ruido) sem nenhum sensor
     // terminal ser atingido — o relogio (dt) seguia contando como se
@@ -393,10 +461,10 @@ static int giro_tick() {
     // home). Se nenhum sensor mudar por GIRO_STALL_MS, reenvia o comando.
     {
         uint8_t snap = (uint8_t)x17_raw | ((uint8_t)x16_raw << 1) |
-                       ((uint8_t)X11 << 2) | ((uint8_t)X7 << 3);
+                       ((uint8_t)X11 << 2);
         if (snap != _giro_sensores_ant) {
-            DBG_PRINTF("[GIRO] sensores X16=%d X17=%d X11=%d X7=%d | dt=%ums fase=%d dest_home=%d\n",
-                       (int)x16_raw, (int)x17_raw, (int)X11, (int)X7, (unsigned)(agora - _giro_t0),
+            DBG_PRINTF("[GIRO] sensores X16=%d X17=%d X11=%d | dt=%ums fase=%d dest_home=%d\n",
+                       (int)x16_raw, (int)x17_raw, (int)X11, (unsigned)(agora - _giro_t0),
                        (int)_giro_fase, (int)_giro_dest_home);
             _giro_sensores_ant = snap;
             _giro_t_vida = agora;
@@ -433,7 +501,6 @@ static int giro_tick() {
             if (home) _giro_viu_x16 = true;              // viu o sensor dedicado do home
             else if (_giro_viu_x16) _giro_saiu_x16 = true; // viu o X16 e SAIU -> passou do home
             if (X11)  _giro_viu_x11 = true;              // intermediario (aquem do home)
-            if (X7)   _giro_viu_x7  = true;              // alem do home -> passou com folga
             // Memoria do callback (nao depende deste loop estar rodando rapido):
             { bool x16c, x17c; w2_home_le(&x16c, &x17c);
               if (x17c) _giro_viu_x17 = true;
@@ -460,9 +527,18 @@ static int giro_tick() {
         }
     } else {
         // ---- lado 1->2 (posicao 2, so X17): para por TEMPO (parada principal).
+        if (g_braco_lado2) _giro_viu_x7 = true;   // passou/esta sobre o X7 (estavel): memoria para a contraprova ao parar
         if (dt >= _giro_dur_cur) {
-            vfd_stop(); SET_Y4(false);
+            vfd_stop();
             g_ult_giro = { 0, 0, 0, 0, _u16(dt), 0, 0 };
+#if X7_POS2_ATIVO
+            if (!g_teste_seco) {   // contraprova do lado 2 pelo X7 (o Y4 fica ligado durante a busca)
+                DBG_PRINTF("[GIRO] 1->2 tempo %ums -> confere o X7 (viu_x7=%d, no_x7=%d)\n", (unsigned)_giro_dur_cur, (int)_giro_viu_x7, (int)g_braco_lado2);
+                _giro_fase = GIRO_FASE_POS2; _fh_st = 0; _fh_t = agora;
+                return SUB_RUN;
+            }
+#endif
+            SET_Y4(false);
             DBG_PRINTF("[GIRO] 1->2 tempo %ums -> confirmando parada\n", (unsigned)_giro_dur_cur);
             return giro_parar_e_confirmar(SUB_DONE);
         }
@@ -569,6 +645,19 @@ static uint16_t    _cf_freq_apos_x10 = 0; // freq de chegada da rampa (piso, man
 static uint32_t    _cf_t_ramp = 0;        // ultimo instante em que a rampa foi recalculada
 static bool        _cf_x0_ant = false;
 static const char* _cf_msg = "";
+// ---- REGRA G4 NO AVANCO + REGISTRO (2026-11-12, pedido do Giovani) ----
+// Perder o X10 so vale como "acabou o carro" depois de X10_FWD_MIN_MS de deslocamento (regra G4 de docs/REGRAS_RETOMADA_CICLO.md). Antes disso o apagao
+// do X10 e ignorado e o carrinho segue andando; se for longo (500 ms), a regra de pausa (x10_pausa_tick) para a maquina e espera o X10 voltar. Em carro
+// real o fim de curso da frente (X13) tambem encerra o avanco (antes so valia no SECO): a regra de 3 s alonga o caminho de um carro curto.
+#define X10_FWD_MIN_MS    3000UL
+#define X13_FWD_APOS_MS   1500UL   // o X13 so vale depois disso (a partida esta a metros do fim de curso da frente: leitura antes disso = ruido)
+#define X13_CONFIRMA_MS    100UL
+static uint32_t _cf_t_inicio  = 0;   // instante em que o avanco comecou (os cronometros deslocam na pausa)
+static uint32_t _cf_drop_ini  = 0;   // X10 apagado: desde quando (0 = aceso)
+static uint8_t  _cf_drop_rel  = 0;   // o apagao ja foi relatado (a janela de 3 s acabou com ele ainda apagado)
+static uint32_t _cf_x13_desde = 0;
+static bool     _cf_x13_fim   = false;   // (2026-11-13, pedido do Giovani) o avanco tambem termina quando o X13 le a regua da frente (so a Cor Magica pede isso)
+#define COR_MAGICA_DWELL_MS 3000UL   // tempo que a Cor Magica SEGUE depois de perder o X10 (era 1000 ms; 3 s por pedido do Giovani em 13/11), ou ate o X13, o que vier primeiro; depois volta
 
 // Garante o motor PARADO DE VEZ antes de um novo movimento. O carrinho costuma
 // vir logo apos o giro (REV); arrancar sem o motor parar = REVERSAO de sentido
@@ -588,14 +677,13 @@ static bool vfd_parar_de_vez(uint32_t ms) {
 // processos com giro (Pre-Lavagem, Alta Pressao, Espuma A) isso e o 20Hz
 // fixo (CARRINHO_X10_FREQ_HZ10); nos demais e a mesma freq_antes_x10 (sem
 // troca nenhuma).
-static void carr_fwd_iniciar(uint16_t freq_antes_x10, uint16_t freq_apos_x10, uint32_t dwell_ms) {
+static void carr_fwd_iniciar(uint16_t freq_antes_x10, uint16_t freq_apos_x10, uint32_t dwell_ms, bool x13_fim = false) {
     DBG_PRINTF("[CARRINHO] FWD freq_antes_x10=%.1fHz freq_apos_x10=%.1fHz dwell=%ums\n",
                   freq_antes_x10 / 10.0f, freq_apos_x10 / 10.0f, (unsigned)dwell_ms);  // TEMP debug
     if (vfd_parar_de_vez(VFD_SETTLE_MS)) return;   // motor parado antes de reverter p/ FWD (PARAR cancela)
     SET_Y14(true);
     if (!vfd_run_garantido(true, freq_antes_x10)) {
-        if (!g_parar_pedido) auto_erro("RS-485: Delta nao recebeu o comando do carrinho");
-        return;
+        if (!delta_falhou("RS-485: Delta nao recebeu o comando do carrinho")) return;
     }
     _cf_st      = 0;
     _cf_dwell   = dwell_ms;
@@ -604,7 +692,10 @@ static void carr_fwd_iniciar(uint16_t freq_antes_x10, uint16_t freq_apos_x10, ui
     _cf_t_pulso = millis();
     _cf_x0_ant  = X0;
     _cf_t_x10_lost = 0;                   // reinicia o debounce da perda do X10
+    g_x10_ausente_ok = false;
     _x10sim_modo = 1; _x10sim_t0 = millis();   // bancada: X10 simulado (avanco)
+    _cf_t_inicio = millis(); _cf_drop_ini = 0; _cf_drop_rel = 0; _cf_x13_desde = 0; _cf_x13_fim = x13_fim;
+    dx_zero(); DX_LOG("avanco inicia: freq=%.1fHz X10=%d X12=%d X13=%d", freq_antes_x10 / 10.0f, (int)X10, (int)X12, (int)X13);
 }
 
 static int carr_fwd_tick() {
@@ -612,6 +703,11 @@ static int carr_fwd_tick() {
         vfd_stop(); SET_Y14(false);
         DBG_PRINTLN("[CARRINHO] X13 (fim de curso frente) -> avanco encerrado");
         return SUB_DONE;
+    }
+    {   // X13 so e OBSERVADO no avanco (2026-11-12). A ideia de que ele e o fim de curso da FRENTE e que devia encerrar o avanco NAO se confirmou: nas 7 ocorrencias O2
+        // ("X13 com X10") ele acendeu SEMPRE durante os retornos, nunca no avanco; encerrar o avanco por ele deixava o X10 aceso e o retorno ia ate bater. Nada decide por ele.
+        static bool x13_ant = false; bool x13 = X13;
+        if (x13 != x13_ant) { x13_ant = x13; DX_LOG("X13 %s durante o avanco (X10=%d, %lums de deslocamento)", x13 ? "ACENDEU" : "apagou", (int)X10, (unsigned long)(millis() - _cf_t_inicio)); }
     }
     // REVERTIDO (achado em campo): essa confirmacao usava vfd_lendo_rodando(),
     // leitura BLOQUEANTE (ate 3x ~100ms) dentro do loop de controle — gerou
@@ -641,15 +737,36 @@ static int carr_fwd_tick() {
                  //           exatamente na posicao esperada (ex.: trocou o carro entre um
                  //           teste e outro e o X10 ja comeca lendo 0, sem o carrinho ter
                  //           avancado de verdade).
-                 if (!x10_efetivo() && X15) {
+                 {   // REGRA G4 (2026-11-12): antes de X10_FWD_MIN_MS de deslocamento o X10 apagado e IGNORADO (so carro real; no SECO o X10 e simulado)
+                 bool cedo = !g_teste_seco && (millis() - _cf_t_inicio) < X10_FWD_MIN_MS;
+                 bool x10_off = !x10_efetivo();
+                 if (x10_off) {
+                     if (_cf_drop_ini == 0) {
+                         _cf_drop_ini = millis(); _cf_drop_rel = 0;
+                         DX_LOG("X10 APAGOU (%lums de deslocamento)%s", (unsigned long)(_cf_drop_ini - _cf_t_inicio), cedo ? " - IGNORADO (menos de 3 s)" : "");
+                     } else if (!cedo && !_cf_drop_rel && (_cf_drop_ini - _cf_t_inicio) < X10_FWD_MIN_MS) {
+                         _cf_drop_rel = 1;   // a janela de 3 s acabou com o X10 ainda apagado: nao era um apagao curto
+                         DX_LOG("X10 segue apagado ao fim da janela de 3 s: vale como fim do carro");
+                         dx_drop(!g_teste_seco, _cf_drop_ini - _cf_t_inicio, millis() - _cf_drop_ini);
+                     }
+                 } else if (_cf_drop_ini) {
+                     uint32_t dur = millis() - _cf_drop_ini;
+                     DX_LOG("X10 VOLTOU (ficou apagado %lums)", (unsigned long)dur);
+                     if (!_cf_drop_rel && (_cf_drop_ini - _cf_t_inicio) < X10_FWD_MIN_MS) dx_drop(!g_teste_seco, _cf_drop_ini - _cf_t_inicio, dur);
+                     _cf_drop_ini = 0;
+                 }
+                 if (x10_off && X15 && !cedo) {
                      if (_cf_t_x10_lost == 0) _cf_t_x10_lost = millis();          // X10 caiu a 0 agora
                      if (millis() - _cf_t_x10_lost >= X10_FWD_LOST_MS) {          // ficou 0 por 150ms -> perdeu de verdade
                          DBG_PRINTF("[CARRINHO] perdeu X10 -> inicia rampa %.1fHz -> %.1fHz em %ums\n",
                                        _cf_freq_antes_x10 / 10.0f, _cf_freq_apos_x10 / 10.0f, CARR_RAMPA_MS);  // TEMP debug
+                         DX_LOG("avanco aceitou a perda do X10 (%lums de deslocamento)", (unsigned long)(millis() - _cf_t_inicio));
                          _cf_st = 1; _cf_t_x10 = millis(); _cf_t_ramp = 0;
+                         g_x10_ausente_ok = true;   // saiu do X10 de proposito: a ausencia ate o retorno e normal (nao pausa)
                      }
                  } else {
                      _cf_t_x10_lost = 0;                                          // X10 voltou (ou X15 ausente) -> reseta
+                 }
                  }
                  break;
         case 1: {
@@ -669,8 +786,19 @@ static int carr_fwd_tick() {
                      }
                      vfd_run_fwd(f);
                  }
+                 if (_cf_x13_fim && X13) {                                   // X13 leu a regua da frente: chegou ao fim, nao segue mais
+                     if (!_cf_x13_desde) _cf_x13_desde = millis();
+                     else if (millis() - _cf_x13_desde >= 100UL) {
+                         vfd_stop(); SET_Y14(false);
+                         DX_LOG("X13 (regua da frente) encerrou o avanco, %lums apos perder o X10", (unsigned long)dtr);
+                         dx_nuvem(true, 4, (uint16_t)min<uint32_t>(millis() - _cf_t_inicio, 4095UL)); dx_enviar();
+                         return SUB_DONE;
+                     }
+                 } else _cf_x13_desde = 0;
                  if (dtr >= _cf_dwell) {
                      vfd_stop(); SET_Y14(false);
+                     DX_LOG("avanco terminou (%lums de deslocamento) X10=%d", (unsigned long)(millis() - _cf_t_inicio), (int)X10);
+                     dx_enviar();
                      return SUB_DONE;
                  }
                  break; }
@@ -694,6 +822,10 @@ static uint32_t _cr_t_x10_on = 0;    // instante em que X10 comecou a ler ativo 
                             // do sensor indutivo perto do jato de agua)
 
 static uint32_t _cr_t_pulso = 0;   // watchdog X0: ultimo instante em que o X0 pulsou
+static uint32_t _cr_t_ini   = 0;   // inicio do retorno parcial (registro)
+static uint32_t _cr_x12_desde = 0; // G7: desde quando o X12 le a regua de tras neste retorno (0 = nao le)
+static bool     _cr_x13_ini   = false;   // o X13 ja estava aceso ao comecar o retorno (carrinho encostado na regua da frente)
+#define X12_RET_PARCIAL_MS 1000UL  // G7: X12 aceso por 1000 ms no retorno parcial = passou do X12 (a regua e comprida e o carrinho as vezes demora para sair dela: 100 ms dava risco de erro falso; o X13 aceso para na hora)
 static bool     _cr_x0_ant  = false;
 
 static void carr_rev_x10_iniciar(uint16_t freq_hz10) {
@@ -701,8 +833,7 @@ static void carr_rev_x10_iniciar(uint16_t freq_hz10) {
     if (vfd_parar_de_vez(VFD_SETTLE_MS)) return;   // motor parado antes de reverter p/ REV (PARAR cancela)
     SET_Y14(true);
     if (!vfd_run_garantido(false, freq_hz10)) {
-        if (!g_parar_pedido) auto_erro("RS-485: Delta nao recebeu o comando do carrinho");
-        return;
+        if (!delta_falhou("RS-485: Delta nao recebeu o comando do carrinho")) return;
     }
     _cr_st       = 0;
     _x10sim_modo = 2; _x10sim_t0 = millis();   // bancada: X10 simulado (retorno parcial)
@@ -711,6 +842,8 @@ static void carr_rev_x10_iniciar(uint16_t freq_hz10) {
                            // aceitar de primeira uma leitura residual/fantasma)
     _cr_t_x10_on = 0;
     _cr_t_pulso  = millis();              // arma o watchdog do X0 (carro travado no meio-retorno)
+    _cr_t_ini    = millis(); dx_zero(); _cr_x12_desde = 0; _cr_x13_ini = X13;
+    DX_LOG("retorno parcial ate o X10 inicia: X10=%d X12=%d X13=%d (precisa ver o X10 apagar e acender de novo)", (int)X10, (int)X12, (int)X13);
     _cr_x0_ant   = X0;
 }
 
@@ -726,6 +859,18 @@ static int carr_rev_x10_tick() {
         DBG_PRINTLN("[CARRINHO] X12 (fim de curso tras) no retorno parcial -> encerrado");
         return SUB_DONE;
     }
+    if (!g_teste_seco) {   // G7 (2026-11-12): carro REAL, o retorno ate o X10 NAO pode chegar a regua de tras. Os sensores X12 e X13 ficam no carrinho e ha uma regua em cada ponta da maquina:
+        // se passou do X12, o X12 le a regua de tras e, mais adiante, o X13 (lado da frente do carrinho) le essa mesma regua. Qualquer um dos dois = PARA e da erro (antes so valia no SECO e o carrinho ia ate bater).
+        if (X12) { if (!_cr_x12_desde) _cr_x12_desde = millis(); } else _cr_x12_desde = 0;
+        bool passou13 = X13 && !_cr_x13_ini;
+        if (passou13 || (_cr_x12_desde && (millis() - _cr_x12_desde) >= X12_RET_PARCIAL_MS)) {
+            vfd_stop(); SET_Y14(false);
+            DX_LOG("retorno parcial passou do X12 sem achar o X10 (X10=%d X12=%d X13=%d): para e da erro", (int)X10, (int)X12, (int)X13);
+            dx_nuvem(true, 5, (uint16_t)min<uint32_t>(millis() - _cr_t_ini, 4095UL)); dx_enviar();
+            _cf_msg = "Retorno parcial: passou do X12 sem X10";
+            return SUB_ERR;
+        }
+    }
     // REVERTIDO — ver nota em carr_fwd_tick()/giro_tick() (leitura bloqueante
     // causou essa exata mensagem de erro falso num teste real).
     for (uint8_t k = 0; k < 5; k++) {
@@ -738,13 +883,18 @@ static int carr_rev_x10_tick() {
         _cf_msg = "CARRO TRAVADO (retorno X10)";
         return SUB_ERR;
     }
+    {   // (2026-11-12) so observa: transicoes dos sensores durante o retorno ate o X10 (serial [DX])
+        static uint8_t ant = 255; uint8_t at = (X10 ? 1 : 0) | (X12 ? 2 : 0) | (X13 ? 4 : 0) | (X0 ? 8 : 0);
+        if (_cr_t_ini && at != ant) { if (ant != 255) DX_LOG("retorno parcial: X10=%d X12=%d X13=%d X0=%d (saiu=%d)", (int)X10, (int)X12, (int)X13, (int)X0, (int)_cr_saiu); ant = at; }
+        if (millis() - _cr_t_ini < 100) ant = 255;   // zera no inicio de cada retorno
+    }
     if (!x10_efetivo()) { _cr_saiu = true; _cr_t_x10_on = 0; }  // confirma saida + reseta constancia
     switch (_cr_st) {
         case 0:
             if (_cr_saiu && x10_efetivo()) {
                 if (_cr_t_x10_on == 0) _cr_t_x10_on = millis();    // comecou a ler ativo agora
                 if (millis() - _cr_t_x10_on >= X10_CONST_MS) {     // ficou 300ms constante
-                    _cr_st = 1; _cr_t = millis();
+                    _cr_st = 1; _cr_t = millis(); g_x10_ausente_ok = false;   // X10 de volta: a partir daqui ausencia indevida pausa
                 }
             }
             break;
@@ -769,20 +919,25 @@ static uint32_t _cx_t_pulso = 0;   // watchdog X0 no retorno: ultimo instante em
 static bool     _cx_x0_ant  = false;
 static uint16_t _cx_freq    = 0;   // freq que estava rodando ao achar o X12 — de onde a rampa parte
 static uint32_t _cx_t_ramp  = 0;   // ultimo recalculo da rampa
+static uint32_t _cx_t_visto = 0, _cx_t_subida = 0;   // (registro, 2026-11-12) 1a vez que o X12 acendeu neste retorno / ultima subida dele
+static uint8_t  _cx_reinicios = 0;                  // vezes em que o X12 apagou ANTES de completar a confirmacao de 300 ms (cada uma soma >= 300 ms de caminho)
+static bool     _cx_x12_ant = false;
 
 static void carr_rev_x12_iniciar(uint16_t freq_hz10) {
     DBG_PRINTF("[CARRINHO] REV_X12 (retorno final) freq=%.1fHz\n", freq_hz10 / 10.0f);  // TEMP debug
     if (vfd_parar_de_vez(VFD_SETTLE_MS)) return;   // motor parado antes de arrancar o deslocamento (PARAR cancela)
     SET_Y14(true);
     if (!vfd_run_garantido(false, freq_hz10)) {
-        if (!g_parar_pedido) auto_erro("RS-485: Delta nao recebeu o comando do carrinho");
-        return;
+        if (!delta_falhou("RS-485: Delta nao recebeu o comando do carrinho")) return;
     }
     _cx_st = 0;
     _cx_freq = freq_hz10;
     _cx_t_pulso = millis();               // arma o watchdog do X0 (carro travado no retorno)
     _cx_x0_ant  = X0;
     _t_x12_on = 0;                        // reinicia validacao de 300ms do X12
+    g_x10_ausente_ok = true;              // retorno final ao X12: nao precisa ver o carro, X10 dispensado ate a proxima etapa comecar
+    _cx_x12_ant = X12; _cx_t_subida = millis(); _cx_t_visto = _cx_x12_ant ? millis() : 0; _cx_reinicios = 0;
+    dx_zero(); DX_LOG("retorno ao X12 inicia: freq=%.1fHz X10=%d X12=%d", freq_hz10 / 10.0f, (int)X10, (int)X12);
 }
 
 static int carr_rev_x12_tick() {
@@ -802,8 +957,25 @@ static int carr_rev_x12_tick() {
             return SUB_ERR;
         }
     }
+    if (_cx_st == 0) {   // registro do X12 (2026-11-12): so observa
+        bool x12 = X12;
+        if (x12 && !_cx_x12_ant) {
+            _cx_t_subida = millis();
+            if (!_cx_t_visto) { _cx_t_visto = _cx_t_subida; DX_LOG("X12 acendeu"); } else DX_LOG("X12 acendeu de novo");
+        } else if (!x12 && _cx_x12_ant) {
+            uint32_t aceso = millis() - _cx_t_subida;
+            bool reinicia = aceso < SENSOR_VALID_MS;
+            if (reinicia && _cx_reinicios < 255) _cx_reinicios++;
+            DX_LOG("X12 APAGOU depois de %lums aceso%s", (unsigned long)aceso, reinicia ? " (a confirmacao de 300 ms recomeca)" : "");
+        }
+        _cx_x12_ant = x12;
+    }
     switch (_cx_st) {
-        case 0:  if (x12_estavel()) { _cx_st = 1; _cx_t = millis(); _cx_t_ramp = 0; } break; // fim de curso X12 >=300ms -> inicia rampa
+        case 0:  if (x12_estavel()) {
+                     _cx_st = 1; _cx_t = millis(); _cx_t_ramp = 0;
+                     if (!_cx_t_visto) _cx_t_visto = millis();
+                     DX_LOG("X12 confirmado (%lums desde a 1a vez que acendeu, %u reinicio(s) da confirmacao) -> rampa", (unsigned long)(millis() - _cx_t_visto), (unsigned)_cx_reinicios);
+                 } break; // fim de curso X12 >=300ms -> inicia rampa
         case 1: {
             // Rampa linear de 500ms, da freq que estava rodando ate parar —
             // recalculada a cada CARR_RAMPA_STEP_MS, mesmo principio da
@@ -812,6 +984,11 @@ static int carr_rev_x12_tick() {
             if (dtr >= CARR_RAMPA_MS) {
                 vfd_stop();
                 SET_Y14(false);
+                uint32_t total = _cx_t_visto ? millis() - _cx_t_visto : 0;
+                DX_LOG("retorno parou: %lums desde a 1a vez que o X12 acendeu (%u reinicio(s) da confirmacao)", (unsigned long)total, (unsigned)_cx_reinicios);
+                if (_cx_reinicios > 0 || total > 1000UL)   // anomalia: confirmacao reiniciada ou parada tardia
+                    dx_nuvem(!g_teste_seco, 2, (uint16_t)((min<uint8_t>(_cx_reinicios, 15) << 8) | min<uint32_t>(total / 10UL, 255UL)));
+                dx_enviar();
                 return SUB_DONE;
             }
             if (millis() - _cx_t_ramp >= CARR_RAMPA_STEP_MS) {
@@ -1092,7 +1269,8 @@ static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
                           uint32_t espera_fim_ms = 0,
                           void (*fim_liga)() = nullptr,
                           void (*fim_desliga)() = nullptr,
-                          bool desliga_na_volta = false) {   // true = desliga as saidas do processo quando COMECA A VOLTAR (ate o X12)
+                          bool desliga_na_volta = false,     // true = desliga as saidas do processo quando COMECA A VOLTAR (ate o X12)
+                          bool fwd_x13_fim = false) {        // true = o avanco tambem termina pelo X13 (so a Cor Magica)
     switch (_pst) {
         case SP_HOME:
             // TESTE: checagem de HOME por processo desativada — validacao unica agora
@@ -1116,7 +1294,7 @@ static bool _proc_simples(bool com_giro, uint32_t fwd_dwell,
             // perder o X10, cai pra 20Hz fixo ate o fim do dwell. Sem giro
             // (Espuma B, Cor Magica, etc.): mantem a mesma velocidade o tempo
             // todo (nao ha troca).
-            carr_fwd_iniciar(vel(etapa_desl), com_giro ? CARRINHO_X10_FREQ_HZ10 : vel(etapa_desl), fwd_dwell); _pst = SP_FWD; break;
+            carr_fwd_iniciar(vel(etapa_desl), com_giro ? CARRINHO_X10_FREQ_HZ10 : vel(etapa_desl), fwd_dwell, fwd_x13_fim); _pst = SP_FWD; break;
         case SP_FWD: {
             int r = carr_fwd_tick();
             if (r == SUB_ERR) { auto_erro(_cf_msg); return false; }
@@ -1209,8 +1387,8 @@ static bool tick_cor_magica() {
     if (_pst == SP_HOME) { SET_Y1(true); SET_Y7(true); SET_Y0(true); saj_set_freq(35.0f); }   // Y0 junto com a Cor Magica
     // ANTES (comportamento anterior; para voltar a ele, descomente esta linha e apague a de baixo):
     // return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, espera_slot_ms((uint32_t)g_config.atraso_cor_magica * 1000));
-    return _proc_simples(false, 1000, 6, 7, _off_cm, 2000, espera_slot_ms((uint32_t)g_config.atraso_cor_magica * 1000),
-                         nullptr, nullptr, COR_MAGICA_DESLIGA_NA_VOLTA != 0);
+    return _proc_simples(false, COR_MAGICA_DWELL_MS, 6, 7, _off_cm, 2000, espera_slot_ms((uint32_t)g_config.atraso_cor_magica * 1000),
+                         nullptr, nullptr, COR_MAGICA_DESLIGA_NA_VOLTA != 0, true);   // segue 3 s depois do X10 (era 1 s) ou ate o X13
 }
 
 // ---- Cera de agua: Y10 + Y7 + Y0, SEM giro (velocidade = etapa 1, antes "Spray agua") ----
@@ -1341,6 +1519,11 @@ void processos_shift_timers(uint32_t delta) {
     _cx_t        += delta;   // carrinho REV ate X12
     _cx_t_ramp   += delta;   // rampa de desaceleracao do retorno (ao achar o X12)
     _cf_t_ramp   += delta;   // rampa de desaceleracao do avanco (apos perder X10)
+    _cf_t_inicio += delta;   // regra G4 no avanco: a pausa nao conta como deslocamento
+    if (_cf_drop_ini)  _cf_drop_ini  += delta;
+    if (_cf_x13_desde) _cf_x13_desde += delta;
+    if (_cx_t_visto)   _cx_t_visto   += delta;
+    if (_cx_t_subida)  _cx_t_subida  += delta;
     if (_sec_t_pausa) _sec_t_pausa += delta;   // pausa inicial da secagem (10s)
 }
 
