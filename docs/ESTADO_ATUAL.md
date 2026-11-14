@@ -83,4 +83,6 @@ Os outros documentos têm o detalhe; este diz onde ele está e o que mudou por �
 - **W1 e W2:** **não verificadas**. Nunca foram regravadas em 12/11. Para certificar: com a máquina parada, ler a memória de cada uma (`esptool read-flash`, ver `docs/BACKUP_E_RESTAURACAO.md`) e comparar com a compilação do código candidato.
 - **Câmera:** v9 publicada em 12/11 (OTA em até 10 min; confirmar com `node server/_diag_camera.mjs AAAA-MM-DD`).
 
+**ATUALIZAÇÃO 14/11/2026 — a `main` agora TEM o firmware gravado nas placas:** W1 **v4** (`testes/w1_w2_por_rxtx/waveshare1/`: atualização remota, mudanças de 06/11, regra dos 3 s com registro `[DX]`, proteção G7 do retorno parcial, Cor Mágica segue 3 s depois do X10 ou até o X13, teste do SAJ por RS-485 no BOMBA TESTE) e display (`testes/display/`, com atualização remota e layout de memória `app3M_fat9M_16MB`). A câmera é a **v10**. O servidor ganhou a regra **sem fila** (`server/lib/lpr.ts`, `reservations.ts`). Relatórios: `docs/RELATORIO_SESSAO_2026-11-12.md` e seção R de `testes/PENDENCIAS_NA_MAQUINA.md`.
+
 **Aviso:** o repositório é **público**. Senhas padrão do display (CONFIG 1111, TÉCNICO 2828, PAGAMENTO 3462) aparecem em `docs/COMBINADOS.md`, `GUIA_TECNICO_COMPLETO.md` e no código antigo em `lixo/`. Se ainda forem as senhas em uso, trocar em CONFIG.
